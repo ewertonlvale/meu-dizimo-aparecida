@@ -231,15 +231,12 @@ const CadastroHandler = {
       Utils.enviarSimples(from, 'Entendido! Você não receberá lembretes automáticos. ✅');
       Utilities.sleep(1000);
       
-      // Perguntar sobre foto
-      Utils.enviarMenu(from,
+      // Solicitar uma foto
+      Utils.enviarSimples(from,
         `📸 *Foto de Perfil*\n\n` +
-        `Gostaria de adicionar uma foto?\n\n` +
-        `(Opcional – pode pular se preferir)`,
-        [
-          { id: 'btn_foto_sim',   title: '📸 Sim, enviar foto' },
-          { id: 'btn_foto_pular', title: '⏭️ Pular'            }
-        ]
+        `Agora envie sua foto de perfil!\n\n` +
+        `💡 Dica: use uma foto nítida e recente. 😊\n` +
+        `Você pode tirar uma selfie ou enviar da galeria.`
       );
     }
   },
@@ -265,15 +262,12 @@ const CadastroHandler = {
     
     Utilities.sleep(1000);
     
-    // Perguntar sobre foto
-    Utils.enviarMenu(from,
-      `${this._progresso(8)}\n\n📸 *Foto de Perfil*\n\n` +
-      `Gostaria de adicionar uma foto?\n\n` +
-      `(Opcional – pode pular se preferir)`,
-      [
-        { id: 'btn_foto_sim',   title: '📸 Sim, enviar foto' },
-        { id: 'btn_foto_pular', title: '⏭️ Pular'            }
-      ]
+    // Solicitar uma foto
+    Utils.enviarSimples(from,
+      `📸 *Foto de Perfil*\n\n` +
+      `Agora envie sua foto de perfil!\n\n` +
+      `💡 Dica: use uma foto nítida e recente. 😊\n` +
+      `Você pode tirar uma selfie ou enviar da galeria.`
     );
   },
 
@@ -292,35 +286,38 @@ const CadastroHandler = {
     Utils.enviarSimples(from, '⏳ Processando foto...');
 
     try {
-      // Validar que a imagem pode ser baixada (teste rápido)
       const info = MediaService.obterInfoMidia(imagem.id);
       
       if (info && info.url) {
-        // ✅ Salvar apenas o mediaId no cache (poucos bytes)
         const dados = StateManager.getDadosTemporarios(from);
         dados.fotoMediaId = imagem.id;
         StateManager.setDadosTemporarios(from, dados);
         
         Utils.enviarSimples(from, '✅ Foto recebida!');
         console.log(`✅ Foto de perfil registrada para ${from} (mediaId: ${imagem.id})`);
+        
+        Utilities.sleep(1000);
+        this.mostrarResumo(from);  // ✅ Só avança se deu certo
       } else {
         console.warn('⚠️ Falha ao validar foto');
-        Utils.enviarSimples(from, '⚠️ Não consegui processar a foto. Pulando esta etapa.');
+        Utils.enviarSimples(from,
+          '⚠️ Não consegui processar essa foto.\n\n' +
+          'Por favor, envie outra imagem. 📸'
+        );
+        // ✅ NÃO avança — permanece em AGUARDANDO_FOTO_PERFIL
       }
     } catch (error) {
       console.error('❌ Erro ao processar foto:', error);
-      Utils.enviarSimples(from, '⚠️ Erro ao processar foto. Continuando cadastro...');
+      Utils.enviarSimples(from,
+        '⚠️ Ocorreu um erro ao processar a foto.\n\n' +
+        'Tente enviar novamente. 📸'
+      );
+      // ✅ NÃO avança — permanece em AGUARDANDO_FOTO_PERFIL
     }
-
-    Utilities.sleep(1000);
-    this.mostrarResumo(from);
   },
 
-  pularFoto(from) {
-    Utils.enviarSimples(from, 'Ok, sem foto! ✅');
-    Utilities.sleep(500);
-    this.mostrarResumo(from);
-  },
+  //Utilities.sleep(1000);
+  //this.mostrarResumo(from);
 
   // ==========================================================================
   // RESUMO E FINALIZAÇÃO

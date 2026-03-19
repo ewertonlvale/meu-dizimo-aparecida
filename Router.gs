@@ -106,7 +106,6 @@ const Router = {
       'btn_numero_confirmar':   'Confirmar número',
       'btn_numero_cancelar':    'Cancelar número',
       'btn_foto_sim':           'Enviar foto: Sim',
-      'btn_foto_pular':         'Enviar foto: Pular',
       'btn_confirmar_cadastro': 'Confirmar cadastro',
       'btn_cancelar_cadastro':  'Cancelar cadastro',
       'btn_notificacao_sim':    'Notificação: Sim',
@@ -141,7 +140,6 @@ const Router = {
       case 'btn_numero_confirmar':   CadastroHandler.confirmarNumero(from);   break;
       case 'btn_numero_cancelar':    CadastroHandler.cancelar(from);          break;
       case 'btn_foto_sim':           CadastroHandler.solicitarFoto(from);     break;
-      case 'btn_foto_pular':         CadastroHandler.pularFoto(from);         break;
       case 'btn_confirmar_cadastro': CadastroHandler.finalizar(from);         break;
       case 'btn_cancelar_cadastro':  CadastroHandler.cancelar(from);          break;
 

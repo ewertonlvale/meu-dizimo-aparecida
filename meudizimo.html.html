@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Dízimo Aparecida — Pastoral do Dízimo Digital</title>
+    <meta name="description" content="Meu Dízimo Aparecida — Assistente digital da Pastoral do Dízimo da Paróquia Nossa Senhora Aparecida. Cadastro, contribuições via PIX e acompanhamento pelo WhatsApp.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --gold: #d4a843;
+            --gold-light: #f0d078;
+            --gold-dark: #a07c2e;
+            --cream: #faf6ed;
+            --cream-dark: #f0e8d6;
+            --brown: #3d2e1e;
+            --brown-light: #5c4a36;
+            --brown-dim: #8a7560;
+            --green-whatsapp: #25d366;
+            --green-dark: #128c7e;
+            --white: #ffffff;
+            --shadow: rgba(61, 46, 30, 0.08);
+            --shadow-strong: rgba(61, 46, 30, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--cream);
+            color: var(--brown);
+            overflow-x: hidden;
+            line-height: 1.7;
+        }
+
+        /* Subtle pattern background */
+        .pattern-bg {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.03;
+            background-image: radial-gradient(circle at 1px 1px, var(--brown) 1px, transparent 0);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        header {
+            padding: 2rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .brand-icon {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            box-shadow: 0 4px 16px rgba(212, 168, 67, 0.3);
+        }
+
+        .brand-text h1 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--brown);
+            line-height: 1.1;
+        }
+
+        .brand-text span {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: var(--brown-dim);
+            letter-spacing: 0.5px;
+        }
+
+        .header-badge {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 100px;
+            padding: 0.5rem 1.2rem;
+            font-size: 0.8rem;
+            color: var(--brown-dim);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header-badge .dot {
+            width: 8px; height: 8px;
+            background: var(--green-whatsapp);
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Hero */
+        .hero {
+            padding: 4rem 0 3rem;
+            text-align: center;
+        }
+
+        .hero-label {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--gold), var(--gold-light));
+            color: var(--brown);
+            font-weight: 600;
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 0.5rem 1.5rem;
+            border-radius: 100px;
+            margin-bottom: 2rem;
+        }
+
+        .hero h2 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 3.2rem;
+            font-weight: 800;
+            line-height: 1.15;
+            color: var(--brown);
+            margin-bottom: 1.5rem;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .hero h2 em {
+            font-style: normal;
+            color: var(--gold-dark);
+        }
+
+        .hero p {
+            font-size: 1.15rem;
+            color: var(--brown-dim);
+            max-width: 560px;
+            margin: 0 auto 2.5rem;
+            font-weight: 300;
+        }
+
+        .cta-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 1rem 2rem;
+            border-radius: 14px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--green-whatsapp);
+            color: var(--white);
+            box-shadow: 0 4px 20px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 28px rgba(37, 211, 102, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--white);
+            color: var(--brown);
+            border: 1px solid var(--cream-dark);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px var(--shadow);
+        }
+
+        /* Features */
+        .features {
+            padding: 3rem 0 4rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 18px;
+            padding: 2rem 1.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px var(--shadow);
+            border-color: var(--gold);
+        }
+
+        .feature-icon {
+            width: 48px; height: 48px;
+            background: var(--cream);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .feature-card h3 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 0.6rem;
+        }
+
+        .feature-card p {
+            font-size: 0.9rem;
+            color: var(--brown-dim);
+            line-height: 1.6;
+        }
+
+        /* How it works */
+        .how-it-works {
+            padding: 4rem 0;
+        }
+
+        .section-label {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .section-sub {
+            text-align: center;
+            color: var(--brown-dim);
+            font-size: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            position: relative;
+        }
+
+        .steps::before {
+            content: '';
+            position: absolute;
+            top: 32px;
+            left: 15%;
+            right: 15%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold));
+            z-index: 0;
+        }
+
+        .step {
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step-number {
+            width: 64px; height: 64px;
+            background: var(--white);
+            border: 2px solid var(--gold);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--gold-dark);
+            margin: 0 auto 1.2rem;
+            box-shadow: 0 4px 16px var(--shadow);
+        }
+
+        .step h4 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+
+        .step p {
+            font-size: 0.85rem;
+            color: var(--brown-dim);
+        }
+
+        /* About / Parish info */
+        .about {
+            padding: 4rem 0;
+        }
+
+        .about-card {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 20px;
+            padding: 3rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: center;
+        }
+
+        .about-content h3 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .about-content p {
+            color: var(--brown-dim);
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }
+
+        .about-details {
+            background: var(--cream);
+            border-radius: 16px;
+            padding: 2rem;
+        }
+
+        .detail-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(61, 46, 30, 0.06);
+        }
+
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .detail-item .d-icon {
+            font-size: 1.2rem;
+            margin-top: 2px;
+        }
+
+        .detail-item strong {
+            display: block;
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 0.9rem;
+            margin-bottom: 0.1rem;
+        }
+
+        .detail-item span {
+            font-size: 0.85rem;
+            color: var(--brown-dim);
+        }
+
+        /* Footer */
+        footer {
+            padding: 3rem 0;
+            text-align: center;
+            border-top: 1px solid var(--cream-dark);
+            margin-top: 2rem;
+        }
+
+        footer p {
+            color: var(--brown-dim);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--gold-dark);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-brand {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--brown);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h2 { font-size: 2.2rem; }
+            .features-grid { grid-template-columns: 1fr; }
+            .steps {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+            .steps::before { display: none; }
+            .about-card {
+                grid-template-columns: 1fr;
+                padding: 2rem;
+            }
+            .header-badge { display: none; }
+            .brand-text h1 { font-size: 1.3rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="pattern-bg"></div>
+
+    <div class="container">
+        <header>
+            <div class="brand">
+                <div class="brand-icon">⛪</div>
+                <div class="brand-text">
+                    <h1>Meu Dízimo Aparecida</h1>
+                    <span>Pastoral do Dízimo Digital</span>
+                </div>
+            </div>
+            <div class="header-badge">
+                <span class="dot"></span> Disponível no WhatsApp
+            </div>
+        </header>
+
+        <section class="hero">
+            <div class="hero-label">✦ Pastoral do Dízimo ✦</div>
+            <h2>Sua contribuição com a <em>Paróquia Aparecida</em>, direto pelo WhatsApp</h2>
+            <p>
+                O Meu Dízimo Aparecida é o assistente digital da Pastoral do Dízimo.
+                Cadastre-se, contribua via PIX e acompanhe tudo pelo celular.
+            </p>
+            <div class="cta-group">
+                <a href="#" class="btn btn-primary">💬 Falar no WhatsApp</a>
+                <a href="#como-funciona" class="btn btn-secondary">Como funciona</a>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📋</div>
+                    <h3>Cadastro Simples</h3>
+                    <p>Faça seu cadastro como dizimista diretamente pelo WhatsApp, em poucos minutos e sem burocracia.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💰</div>
+                    <h3>Contribuição via PIX</h3>
+                    <p>Envie sua contribuição por PIX e registre o comprovante pelo próprio chat. Rápido e seguro.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Acompanhamento</h3>
+                    <p>Consulte seu histórico de contribuições e receba lembretes mensais com carinho e cuidado.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="how-it-works" id="como-funciona">
+            <h3 class="section-label">Como funciona</h3>
+            <p class="section-sub">Três passos simples para começar a contribuir</p>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Inicie a conversa</h4>
+                    <p>Envie um "Oi" para o nosso número no WhatsApp</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>Faça seu cadastro</h4>
+                    <p>Informe seus dados e escolha sua comunidade</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>Contribua via PIX</h4>
+                    <p>Receba a chave PIX, faça o pagamento e envie o comprovante</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="about">
+            <div class="about-card">
+                <div class="about-content">
+                    <h3>Sobre o Meu Dízimo Aparecida</h3>
+                    <p>
+                        O <strong>Meu Dízimo Aparecida</strong> é uma iniciativa da Pastoral do Dízimo
+                        da Paróquia Nossa Senhora Aparecida para facilitar a contribuição dos fiéis
+                        por meio da tecnologia.
+                    </p>
+                    <p>
+                        Com o assistente virtual pelo WhatsApp, dizimistas de todas as comunidades
+                        podem se cadastrar, contribuir e acompanhar suas devoluções de forma prática,
+                        segura e acessível — seja jovem, adulto ou idoso.
+                    </p>
+                    <p>
+                        Solução desenvolvida por <a href="https://ewertonlvale.github.io/lealtech/" style="color: var(--gold-dark); font-weight: 600;">Leal Tech Solutions</a>.
+                    </p>
+                </div>
+                <div class="about-details">
+                    <div class="detail-item">
+                        <span class="d-icon">⛪</span>
+                        <div>
+                            <strong>Paróquia</strong>
+                            <span>Nossa Senhora Aparecida</span>
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <span class="d-icon">💛</span>
+                        <div>
+                            <strong>Pastoral</strong>
+                            <span>Pastoral do Dízimo</span>
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <span class="d-icon">📱</span>
+                        <div>
+                            <strong>Canal</strong>
+                            <span>WhatsApp Business</span>
+                        </div>
+                    </div>
+                    <div class="detail-item">
+                        <span class="d-icon">🔒</span>
+                        <div>
+                            <strong>Segurança</strong>
+                            <span>Dados protegidos e criptografados</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <div class="footer-brand">Meu Dízimo Aparecida</div>
+            <p>Assistente digital da Pastoral do Dízimo — Paróquia Nossa Senhora Aparecida</p>
+            <p style="margin-top: 0.8rem;">
+                Desenvolvido por <a href="https://ewertonlvale.github.io/lealtech/">Leal Tech Solutions</a>
+                · © 2026
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

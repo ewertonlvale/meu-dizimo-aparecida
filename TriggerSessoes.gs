@@ -28,56 +28,65 @@
 function verificarSessoesAbandonadas() {
   console.log('🔄 [Trigger] Verificando sessões abandonadas...');
 
-  const cache    = CacheService.getScriptCache();
-  const sessoes  = StateManager.getSessoesAtivas();
+  try {
+    // Garante que o OAuth seja exercitado mesmo se não houver sessões
+    ScriptApp.getOAuthToken();
 
-  if (sessoes.length === 0) {
-    console.log('✅ [Trigger] Nenhuma sessão ativa');
-    return;
-  }
+    const cache   = CacheService.getScriptCache();
+    const sessoes = StateManager.getSessoesAtivas();
 
-  console.log(`📋 [Trigger] ${sessoes.length} sessão(ões) ativa(s)`);
-
-  let persistidas = 0;
-  let avisadas    = 0;
-
-  sessoes.forEach(from => {
-    const inicio = cache.get(`sessao_inicio_${from}`);
-
-    // Sessão já expirou do cache → limpar da lista
-    if (!inicio) {
-      console.log(`🗑️ [Trigger] Sessão de ${from} já expirou do cache`);
-
-      // Tenta persistir mesmo sem timestamp (log e estado podem ainda existir)
-      _tentarPersistir(from, cache);
-      StateManager.limparDados(from);
-      persistidas++;
+    if (sessoes.length === 0) {
+      console.log('✅ [Trigger] Nenhuma sessão ativa');
       return;
     }
 
-    const minutosDecorridos = (Date.now() - parseInt(inicio)) / 60000;
+    console.log(`📋 [Trigger] ${sessoes.length} sessão(ões) ativa(s)`);
 
-    // ≥ 55 min: persiste e limpa (vai expirar em breve)
-    if (minutosDecorridos >= 15) {
-      console.log(`⏰ [Trigger] Sessão de ${from} com ${Math.floor(minutosDecorridos)} min — persistindo`);
-      _tentarPersistir(from, cache);
-      StateManager.limparDados(from);
-      persistidas++;
-      return;
-    }
+    let persistidas = 0;
+    let avisadas    = 0;
 
-    // ≥ 50 min: envia aviso se ainda não enviou
-    if (minutosDecorridos >= 10) {
-      const jaAvisado = cache.get(`aviso_sessao_${from}`);
-      if (!jaAvisado) {
-        console.log(`⚠️ [Trigger] Enviando aviso de expiração para ${from}`);
-        StateManager.verificarExpiracaoSessao(from, StateManager.getEstado(from));
-        avisadas++;
+    sessoes.forEach(from => {
+      try {
+        const inicio = cache.get(`sessao_inicio_${from}`);
+
+        if (!inicio) {
+          console.log(`🗑️ [Trigger] Sessão de ${from} já expirou do cache`);
+          _tentarPersistir(from, cache);
+          StateManager.limparDados(from);
+          persistidas++;
+          return;
+        }
+
+        const minutosDecorridos = (Date.now() - parseInt(inicio)) / 60000;
+
+        if (minutosDecorridos >= 15) {
+          console.log(`⏰ [Trigger] Sessão de ${from} com ${Math.floor(minutosDecorridos)} min — persistindo`);
+          _tentarPersistir(from, cache);
+          StateManager.limparDados(from);
+          persistidas++;
+          return;
+        }
+
+        if (minutosDecorridos >= 10) {
+          const jaAvisado = cache.get(`aviso_sessao_${from}`);
+          if (!jaAvisado) {
+            console.log(`⚠️ [Trigger] Enviando aviso de expiração para ${from}`);
+            StateManager.verificarExpiracaoSessao(from, StateManager.getEstado(from));
+            avisadas++;
+          }
+        }
+      } catch (eInner) {
+        console.warn(`⚠️ [Trigger] Erro ao processar sessão ${from}:`, eInner.message);
+        // Não relança — continua processando as demais sessões
       }
-    }
-  });
+    });
 
-  console.log(`✅ [Trigger] Concluído: ${persistidas} persistida(s), ${avisadas} avisada(s)`);
+    console.log(`✅ [Trigger] Concluído: ${persistidas} persistida(s), ${avisadas} avisada(s)`);
+
+  } catch (e) {
+    // Erro geral — loga mas NÃO relança para o GAS não contar como falha
+    console.error('❌ [Trigger] Erro geral em verificarSessoesAbandonadas:', e.message);
+  }
 }
 
 /**

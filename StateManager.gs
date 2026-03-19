@@ -241,14 +241,14 @@ const StateManager = {
     const cacheKey = `contato_${from}`;
 
     // Cache hit → já conhecido, sem chamada HTTP
-    if (cache.get(cacheKey)) return false;
+    //if (cache.get(cacheKey)) return false;
 
     try {
       const contato = OdooService.buscarContatoBot(from);
 
       if (contato) {
         // Existe no Odoo → cachear e retornar false
-        cache.put(cacheKey, '1', 21600); // 6 horas
+        //cache.put(cacheKey, '1', 21600); // 6 horas
         return false;
       }
 
