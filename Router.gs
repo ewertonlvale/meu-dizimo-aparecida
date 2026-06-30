@@ -116,20 +116,7 @@ const Router = {
 
     if (botoesLogaveis[buttonId]) {
       const estado = StateManager.getEstado(from);
-      const estadosCadastro = [
-        ESTADOS.AGUARDANDO_CONFIRMACAO_NUMERO,
-        ESTADOS.AGUARDANDO_COMUNIDADE,
-        ESTADOS.AGUARDANDO_NOME,
-        ESTADOS.AGUARDANDO_NOME_USUAL,
-        ESTADOS.AGUARDANDO_DATA_NASCIMENTO,
-        ESTADOS.AGUARDANDO_ENDERECO,
-        ESTADOS.AGUARDANDO_VALOR_MENSAL,
-        ESTADOS.AGUARDANDO_NOTIFICACAO,
-        ESTADOS.AGUARDANDO_DIA_PREFERIDO,
-        ESTADOS.AGUARDANDO_FOTO_PERFIL
-      ];
-
-      if (estadosCadastro.includes(estado)) {
+      if (ESTADOS_CADASTRO.includes(estado)) {
         StateManager.appendLog(from, botoesLogaveis[buttonId]);
       }
     }
@@ -212,20 +199,7 @@ const Router = {
     }
 
     // Verifica expiração de sessão e appenda log durante fluxo de cadastro
-    const estadosCadastro = [
-      ESTADOS.AGUARDANDO_CONFIRMACAO_NUMERO,
-      ESTADOS.AGUARDANDO_COMUNIDADE,
-      ESTADOS.AGUARDANDO_NOME,
-      ESTADOS.AGUARDANDO_NOME_USUAL,
-      ESTADOS.AGUARDANDO_DATA_NASCIMENTO,
-      ESTADOS.AGUARDANDO_ENDERECO,
-      ESTADOS.AGUARDANDO_VALOR_MENSAL,
-      ESTADOS.AGUARDANDO_NOTIFICACAO,
-      ESTADOS.AGUARDANDO_DIA_PREFERIDO,
-      ESTADOS.AGUARDANDO_FOTO_PERFIL
-    ];
-
-    if (estadosCadastro.includes(estado)) {
+    if (ESTADOS_CADASTRO.includes(estado)) {
       StateManager.verificarExpiracaoSessao(from, estado);
       StateManager.appendLog(from, texto);
     }

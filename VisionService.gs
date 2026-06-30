@@ -77,12 +77,12 @@ const VisionService = {
         return null;
       }
 
-      console.log(`✅ [VisionService] Texto extraído (${textoCompleto.length} chars):`);
-      console.log(textoCompleto.substring(0, 300) + '...');
-      
+      // Não logar o conteúdo do OCR (contém dados financeiros/pessoais — LGPD)
+      console.log(`✅ [VisionService] Texto extraído (${textoCompleto.length} chars)`);
+
       const dadosExtraidos = this._extrairDados(textoCompleto);
-      console.log('📊 [VisionService] Dados extraídos:', JSON.stringify(dadosExtraidos, null, 2));
-      
+      this._logResumoExtracao(dadosExtraidos);
+
       return dadosExtraidos;
 
     } catch (error) {
@@ -167,11 +167,11 @@ const VisionService = {
         return null;
       }
 
-      console.log(`✅ [VisionService] Texto extraído do PDF (${textoCompleto.length} chars):`);
-      console.log(textoCompleto.substring(0, 300) + '...');
+      // Não logar o conteúdo do OCR (contém dados financeiros/pessoais — LGPD)
+      console.log(`✅ [VisionService] Texto extraído do PDF (${textoCompleto.length} chars)`);
 
       const dadosExtraidos = this._extrairDados(textoCompleto);
-      console.log('📊 [VisionService] Dados extraídos do PDF:', JSON.stringify(dadosExtraidos, null, 2));
+      this._logResumoExtracao(dadosExtraidos);
 
       return dadosExtraidos;
 
@@ -196,13 +196,23 @@ const VisionService = {
       tipo:         this._extrairTipoTransacao(texto),
       textoCompleto: texto
     };
-    
-    console.log(`   Valor: ${dados.valor || 'não encontrado'}`);
-    console.log(`   Data: ${dados.data || 'não encontrada'}`);
-    console.log(`   Tipo: ${dados.tipo}`);
-    console.log(`   Banco: ${dados.banco || 'não encontrado'}`);
-    
+
     return dados;
+  },
+
+  /**
+   * Loga apenas a PRESENÇA dos campos extraídos (sim/não), nunca os valores.
+   * Evita expor valores, datas e chaves PIX nos logs (LGPD).
+   * @private
+   */
+  _logResumoExtracao(dados) {
+    if (!dados) return;
+    console.log('📊 [VisionService] Resumo da extração: ' +
+      `valor=${dados.valor != null ? 'sim' : 'não'}, ` +
+      `data=${dados.data ? 'sim' : 'não'}, ` +
+      `tipo=${dados.tipo}, ` +
+      `banco=${dados.banco ? 'sim' : 'não'}, ` +
+      `chavePix=${dados.chavePix ? 'sim' : 'não'}`);
   },
 
   _extrairValor(texto) {
@@ -218,7 +228,7 @@ const VisionService = {
         const valorStr = match[1].replace(/\./g, '').replace(',', '.');
         const valor = parseFloat(valorStr);
         if (!isNaN(valor) && valor > 0) {
-          console.log(`   ✓ Valor encontrado: R$ ${valor}`);
+          console.log('   ✓ Valor encontrado');
           return valor;
         }
       }
@@ -237,7 +247,7 @@ const VisionService = {
     for (const padrao of padroes) {
       const match = texto.match(padrao);
       if (match) {
-        console.log(`   ✓ Data encontrada: ${match[0]}`);
+        console.log('   ✓ Data encontrada');
         return match[0];
       }
     }

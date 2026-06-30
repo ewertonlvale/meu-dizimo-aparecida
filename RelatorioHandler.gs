@@ -41,6 +41,10 @@ const RelatorioHandler = {
   // Limite seguro de caracteres por mensagem WhatsApp
   LIMITE_CHARS: 3800,
 
+  // Rate limiting do acesso ao relatório
+  MAX_TENTATIVAS: 3,   // tentativas de código antes do bloqueio
+  BLOQUEIO_MIN:   30,  // minutos de bloqueio após exceder as tentativas
+
   // ==========================================================================
   // 1. VERIFICAÇÃO DE NÚMERO AUTORIZADO
   // ==========================================================================
@@ -164,8 +168,8 @@ const RelatorioHandler = {
     );
 
     // Informar tentativas restantes se já errou antes
-    const tentativas = parseInt(cache.get(`tentativas_relatorio_${from}`) || '0');
-    const restantes  = 3 - tentativas;
+    const tentativas = parseInt(cache.get(`tentativas_relatorio_${from}`) || '0', 10);
+    const restantes  = this.MAX_TENTATIVAS - tentativas;
 
     let mensagem = `🔐 *Acesso ao Relatório*\n\n` +
                    `Olá! Seu número foi reconhecido.\n\n` +
@@ -214,15 +218,40 @@ const RelatorioHandler = {
     }
 
     if (codigoFornecido.toLowerCase() !== codigoEsperado.toLowerCase()) {
-      console.log(`🔒 Código inválido para ${from}. Fornecido: "${codigoFornecido}"`);
-      // Limpa tudo por segurança — não dá nova tentativa
+      // Rate limiting real: conta a tentativa e bloqueia ao atingir o máximo.
+      // NÃO logar a senha tentada (dado sensível).
+      const cache = CacheService.getScriptCache();
+      const tentativas = parseInt(cache.get(`tentativas_relatorio_${from}`) || '0', 10) + 1;
+      const restantes  = RelatorioHandler.MAX_TENTATIVAS - tentativas;
+
+      console.log(`🔒 Código inválido para ${from} (tentativa ${tentativas}/${RelatorioHandler.MAX_TENTATIVAS})`);
+
+      // Limpa a sessão por segurança (mantém os contadores, que têm chave própria)
       StateManager.limparDados(from);
+
+      if (tentativas >= RelatorioHandler.MAX_TENTATIVAS) {
+        const desbloqueioEm = Date.now() + RelatorioHandler.BLOQUEIO_MIN * 60000;
+        cache.put(`bloqueio_relatorio_${from}`, String(desbloqueioEm), RelatorioHandler.BLOQUEIO_MIN * 60);
+        cache.remove(`tentativas_relatorio_${from}`);
+        Utils.enviarSimples(from,
+          `🔒 *Acesso temporariamente bloqueado*\n\n` +
+          `Você excedeu o número de tentativas.\n\n` +
+          `Tente novamente em aproximadamente *${RelatorioHandler.BLOQUEIO_MIN} minutos*.`
+        );
+        return;
+      }
+
+      cache.put(`tentativas_relatorio_${from}`, String(tentativas), RelatorioHandler.BLOQUEIO_MIN * 60);
       Utils.enviarSimples(from,
         `❌ *Código inválido.*\n\n` +
-        `O acesso foi negado. Se precisar de ajuda, entre em contato com a secretaria.`
+        `Você tem *${restantes}* tentativa(s) restante(s).\n\n` +
+        `Envie *relatório* para tentar novamente.`
       );
       return;
     }
+
+    // Código correto → zera o contador de tentativas e segue
+    CacheService.getScriptCache().remove(`tentativas_relatorio_${from}`);
 
     // Código correto → montar perfil definitivo e mostrar menu
     const acesso = {
@@ -419,7 +448,7 @@ const RelatorioHandler = {
       const devAnt      = devolucoesAnt.filter(dev => idsEscopo.has(this._dizimistaId(dev)));
 
       // ── Mensagem 1: Cabeçalho ──────────────────────────────────────────────
-      const agora = Utilities.formatDate(new Date(), 'America/Fortaleza', 'dd/MM/yyyy HH:mm');
+      const agora = Utilities.formatDate(new Date(), TIMEZONE, 'dd/MM/yyyy HH:mm');
       const escopoTexto = acesso.tipoAcesso === 'admin'
         ? '🏛️ Todas as Comunidades'
         : `⛪ ${acesso.comunidadeNome}`;

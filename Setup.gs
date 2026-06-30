@@ -36,6 +36,11 @@ function setupProperties() {
     'WHATSAPP_TOKEN': 'COLE_SEU_TOKEN_AQUI',
     'WHATSAPP_PHONE_ID': 'COLE_SEU_PHONE_ID_AQUI',
     'VERIFY_TOKEN': 'meu_dizimo_2024',
+
+    // Segredo do webhook: string aleatória e secreta. Depois de salvar, configure
+    // a URL de callback na Meta como: https://.../exec?token=ESTE_VALOR
+    // (Apps Script não expõe headers, então autenticamos pela query string.)
+    'WEBHOOK_SECRET': 'COLE_UM_SEGREDO_ALEATORIO_AQUI',
     
     // ==========================================
     // Odoo ERP
@@ -123,6 +128,7 @@ function verificarProperties() {
   const propriedadesNecessarias = [
     'WHATSAPP_TOKEN',
     'WHATSAPP_PHONE_ID',
+    'WEBHOOK_SECRET',
     'GOOGLE_VISION_API_KEY',
     'ODOO_URL',
     'ODOO_DATABASE',

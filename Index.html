@@ -3,21 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leal Tech Solutions - ERP Odoo & Automação de Chatbots</title>
+    <title>Meu Dízimo Aparecida — Pastoral do Dízimo Digital</title>
+    <meta name="description" content="Meu Dízimo Aparecida — Assistente digital da Pastoral do Dízimo da Paróquia Nossa Senhora Aparecida. Cadastro, contribuições via PIX e acompanhamento pelo WhatsApp.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=IBM+Plex+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary: #00ff88;
-            --secondary: #00d4ff;
-            --dark: #0a0e27;
-            --darker: #050714;
-            --text: #e0e6ed;
-            --text-dim: #8892a6;
-            --accent: #ff0080;
             --gold: #d4a843;
             --gold-light: #f0d078;
+            --gold-dark: #a07c2e;
+            --cream: #faf6ed;
+            --cream-dark: #f0e8d6;
+            --brown: #3d2e1e;
+            --brown-light: #5c4a36;
+            --brown-dim: #8a7560;
+            --green-whatsapp: #25d366;
+            --green-dark: #128c7e;
+            --white: #ffffff;
+            --shadow: rgba(61, 46, 30, 0.08);
+            --shadow-strong: rgba(61, 46, 30, 0.15);
         }
 
         * {
@@ -27,36 +32,27 @@
         }
 
         body {
-            font-family: 'IBM Plex Mono', monospace;
-            background: var(--darker);
-            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            background: var(--cream);
+            color: var(--brown);
             overflow-x: hidden;
-            line-height: 1.6;
+            line-height: 1.7;
         }
 
-        /* Animated background grid */
-        .grid-bg {
+        /* Subtle pattern background */
+        .pattern-bg {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
-            background-size: 50px 50px;
-            animation: gridMove 20s linear infinite;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.03;
+            background-image: radial-gradient(circle at 1px 1px, var(--brown) 1px, transparent 0);
+            background-size: 40px 40px;
             pointer-events: none;
             z-index: 0;
         }
 
-        @keyframes gridMove {
-            0% { transform: translate(0, 0); }
-            100% { transform: translate(50px, 50px); }
-        }
-
         .container {
-            max-width: 1200px;
+            max-width: 960px;
             margin: 0 auto;
             padding: 0 2rem;
             position: relative;
@@ -65,679 +61,516 @@
 
         /* Header */
         header {
-            padding: 3rem 0;
-            border-bottom: 1px solid rgba(0, 255, 136, 0.2);
-            position: relative;
-        }
-
-        .logo {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2.5rem;
-            font-weight: 900;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            display: inline-block;
-            animation: glowPulse 3s ease-in-out infinite;
-            letter-spacing: 2px;
-        }
-
-        @keyframes glowPulse {
-            0%, 100% { filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.5)); }
-            50% { filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.8)); }
-        }
-
-        .tagline {
-            color: var(--text-dim);
-            font-size: 0.95rem;
-            margin-top: 0.5rem;
-            letter-spacing: 1px;
-        }
-
-        /* Hero Section */
-        .hero {
-            padding: 5rem 0;
-            text-align: center;
-        }
-
-        .hero h1 {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 3.5rem;
-            font-weight: 700;
-            margin-bottom: 1.5rem;
-            line-height: 1.2;
-            animation: fadeInUp 0.8s ease-out;
-        }
-
-        .hero h1 span {
-            color: var(--primary);
-            display: block;
-            font-size: 2rem;
-            margin-top: 0.5rem;
-        }
-
-        .hero p {
-            font-size: 1.2rem;
-            color: var(--text-dim);
-            max-width: 700px;
-            margin: 0 auto 2rem;
-            animation: fadeInUp 0.8s ease-out 0.2s backwards;
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Services Grid */
-        .services {
-            padding: 5rem 0;
-        }
-
-        .section-title {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2.5rem;
-            text-align: center;
-            margin-bottom: 4rem;
-            position: relative;
-        }
-
-        .section-title::after {
-            content: '';
-            display: block;
-            width: 100px;
-            height: 3px;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-            margin: 1rem auto;
-            animation: expandLine 1s ease-out;
-        }
-
-        @keyframes expandLine {
-            from { width: 0; }
-            to { width: 100px; }
-        }
-
-        .services-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
-        }
-
-        .service-card {
-            background: var(--dark);
-            border: 1px solid rgba(0, 255, 136, 0.2);
-            padding: 2.5rem;
-            border-radius: 8px;
-            position: relative;
-            overflow: hidden;
-            transition: all 0.4s ease;
-            animation: fadeInUp 0.8s ease-out backwards;
-        }
-
-        .service-card:nth-child(1) { animation-delay: 0.1s; }
-        .service-card:nth-child(2) { animation-delay: 0.2s; }
-
-        .service-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 3px;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-            transform: scaleX(0);
-            transform-origin: left;
-            transition: transform 0.4s ease;
-        }
-
-        .service-card:hover::before {
-            transform: scaleX(1);
-        }
-
-        .service-card:hover {
-            transform: translateY(-8px);
-            border-color: var(--primary);
-            box-shadow: 0 10px 40px rgba(0, 255, 136, 0.15);
-        }
-
-        .service-icon {
-            font-size: 3rem;
-            margin-bottom: 1.5rem;
-            display: inline-block;
-        }
-
-        .service-card h3 {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            color: var(--primary);
-        }
-
-        .service-card p {
-            color: var(--text-dim);
-            line-height: 1.8;
-            margin-bottom: 1.5rem;
-        }
-
-        .service-card ul {
-            list-style: none;
-            padding: 0;
-        }
-
-        .service-card ul li {
-            padding: 0.5rem 0;
-            color: var(--text);
-            position: relative;
-            padding-left: 1.5rem;
-        }
-
-        .service-card ul li::before {
-            content: '▹';
-            position: absolute;
-            left: 0;
-            color: var(--primary);
-            font-size: 1.2rem;
-        }
-
-        /* Projects Section */
-        .projects {
-            padding: 5rem 0;
-        }
-
-        .project-card {
-            background: var(--dark);
-            border: 1px solid rgba(212, 168, 67, 0.3);
-            border-radius: 12px;
-            overflow: hidden;
-            transition: all 0.4s ease;
-            animation: fadeInUp 0.8s ease-out 0.1s backwards;
-        }
-
-        .project-card:hover {
-            transform: translateY(-6px);
-            border-color: var(--gold);
-            box-shadow: 0 10px 40px rgba(212, 168, 67, 0.15);
-        }
-
-        .project-card-inner {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0;
-        }
-
-        .project-info {
-            padding: 3rem;
-        }
-
-        .project-badge {
-            display: inline-block;
-            background: rgba(212, 168, 67, 0.15);
-            color: var(--gold-light);
-            font-size: 0.7rem;
-            font-weight: 600;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            padding: 0.4rem 1rem;
-            border-radius: 100px;
-            border: 1px solid rgba(212, 168, 67, 0.3);
-            margin-bottom: 1.5rem;
-        }
-
-        .project-info h3 {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.8rem;
-            color: var(--gold-light);
-            margin-bottom: 0.3rem;
-        }
-
-        .project-info .project-sub {
-            color: var(--text-dim);
-            font-size: 0.9rem;
-            margin-bottom: 1.2rem;
-        }
-
-        .project-info p {
-            color: var(--text-dim);
-            line-height: 1.8;
-            margin-bottom: 1.5rem;
-            font-size: 0.95rem;
-        }
-
-        .project-tags {
+            padding: 2rem 0;
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .project-tags span {
-            background: rgba(0, 255, 136, 0.08);
-            border: 1px solid rgba(0, 255, 136, 0.2);
-            color: var(--primary);
-            font-size: 0.75rem;
-            padding: 0.3rem 0.8rem;
-            border-radius: 6px;
-        }
-
-        .project-link {
-            display: inline-flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 0.6rem;
-            color: var(--gold-light);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.95rem;
-            transition: all 0.3s ease;
-            border-bottom: 1px solid transparent;
         }
 
-        .project-link:hover {
-            color: var(--gold);
-            border-bottom-color: var(--gold);
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
 
-        .project-preview {
-            background: linear-gradient(135deg, rgba(212, 168, 67, 0.08), rgba(212, 168, 67, 0.03));
+        .brand-icon {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 3rem;
-            position: relative;
-            overflow: hidden;
+            font-size: 1.6rem;
+            box-shadow: 0 4px 16px rgba(212, 168, 67, 0.3);
         }
 
-        .project-preview::before {
+        .brand-text h1 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--brown);
+            line-height: 1.1;
+        }
+
+        .brand-text span {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: var(--brown-dim);
+            letter-spacing: 0.5px;
+        }
+
+        .header-badge {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 100px;
+            padding: 0.5rem 1.2rem;
+            font-size: 0.8rem;
+            color: var(--brown-dim);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header-badge .dot {
+            width: 8px; height: 8px;
+            background: var(--green-whatsapp);
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Hero */
+        .hero {
+            padding: 4rem 0 3rem;
+            text-align: center;
+        }
+
+        .hero-label {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--gold), var(--gold-light));
+            color: var(--brown);
+            font-weight: 600;
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 0.5rem 1.5rem;
+            border-radius: 100px;
+            margin-bottom: 2rem;
+        }
+
+        .hero h2 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 3.2rem;
+            font-weight: 800;
+            line-height: 1.15;
+            color: var(--brown);
+            margin-bottom: 1.5rem;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .hero h2 em {
+            font-style: normal;
+            color: var(--gold-dark);
+        }
+
+        .hero p {
+            font-size: 1.15rem;
+            color: var(--brown-dim);
+            max-width: 560px;
+            margin: 0 auto 2.5rem;
+            font-weight: 300;
+        }
+
+        .cta-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 1rem 2rem;
+            border-radius: 14px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--green-whatsapp);
+            color: var(--white);
+            box-shadow: 0 4px 20px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 28px rgba(37, 211, 102, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--white);
+            color: var(--brown);
+            border: 1px solid var(--cream-dark);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px var(--shadow);
+        }
+
+        /* Features */
+        .features {
+            padding: 3rem 0 4rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 18px;
+            padding: 2rem 1.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px var(--shadow);
+            border-color: var(--gold);
+        }
+
+        .feature-icon {
+            width: 48px; height: 48px;
+            background: var(--cream);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .feature-card h3 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 0.6rem;
+        }
+
+        .feature-card p {
+            font-size: 0.9rem;
+            color: var(--brown-dim);
+            line-height: 1.6;
+        }
+
+        /* How it works */
+        .how-it-works {
+            padding: 4rem 0;
+        }
+
+        .section-label {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .section-sub {
+            text-align: center;
+            color: var(--brown-dim);
+            font-size: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            position: relative;
+        }
+
+        .steps::before {
             content: '';
             position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background-image: radial-gradient(circle at 1px 1px, rgba(212, 168, 67, 0.06) 1px, transparent 0);
-            background-size: 24px 24px;
+            top: 32px;
+            left: 15%;
+            right: 15%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold));
+            z-index: 0;
         }
 
-        .preview-mockup {
-            background: rgba(5, 7, 20, 0.7);
-            border: 1px solid rgba(212, 168, 67, 0.2);
-            border-radius: 16px;
-            padding: 2rem;
-            width: 100%;
-            max-width: 300px;
+        .step {
             text-align: center;
             position: relative;
             z-index: 1;
         }
 
-        .mockup-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .mockup-title {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1rem;
-            color: var(--gold-light);
-            margin-bottom: 0.3rem;
-        }
-
-        .mockup-sub {
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            margin-bottom: 1.5rem;
-        }
-
-        .mockup-features {
-            text-align: left;
-        }
-
-        .mockup-features div {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            padding: 0.5rem 0;
-            font-size: 0.8rem;
-            color: var(--text);
-        }
-
-        .mockup-features .mf-dot {
-            width: 6px; height: 6px;
-            background: var(--gold);
+        .step-number {
+            width: 64px; height: 64px;
+            background: var(--white);
+            border: 2px solid var(--gold);
             border-radius: 50%;
-            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--gold-dark);
+            margin: 0 auto 1.2rem;
+            box-shadow: 0 4px 16px var(--shadow);
         }
 
-        /* Technologies */
-        .technologies {
-            padding: 5rem 0;
-            background: rgba(10, 14, 39, 0.5);
+        .step h4 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
         }
 
-        .tech-grid {
+        .step p {
+            font-size: 0.85rem;
+            color: var(--brown-dim);
+        }
+
+        /* About / Parish info */
+        .about {
+            padding: 4rem 0;
+        }
+
+        .about-card {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 20px;
+            padding: 3rem;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 2rem;
-            margin-top: 3rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: center;
         }
 
-        .tech-item {
-            text-align: center;
-            padding: 2rem 1rem;
-            background: var(--dark);
-            border: 1px solid rgba(0, 212, 255, 0.2);
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            animation: fadeInUp 0.6s ease-out backwards;
-        }
-
-        .tech-item:nth-child(1) { animation-delay: 0.1s; }
-        .tech-item:nth-child(2) { animation-delay: 0.2s; }
-        .tech-item:nth-child(3) { animation-delay: 0.3s; }
-        .tech-item:nth-child(4) { animation-delay: 0.4s; }
-
-        .tech-item:hover {
-            transform: scale(1.05);
-            border-color: var(--secondary);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.2);
-        }
-
-        .tech-item .icon {
-            font-size: 3rem;
+        .about-content h3 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 800;
             margin-bottom: 1rem;
         }
 
-        .tech-item h4 {
-            font-family: 'Orbitron', sans-serif;
-            color: var(--secondary);
-            font-size: 1.1rem;
+        .about-content p {
+            color: var(--brown-dim);
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
         }
 
-        /* Contact Section */
-        .contact {
-            padding: 5rem 0;
-            text-align: center;
+        .about-details {
+            background: var(--cream);
+            border-radius: 16px;
+            padding: 2rem;
         }
 
-        .contact-info {
+        .detail-item {
             display: flex;
-            justify-content: center;
-            gap: 3rem;
-            margin-top: 3rem;
-            flex-wrap: wrap;
-        }
-
-        .contact-item {
-            display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 1rem;
-            padding: 1.5rem 2rem;
-            background: var(--dark);
-            border: 1px solid rgba(0, 255, 136, 0.2);
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            animation: fadeInUp 0.6s ease-out backwards;
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(61, 46, 30, 0.06);
         }
 
-        .contact-item:nth-child(1) { animation-delay: 0.1s; }
-        .contact-item:nth-child(2) { animation-delay: 0.2s; }
-
-        .contact-item:hover {
-            border-color: var(--primary);
-            transform: translateY(-5px);
-            box-shadow: 0 5px 20px rgba(0, 255, 136, 0.15);
+        .detail-item:last-child {
+            border-bottom: none;
         }
 
-        .contact-item .icon {
-            font-size: 2rem;
-            color: var(--primary);
+        .detail-item .d-icon {
+            font-size: 1.2rem;
+            margin-top: 2px;
         }
 
-        .contact-item a {
-            color: var(--text);
-            text-decoration: none;
-            font-family: 'Orbitron', sans-serif;
-            transition: color 0.3s ease;
+        .detail-item strong {
+            display: block;
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 0.9rem;
+            margin-bottom: 0.1rem;
         }
 
-        .contact-item a:hover {
-            color: var(--primary);
+        .detail-item span {
+            font-size: 0.85rem;
+            color: var(--brown-dim);
         }
 
         /* Footer */
         footer {
             padding: 3rem 0;
             text-align: center;
-            border-top: 1px solid rgba(0, 255, 136, 0.2);
-            margin-top: 5rem;
+            border-top: 1px solid var(--cream-dark);
+            margin-top: 2rem;
         }
 
         footer p {
-            color: var(--text-dim);
-            font-size: 0.9rem;
+            color: var(--brown-dim);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--gold-dark);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .footer-brand {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--brown);
+            margin-bottom: 0.5rem;
         }
 
         /* Responsive */
         @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.5rem;
-            }
-
-            .hero h1 span {
-                font-size: 1.5rem;
-            }
-
-            .services-grid {
+            .hero h2 { font-size: 2.2rem; }
+            .features-grid { grid-template-columns: 1fr; }
+            .steps {
                 grid-template-columns: 1fr;
-            }
-
-            .tech-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .contact-info {
-                flex-direction: column;
                 gap: 1.5rem;
             }
-
-            .logo {
-                font-size: 2rem;
-            }
-
-            .project-card-inner {
+            .steps::before { display: none; }
+            .about-card {
                 grid-template-columns: 1fr;
-            }
-
-            .project-preview {
                 padding: 2rem;
             }
-
-            .project-info {
-                padding: 2rem;
-            }
-
-            .project-info h3 {
-                font-size: 1.4rem;
-            }
-        }
-
-        /* Decorative elements */
-        .glow-orb {
-            position: fixed;
-            width: 500px;
-            height: 500px;
-            border-radius: 50%;
-            filter: blur(100px);
-            opacity: 0.15;
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        .glow-orb-1 {
-            background: var(--primary);
-            top: 10%;
-            right: -10%;
-            animation: float 15s ease-in-out infinite;
-        }
-
-        .glow-orb-2 {
-            background: var(--secondary);
-            bottom: 10%;
-            left: -10%;
-            animation: float 20s ease-in-out infinite reverse;
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0) scale(1); }
-            33% { transform: translate(30px, -30px) scale(1.1); }
-            66% { transform: translate(-20px, 20px) scale(0.9); }
+            .header-badge { display: none; }
+            .brand-text h1 { font-size: 1.3rem; }
         }
     </style>
 </head>
 <body>
-    <div class="grid-bg"></div>
-    <div class="glow-orb glow-orb-1"></div>
-    <div class="glow-orb glow-orb-2"></div>
+    <div class="pattern-bg"></div>
 
     <div class="container">
         <header>
-            <div class="logo">LEAL TECH</div>
-            <div class="tagline">// SOLUTIONS FOR TOMORROW</div>
+            <div class="brand">
+                <div class="brand-icon">⛪</div>
+                <div class="brand-text">
+                    <h1>Meu Dízimo Aparecida</h1>
+                    <span>Pastoral do Dízimo Digital</span>
+                </div>
+            </div>
+            <div class="header-badge">
+                <span class="dot"></span> Disponível no WhatsApp
+            </div>
         </header>
 
         <section class="hero">
-            <h1>
-                Transformando Processos
-                <span>em Soluções Inteligentes</span>
-            </h1>
+            <div class="hero-label">✦ Pastoral do Dízimo ✦</div>
+            <h2>Sua contribuição com a <em>Paróquia Aparecida</em>, direto pelo WhatsApp</h2>
             <p>
-                Especialistas em desenvolvimento de sistemas ERP com Odoo e automação de chatbots 
-                usando a API da Meta. Levamos tecnologia e eficiência para o seu negócio.
+                O Meu Dízimo Aparecida é o assistente digital da Pastoral do Dízimo.
+                Cadastre-se, contribua via PIX e acompanhe tudo pelo celular.
             </p>
+            <div class="cta-group">
+                <a href="#" class="btn btn-primary">💬 Falar no WhatsApp</a>
+                <a href="#como-funciona" class="btn btn-secondary">Como funciona</a>
+            </div>
         </section>
 
-        <section class="services">
-            <h2 class="section-title">Nossos Serviços</h2>
-            <div class="services-grid">
-                <div class="service-card">
-                    <div class="service-icon">🔧</div>
-                    <h3>Desenvolvimento ERP Odoo</h3>
-                    <p>Implementação e customização completa de sistemas ERP utilizando o framework Odoo, adaptado às necessidades específicas do seu negócio.</p>
-                    <ul>
-                        <li>Desenvolvimento de módulos personalizados</li>
-                        <li>Integração com sistemas existentes</li>
-                        <li>Customização de workflows</li>
-                        <li>Migração e upgrade de versões</li>
-                        <li>Treinamento e suporte técnico</li>
-                    </ul>
+        <section class="features">
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📋</div>
+                    <h3>Cadastro Simples</h3>
+                    <p>Faça seu cadastro como dizimista diretamente pelo WhatsApp, em poucos minutos e sem burocracia.</p>
                 </div>
-
-                <div class="service-card">
-                    <div class="service-icon">💬</div>
-                    <h3>Automação de Chatbots</h3>
-                    <p>Criação de chatbots inteligentes usando a API da Meta para WhatsApp, automatizando atendimento e melhorando a comunicação com clientes.</p>
-                    <ul>
-                        <li>Chatbots para WhatsApp Business</li>
-                        <li>Integração com CRM e ERP</li>
-                        <li>Automação de atendimento 24/7</li>
-                        <li>Fluxos conversacionais personalizados</li>
-                        <li>Analytics e relatórios de performance</li>
-                    </ul>
+                <div class="feature-card">
+                    <div class="feature-icon">💰</div>
+                    <h3>Contribuição via PIX</h3>
+                    <p>Envie sua contribuição por PIX e registre o comprovante pelo próprio chat. Rápido e seguro.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Acompanhamento</h3>
+                    <p>Consulte seu histórico de contribuições e receba lembretes mensais com carinho e cuidado.</p>
                 </div>
             </div>
         </section>
 
-        <section class="projects">
-            <h2 class="section-title">Projetos</h2>
-            <div class="project-card">
-                <div class="project-card-inner">
-                    <div class="project-info">
-                        <div class="project-badge">⛪ Em produção</div>
-                        <h3>Meu Dízimo Aparecida</h3>
-                        <p class="project-sub">Pastoral do Dízimo — Paróquia Nossa Senhora Aparecida</p>
-                        <p>
-                            Assistente virtual para a Pastoral do Dízimo, operando via WhatsApp Business API.
-                            Permite que fiéis realizem cadastro, contribuam via PIX e acompanhem
-                            suas devoluções diretamente pelo celular — com integração
-                            ao Odoo ERP para gestão completa da paróquia.
-                        </p>
-                        <div class="project-tags">
-                            <span>WhatsApp API</span>
-                            <span>Odoo ERP</span>
-                            <span>Google Apps Script</span>
-                            <span>PIX</span>
-                            <span>Cloud Vision</span>
+        <section class="how-it-works" id="como-funciona">
+            <h3 class="section-label">Como funciona</h3>
+            <p class="section-sub">Três passos simples para começar a contribuir</p>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Inicie a conversa</h4>
+                    <p>Envie um "Oi" para o nosso número no WhatsApp</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>Faça seu cadastro</h4>
+                    <p>Informe seus dados e escolha sua comunidade</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>Contribua via PIX</h4>
+                    <p>Receba a chave PIX, faça o pagamento e envie o comprovante</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="about">
+            <div class="about-card">
+                <div class="about-content">
+                    <h3>Sobre o Meu Dízimo Aparecida</h3>
+                    <p>
+                        O <strong>Meu Dízimo Aparecida</strong> é uma iniciativa da Pastoral do Dízimo
+                        da Paróquia Nossa Senhora Aparecida para facilitar a contribuição dos fiéis
+                        por meio da tecnologia.
+                    </p>
+                    <p>
+                        Com o assistente virtual pelo WhatsApp, dizimistas de todas as comunidades
+                        podem se cadastrar, contribuir e acompanhar suas devoluções de forma prática,
+                        segura e acessível — seja jovem, adulto ou idoso.
+                    </p>
+                    <p>
+                        Solução desenvolvida por <a href="https://ewertonlvale.github.io/lealtech/lealtech.html" style="color: var(--gold-dark); font-weight: 600;">Leal Tech Solutions</a>.
+                    </p>
+                </div>
+                <div class="about-details">
+                    <div class="detail-item">
+                        <span class="d-icon">⛪</span>
+                        <div>
+                            <strong>Paróquia</strong>
+                            <span>Nossa Senhora Aparecida</span>
                         </div>
-                        <a href="meudizimo.html" class="project-link">
-                            Ver projeto →
-                        </a>
                     </div>
-                    <div class="project-preview">
-                        <div class="preview-mockup">
-                            <div class="mockup-icon">⛪</div>
-                            <div class="mockup-title">Meu Dízimo</div>
-                            <div class="mockup-sub">Aparecida</div>
-                            <div class="mockup-features">
-                                <div><span class="mf-dot"></span> Cadastro pelo WhatsApp</div>
-                                <div><span class="mf-dot"></span> Contribuição via PIX</div>
-                                <div><span class="mf-dot"></span> Leitura de comprovantes</div>
-                                <div><span class="mf-dot"></span> Relatórios por comunidade</div>
-                            </div>
+                    <div class="detail-item">
+                        <span class="d-icon">💛</span>
+                        <div>
+                            <strong>Pastoral</strong>
+                            <span>Pastoral do Dízimo</span>
                         </div>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="technologies">
-            <div class="container">
-                <h2 class="section-title">Tecnologias</h2>
-                <div class="tech-grid">
-                    <div class="tech-item">
-                        <div class="icon">🐍</div>
-                        <h4>Python</h4>
+                    <div class="detail-item">
+                        <span class="d-icon">📱</span>
+                        <div>
+                            <strong>Canal</strong>
+                            <span>WhatsApp Business</span>
+                        </div>
                     </div>
-                    <div class="tech-item">
-                        <div class="icon">📦</div>
-                        <h4>Odoo</h4>
+                    <div class="detail-item">
+                        <span class="d-icon">🔒</span>
+                        <div>
+                            <strong>Segurança</strong>
+                            <span>Dados protegidos e criptografados</span>
+                        </div>
                     </div>
-                    <div class="tech-item">
-                        <div class="icon">💬</div>
-                        <h4>Meta API</h4>
-                    </div>
-                    <div class="tech-item">
-                        <div class="icon">🗄️</div>
-                        <h4>PostgreSQL</h4>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="contact">
-            <h2 class="section-title">Entre em Contato</h2>
-            <p style="color: var(--text-dim); max-width: 600px; margin: 0 auto;">
-                Pronto para transformar seus processos com tecnologia de ponta? 
-                Entre em contato e vamos conversar sobre como podemos ajudar seu negócio.
-            </p>
-            <div class="contact-info">
-                <div class="contact-item">
-                    <div class="icon">📧</div>
-                    <a href="mailto:contato@lealtechsolutions.com">contato@lealtechsolutions.com</a>
-                </div>
-                <div class="contact-item">
-                    <div class="icon">💼</div>
-                    <a href="https://github.com/lealtechsolutions" target="_blank">github.com/lealtechsolutions</a>
                 </div>
             </div>
         </section>
 
         <footer>
-            <p>&copy; 2026 Leal Tech Solutions. Todos os direitos reservados.</p>
-            <p style="margin-top: 0.5rem; font-size: 0.85rem;">Desenvolvendo o futuro, um sistema de cada vez.</p>
+            <div class="footer-brand">Meu Dízimo Aparecida</div>
+            <p>Assistente digital da Pastoral do Dízimo — Paróquia Nossa Senhora Aparecida</p>
+            <p style="margin-top: 0.8rem;">
+                Desenvolvido por <a href="https://ewertonlvale.github.io/lealtech/">Leal Tech Solutions</a>
+                · © 2026
+            </p>
         </footer>
     </div>
 </body>

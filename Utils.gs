@@ -20,29 +20,52 @@
 const Utils = {
 
   /**
+   * Posta um payload no endpoint /messages do WhatsApp e verifica o resultado.
+   * Centraliza o envio (antes duplicado em enviarSimples/enviarMenu/enviarLista)
+   * e — importante — checa o status code, que antes era ignorado: falhas de
+   * envio (token expirado, janela de 24h fechada) passavam despercebidas.
+   * @param {Object} payload - Corpo já montado da mensagem WhatsApp
+   * @returns {GoogleAppsScript.URL_Fetch.HTTPResponse|null}
+   * @private
+   */
+  _post(payload) {
+    const config = getConfig();
+    try {
+      const response = UrlFetchApp.fetch(
+        getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
+        {
+          method:      'post',
+          contentType: 'application/json',
+          headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+          payload:     JSON.stringify(payload),
+          muteHttpExceptions: true
+        }
+      );
+
+      const code = response.getResponseCode();
+      if (code !== 200) {
+        console.error(`❌ [WhatsApp] Envio falhou (HTTP ${code}):`, response.getContentText());
+      }
+      return response;
+    } catch (e) {
+      console.error('❌ [WhatsApp] Exceção ao enviar mensagem:', e.message);
+      return null;
+    }
+  },
+
+  /**
    * Envia mensagem de texto simples.
    * @param {string} to    - Número do destinatário
    * @param {string} texto - Corpo da mensagem
    */
   enviarSimples(to, texto) {
-    const config = getConfig();
-
-    UrlFetchApp.fetch(
-      getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
-      {
-        method:      'post',
-        contentType: 'application/json',
-        headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-        payload:     JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type:    'individual',
-          to,
-          type:              'text',
-          text:              { body: texto }
-        }),
-        muteHttpExceptions: true
-      }
-    );
+    return this._post({
+      messaging_product: 'whatsapp',
+      recipient_type:    'individual',
+      to,
+      type:              'text',
+      text:              { body: texto }
+    });
   },
 
   /**
@@ -83,7 +106,6 @@ const Utils = {
       botoes = botoes.slice(0, 3);
     }
 
-    const config  = getConfig();
     const payload = {
       messaging_product: 'whatsapp',
       recipient_type:    'individual',
@@ -109,16 +131,7 @@ const Utils = {
       payload.interactive.header = { type: 'text', text: opcoes.header };
     }
 
-    UrlFetchApp.fetch(
-      getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
-      {
-        method:      'post',
-        contentType: 'application/json',
-        headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-        payload:     JSON.stringify(payload),
-        muteHttpExceptions: true
-      }
-    );
+    return this._post(payload);
   },
 
   /**
@@ -129,7 +142,6 @@ const Utils = {
    * @param {Object} opcoes   - { textoBotao?, footer?, header? }
    */
   enviarLista(to, titulo, secoes, opcoes = {}) {
-    const config  = getConfig();
     const payload = {
       messaging_product: 'whatsapp',
       recipient_type:    'individual',
@@ -150,16 +162,7 @@ const Utils = {
       payload.interactive.header = { type: 'text', text: opcoes.header };
     }
 
-    UrlFetchApp.fetch(
-      getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
-      {
-        method:      'post',
-        contentType: 'application/json',
-        headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-        payload:     JSON.stringify(payload),
-        muteHttpExceptions: true
-      }
-    );
+    return this._post(payload);
   },
 
   // ============================================================================

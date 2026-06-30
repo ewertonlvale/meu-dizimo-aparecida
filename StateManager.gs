@@ -240,15 +240,16 @@ const StateManager = {
     const cache = CacheService.getScriptCache();
     const cacheKey = `contato_${from}`;
 
-    // Cache hit → já conhecido, sem chamada HTTP
-    //if (cache.get(cacheKey)) return false;
+    // Cache hit → já conhecido, sem chamada HTTP ao Odoo.
+    // Reativado: evita um search_read no Odoo a CADA mensagem recebida.
+    if (cache.get(cacheKey)) return false;
 
     try {
       const contato = OdooService.buscarContatoBot(from);
 
       if (contato) {
         // Existe no Odoo → cachear e retornar false
-        //cache.put(cacheKey, '1', 21600); // 6 horas
+        cache.put(cacheKey, '1', 21600); // 6 horas
         return false;
       }
 
@@ -275,12 +276,23 @@ const StateManager = {
    * Armazenada no CacheService com TTL de 70 min (margem sobre a sessão de 60 min).
    */
   registrarSessaoAtiva(from) {
-    const cache = CacheService.getScriptCache();
-    const lista = JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
+    // Lock: 'sessoes_cadastro_ativas' é uma chave global compartilhada por todos
+    // os usuários. Sem lock, cadastros simultâneos podem sobrescrever a lista
+    // um do outro (read-modify-write não atômico).
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(5000);
+      const cache = CacheService.getScriptCache();
+      const lista = JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
 
-    if (!lista.includes(from)) {
-      lista.push(from);
-      cache.put('sessoes_cadastro_ativas', JSON.stringify(lista), 4200); // 70 min
+      if (!lista.includes(from)) {
+        lista.push(from);
+        cache.put('sessoes_cadastro_ativas', JSON.stringify(lista), 4200); // 70 min
+      }
+    } catch (e) {
+      console.warn('⚠️ Lock não obtido em registrarSessaoAtiva:', e.message);
+    } finally {
+      try { lock.releaseLock(); } catch (ignore) {}
     }
   },
 
@@ -288,14 +300,22 @@ const StateManager = {
    * Remove um número da lista de sessões ativas.
    */
   removerSessaoAtiva(from) {
-    const cache = CacheService.getScriptCache();
-    const lista = JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
-    const novaLista = lista.filter(n => n !== from);
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(5000);
+      const cache = CacheService.getScriptCache();
+      const lista = JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
+      const novaLista = lista.filter(n => n !== from);
 
-    if (novaLista.length > 0) {
-      cache.put('sessoes_cadastro_ativas', JSON.stringify(novaLista), 4200);
-    } else {
-      cache.remove('sessoes_cadastro_ativas');
+      if (novaLista.length > 0) {
+        cache.put('sessoes_cadastro_ativas', JSON.stringify(novaLista), 4200);
+      } else {
+        cache.remove('sessoes_cadastro_ativas');
+      }
+    } catch (e) {
+      console.warn('⚠️ Lock não obtido em removerSessaoAtiva:', e.message);
+    } finally {
+      try { lock.releaseLock(); } catch (ignore) {}
     }
   },
 

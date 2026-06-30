@@ -61,6 +61,32 @@ const ESTADOS = {
   AGUARDANDO_ACAO_PENDENTE:        'AGUARDANDO_ACAO_PENDENTE',
 };
 
+/**
+ * Estados que compõem o fluxo de cadastro.
+ * Centralizado aqui para evitar duplicação no Router (antes repetido em
+ * _rotearBotao e _rotearTexto). Usado para decidir quando aplicar log de
+ * cadastro e verificação de expiração de sessão.
+ */
+const ESTADOS_CADASTRO = [
+  ESTADOS.AGUARDANDO_CONFIRMACAO_NUMERO,
+  ESTADOS.AGUARDANDO_COMUNIDADE,
+  ESTADOS.AGUARDANDO_NOME,
+  ESTADOS.AGUARDANDO_NOME_USUAL,
+  ESTADOS.AGUARDANDO_DATA_NASCIMENTO,
+  ESTADOS.AGUARDANDO_ENDERECO,
+  ESTADOS.AGUARDANDO_VALOR_MENSAL,
+  ESTADOS.AGUARDANDO_NOTIFICACAO,
+  ESTADOS.AGUARDANDO_DIA_PREFERIDO,
+  ESTADOS.AGUARDANDO_FOTO_PERFIL
+];
+
+/**
+ * Fuso horário único do projeto. Use esta constante em todo Utilities.formatDate
+ * para evitar inconsistências (antes havia mistura de 'America/Sao_Paulo' e
+ * 'America/Fortaleza', com risco de erro de borda em datas de relatório).
+ */
+const TIMEZONE = 'America/Sao_Paulo';
+
 // ============================================================================
 // CONFIGURAÇÕES GLOBAIS
 // ============================================================================
@@ -123,6 +149,21 @@ function getConfig() {
   }
 
   return config;
+}
+
+/**
+ * Retorna o segredo opcional do webhook usado para autenticar o POST da Meta.
+ *
+ * IMPORTANTE: web apps do Apps Script NÃO expõem os headers da requisição em
+ * doPost(e), portanto não é possível validar o header X-Hub-Signature-256
+ * (HMAC) da Meta como em servidores tradicionais. A mitigação viável aqui é
+ * um segredo na própria URL de callback (?token=...), que a Meta preserva ao
+ * postar. Configure a URL na Meta como: https://.../exec?token=SEU_SEGREDO
+ *
+ * @returns {string|null} Segredo configurado, ou null se não definido.
+ */
+function getWebhookSecret() {
+  return PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
 }
 
 // ============================================================================

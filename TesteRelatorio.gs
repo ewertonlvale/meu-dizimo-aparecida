@@ -446,7 +446,7 @@ const COORD_WHATSAPP = '558688521231';  // ← TROCAR pelo número real
 function enviarTeste_Cabecalho() {
   _log('TESTE: Cabeçalho do relatório');
 
-  const agora = Utilities.formatDate(new Date(), 'America/Fortaleza', 'dd/MM/yyyy HH:mm');
+  const agora = Utilities.formatDate(new Date(), TIMEZONE, 'dd/MM/yyyy HH:mm');
 
   Utils.enviarSimples(ADMIN_WHATSAPP,
     `━━━━━━━━━━━━━━━━━━━━\n` +

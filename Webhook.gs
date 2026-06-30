@@ -50,8 +50,21 @@ function doGet(e) {
  */
 function doPost(e) {
   try {
+    // ── Autenticação do webhook (segredo na URL) ────────────────────────────
+    // Headers não estão acessíveis no Apps Script, então usamos um segredo na
+    // query string (?token=...) que a Meta preserva. Só bloqueia se o segredo
+    // estiver configurado — assim não derruba o webhook antes do setup.
+    const segredo = getWebhookSecret();
+    if (segredo && e.parameter.token !== segredo) {
+      console.warn('🚫 POST rejeitado: token de webhook inválido ou ausente');
+      return ContentService.createTextOutput('Forbidden');
+    }
+    if (!segredo) {
+      console.warn('⚠️ WEBHOOK_SECRET não configurado — webhook sem autenticação. ' +
+                   'Configure em Setup.gs e adicione ?token=... na URL de callback.');
+    }
+
     const body = JSON.parse(e.postData.contents);
-    console.log('📨 Webhook recebido:', JSON.stringify(body, null, 2));
 
     const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 

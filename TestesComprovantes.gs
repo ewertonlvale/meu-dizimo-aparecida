@@ -30,7 +30,7 @@ function testarConfiguracao() {
     console.error('2. Role até "Propriedades do script"');
     console.error('3. Adicione:');
     console.error('   Nome: GOOGLE_VISION_API_KEY');
-    console.error('   Valor: AIzaSyDWdTr2XrZ6pka5MJblnESUyFGoSBl9IMw');
+    console.error('   Valor: ');
     return false;
   }
   
