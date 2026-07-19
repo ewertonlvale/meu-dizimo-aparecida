@@ -3,8 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Política de Privacidade - Meu Dízimo</title>
+    <title>Política de Privacidade — Meu Dízimo Aparecida</title>
+    <meta name="description" content="Política de Privacidade do Meu Dízimo Aparecida — Assistente digital da Pastoral do Dízimo da Paróquia Nossa Senhora Aparecida.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --gold: #d4a843;
+            --gold-light: #f0d078;
+            --gold-dark: #a07c2e;
+            --cream: #faf6ed;
+            --cream-dark: #f0e8d6;
+            --brown: #3d2e1e;
+            --brown-light: #5c4a36;
+            --brown-dim: #8a7560;
+            --green-whatsapp: #25d366;
+            --white: #ffffff;
+            --shadow: rgba(61, 46, 30, 0.08);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,95 +30,208 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--cream);
+            color: var(--brown);
+            overflow-x: hidden;
+            line-height: 1.7;
+        }
+
+        .pattern-bg {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.03;
+            background-image: radial-gradient(circle at 1px 1px, var(--brown) 1px, transparent 0);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
-            max-width: 800px;
+            max-width: 860px;
             margin: 0 auto;
-            background: white;
-            min-height: 100vh;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            padding: 0 2rem;
+            position: relative;
+            z-index: 1;
         }
 
+        /* Header */
         header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 30px;
+            padding: 2rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+        }
+
+        .brand-icon {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            box-shadow: 0 4px 16px rgba(212, 168, 67, 0.3);
+        }
+
+        .brand-text h1 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--brown);
+            line-height: 1.1;
+        }
+
+        .brand-text span {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: var(--brown-dim);
+            letter-spacing: 0.5px;
+        }
+
+        .header-badge {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 100px;
+            padding: 0.5rem 1.2rem;
+            font-size: 0.8rem;
+            color: var(--brown-dim);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .header-badge:hover {
+            border-color: var(--gold);
+        }
+
+        /* Page hero */
+        .page-hero {
+            padding: 3rem 0 2rem;
             text-align: center;
         }
 
-        header h1 {
-            font-size: 2em;
-            margin-bottom: 10px;
+        .page-hero .hero-label {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--gold), var(--gold-light));
+            color: var(--brown);
+            font-weight: 600;
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 0.5rem 1.5rem;
+            border-radius: 100px;
+            margin-bottom: 1.5rem;
         }
 
-        header p {
-            opacity: 0.9;
-            font-size: 0.95em;
+        .page-hero h2 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            line-height: 1.15;
+            color: var(--brown);
         }
 
-        .content {
-            padding: 40px 30px;
+        /* Content */
+        .content-card {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 20px;
+            padding: 3rem;
+            margin: 1rem 0 2rem;
+            box-shadow: 0 4px 24px var(--shadow);
         }
 
-        h2 {
-            color: #667eea;
-            margin: 30px 0 15px 0;
-            font-size: 1.5em;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
+        .content-card h2 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--brown);
+            margin: 2.2rem 0 1rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 2px solid var(--cream-dark);
         }
 
-        h3 {
-            color: #764ba2;
-            margin: 20px 0 10px 0;
-            font-size: 1.2em;
+        .content-card h2:first-of-type {
+            margin-top: 1.5rem;
         }
 
-        p {
-            margin-bottom: 15px;
-            text-align: justify;
+        .content-card h3 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--gold-dark);
+            margin: 1.4rem 0 0.6rem;
         }
 
-        ul {
-            margin: 15px 0 15px 30px;
+        .content-card p {
+            margin-bottom: 1rem;
+            color: var(--brown-light);
+            font-size: 0.95rem;
         }
 
-        li {
-            margin-bottom: 8px;
+        .content-card ul {
+            margin: 0.8rem 0 1.2rem 1.6rem;
+        }
+
+        .content-card li {
+            margin-bottom: 0.5rem;
+            color: var(--brown-light);
+            font-size: 0.95rem;
+        }
+
+        .content-card a {
+            color: var(--gold-dark);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .content-card a:hover {
+            text-decoration: underline;
         }
 
         .highlight {
-            background: #f0f4ff;
-            padding: 20px;
-            border-left: 4px solid #667eea;
-            margin: 20px 0;
-            border-radius: 4px;
+            background: var(--cream);
+            border-left: 4px solid var(--gold);
+            border-radius: 0 12px 12px 0;
+            padding: 1.2rem 1.5rem;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+            color: var(--brown-light);
         }
 
         .date {
             text-align: center;
-            color: #666;
-            font-style: italic;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
+            color: var(--brown-dim);
+            font-size: 0.85rem;
+            margin-top: 2.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--cream-dark);
         }
 
+        /* Footer */
         footer {
-            background: #2d3748;
-            color: white;
+            padding: 3rem 0;
             text-align: center;
-            padding: 30px;
-            margin-top: 40px;
+            border-top: 1px solid var(--cream-dark);
+            margin-top: 2rem;
+        }
+
+        footer p {
+            color: var(--brown-dim);
+            font-size: 0.85rem;
         }
 
         footer a {
-            color: #667eea;
+            color: var(--gold-dark);
             text-decoration: none;
         }
 
@@ -108,35 +239,49 @@
             text-decoration: underline;
         }
 
-        @media (max-width: 600px) {
-            .content {
-                padding: 20px;
-            }
+        .footer-brand {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--brown);
+            margin-bottom: 0.5rem;
+        }
 
-            header {
-                padding: 30px 20px;
-            }
-
-            header h1 {
-                font-size: 1.5em;
-            }
+        @media (max-width: 768px) {
+            .page-hero h2 { font-size: 1.8rem; }
+            .content-card { padding: 2rem 1.5rem; }
+            .header-badge { display: none; }
+            .brand-text h1 { font-size: 1.3rem; }
         }
     </style>
 </head>
 <body>
+    <div class="pattern-bg"></div>
+
     <div class="container">
         <header>
-            <h1>🙏 Política de Privacidade</h1>
-            <p>Meu Dízimo - Assistente Digital para Dizimistas</p>
+            <a class="brand" href="index.html">
+                <div class="brand-icon">⛪</div>
+                <div class="brand-text">
+                    <h1>Meu Dízimo Aparecida</h1>
+                    <span>Pastoral do Dízimo Digital</span>
+                </div>
+            </a>
+            <a class="header-badge" href="index.html">← Voltar ao início</a>
         </header>
 
-        <div class="content">
+        <section class="page-hero">
+            <div class="hero-label">✦ Transparência ✦</div>
+            <h2>Política de Privacidade</h2>
+        </section>
+
+        <div class="content-card">
             <div class="highlight">
-                <strong>Compromisso com sua privacidade:</strong> O projeto Meu Dízimo tem como princípio fundamental o respeito à privacidade e à proteção dos dados pessoais dos nossos usuários. Esta política descreve como coletamos, usamos e protegemos suas informações.
+                <strong>Compromisso com sua privacidade:</strong> O Meu Dízimo Aparecida tem como princípio fundamental o respeito à privacidade e à proteção dos dados pessoais dos nossos usuários. Esta política descreve como coletamos, usamos e protegemos suas informações.
             </div>
 
             <h2>1. Informações que Coletamos</h2>
-            
+
             <h3>1.1 Dados Pessoais</h3>
             <p>Ao se cadastrar como dizimista através do nosso assistente no WhatsApp, coletamos:</p>
             <ul>
@@ -166,7 +311,7 @@
             </ul>
 
             <h2>2. Como Utilizamos suas Informações</h2>
-            
+
             <p>Suas informações são utilizadas exclusivamente para:</p>
             <ul>
                 <li><strong>Gestão Pastoral:</strong> Acompanhamento espiritual e administrativo dos dizimistas</li>
@@ -181,7 +326,7 @@
             </div>
 
             <h2>3. Base Legal para Tratamento de Dados</h2>
-            
+
             <p>O tratamento dos seus dados pessoais está fundamentado em:</p>
             <ul>
                 <li><strong>Consentimento:</strong> Ao se cadastrar, você consente com a coleta e uso dos dados conforme esta política</li>
@@ -191,7 +336,7 @@
             </ul>
 
             <h2>4. Compartilhamento de Dados</h2>
-            
+
             <h3>4.1 Dentro da Comunidade</h3>
             <p>Seus dados podem ser acessados por:</p>
             <ul>
@@ -218,7 +363,7 @@
             </ul>
 
             <h2>5. Segurança dos Dados</h2>
-            
+
             <p>Implementamos medidas técnicas e organizacionais para proteger seus dados:</p>
             <ul>
                 <li><strong>Criptografia:</strong> Comunicação segura via HTTPS/TLS</li>
@@ -233,7 +378,7 @@
             </div>
 
             <h2>6. Retenção de Dados</h2>
-            
+
             <p>Mantemos seus dados pessoais:</p>
             <ul>
                 <li><strong>Cadastro ativo:</strong> Enquanto você for dizimista ativo</li>
@@ -244,7 +389,7 @@
             <p>Após estes períodos, os dados são anonimizados ou excluídos de forma segura.</p>
 
             <h2>7. Seus Direitos (LGPD)</h2>
-            
+
             <p>De acordo com a Lei Geral de Proteção de Dados (LGPD), você tem direito a:</p>
             <ul>
                 <li><strong>Acesso:</strong> Solicitar cópia dos seus dados pessoais</li>
@@ -265,7 +410,7 @@
             </ul>
 
             <h2>8. Cookies e Tecnologias Similares</h2>
-            
+
             <p>O assistente via WhatsApp não utiliza cookies. No entanto, registramos o histórico de conversas para:</p>
             <ul>
                 <li>Manter o contexto da conversa</li>
@@ -274,11 +419,11 @@
             </ul>
 
             <h2>9. Privacidade de Menores</h2>
-            
-            <p>O serviço Meu Dízimo é destinado a maiores de 18 anos. Não coletamos intencionalmente dados de menores sem o consentimento dos pais ou responsáveis legais.</p>
+
+            <p>O serviço Meu Dízimo Aparecida é destinado a maiores de 18 anos. Não coletamos intencionalmente dados de menores sem o consentimento dos pais ou responsáveis legais.</p>
 
             <h2>10. Transferência Internacional de Dados</h2>
-            
+
             <p>Alguns de nossos prestadores de serviço (como Meta/WhatsApp e Google) podem processar dados fora do Brasil. Nesses casos, garantimos que:</p>
             <ul>
                 <li>Os dados são transferidos apenas para países com nível adequado de proteção</li>
@@ -287,7 +432,7 @@
             </ul>
 
             <h2>11. Alterações nesta Política</h2>
-            
+
             <p>Podemos atualizar esta Política de Privacidade periodicamente. Quando houver mudanças significativas:</p>
             <ul>
                 <li>Notificaremos você via WhatsApp</li>
@@ -296,7 +441,7 @@
             </ul>
 
             <h2>12. Encarregado de Dados (DPO)</h2>
-            
+
             <p>Para questões relacionadas à proteção de dados, entre em contato com nosso Encarregado:</p>
             <ul>
                 <li><strong>Nome:</strong> [Nome do DPO]</li>
@@ -305,7 +450,7 @@
             </ul>
 
             <h2>13. Legislação Aplicável</h2>
-            
+
             <p>Esta Política de Privacidade é regida pela legislação brasileira, especialmente:</p>
             <ul>
                 <li>Lei nº 13.709/2018 (Lei Geral de Proteção de Dados - LGPD)</li>
@@ -314,10 +459,10 @@
             </ul>
 
             <h2>14. Contato</h2>
-            
+
             <p>Para dúvidas, sugestões ou reclamações sobre esta Política de Privacidade:</p>
             <ul>
-                <li><strong>WhatsApp:</strong> Acesse o assistente Meu Dízimo</li>
+                <li><strong>WhatsApp:</strong> Acesse o assistente Meu Dízimo Aparecida</li>
                 <li><strong>E-mail:</strong> [privacidade@comunidade.com]</li>
                 <li><strong>Endereço:</strong> [Endereço completo da comunidade]</li>
                 <li><strong>Horário de atendimento:</strong> [horários]</li>
@@ -334,14 +479,17 @@
         </div>
 
         <footer>
-            <p><strong>🙏 Meu Dízimo</strong></p>
-            <p>Assistente Digital para Dizimistas</p>
-            <p style="margin-top: 15px;">
-                <a href="termos-servico.html">Termos de Serviço</a> | 
-                <a href="politica-privacidade.html">Política de Privacidade</a>
+            <div class="footer-brand">Meu Dízimo Aparecida</div>
+            <p>Assistente digital da Pastoral do Dízimo — Paróquia Nossa Senhora Aparecida</p>
+            <p style="margin-top: 0.8rem;">
+                <strong>Meu Dízimo Aparecida</strong> é um produto de
+                <strong>EWERTON L VALE TECH</strong> (<a href="https://ewertonlvale.github.io/lealtech/">Leal Tech Solutions</a>),
+                desenvolvido para a Pastoral do Dízimo da Paróquia Nossa Senhora Aparecida.
             </p>
-            <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
-                © 2026 - Todos os direitos reservados
+            <p style="margin-top: 0.8rem;">
+                <a href="politica_privacidade.html">Política de Privacidade</a>
+                · <a href="termo_uso.html">Termo de Uso</a>
+                · © 2026 EWERTON L VALE TECH
             </p>
         </footer>
     </div>
