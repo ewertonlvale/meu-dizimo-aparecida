@@ -3,8 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Termos de Serviço - Meu Dízimo</title>
+    <title>Termos de Serviço — Meu Dízimo Aparecida</title>
+    <meta name="description" content="Termos de Serviço do Meu Dízimo Aparecida — Assistente digital da Pastoral do Dízimo da Paróquia Nossa Senhora Aparecida.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --gold: #d4a843;
+            --gold-light: #f0d078;
+            --gold-dark: #a07c2e;
+            --cream: #faf6ed;
+            --cream-dark: #f0e8d6;
+            --brown: #3d2e1e;
+            --brown-light: #5c4a36;
+            --brown-dim: #8a7560;
+            --green-whatsapp: #25d366;
+            --white: #ffffff;
+            --shadow: rgba(61, 46, 30, 0.08);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,104 +30,218 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--cream);
+            color: var(--brown);
+            overflow-x: hidden;
+            line-height: 1.7;
+        }
+
+        .pattern-bg {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0.03;
+            background-image: radial-gradient(circle at 1px 1px, var(--brown) 1px, transparent 0);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
-            max-width: 800px;
+            max-width: 860px;
             margin: 0 auto;
-            background: white;
-            min-height: 100vh;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            padding: 0 2rem;
+            position: relative;
+            z-index: 1;
         }
 
+        /* Header */
         header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 30px;
+            padding: 2rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            text-decoration: none;
+        }
+
+        .brand-icon {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            box-shadow: 0 4px 16px rgba(212, 168, 67, 0.3);
+        }
+
+        .brand-text h1 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--brown);
+            line-height: 1.1;
+        }
+
+        .brand-text span {
+            font-size: 0.8rem;
+            font-weight: 400;
+            color: var(--brown-dim);
+            letter-spacing: 0.5px;
+        }
+
+        .header-badge {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 100px;
+            padding: 0.5rem 1.2rem;
+            font-size: 0.8rem;
+            color: var(--brown-dim);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .header-badge:hover {
+            border-color: var(--gold);
+        }
+
+        /* Page hero */
+        .page-hero {
+            padding: 3rem 0 2rem;
             text-align: center;
         }
 
-        header h1 {
-            font-size: 2em;
-            margin-bottom: 10px;
+        .page-hero .hero-label {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--gold), var(--gold-light));
+            color: var(--brown);
+            font-weight: 600;
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 0.5rem 1.5rem;
+            border-radius: 100px;
+            margin-bottom: 1.5rem;
         }
 
-        header p {
-            opacity: 0.9;
-            font-size: 0.95em;
+        .page-hero h2 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            line-height: 1.15;
+            color: var(--brown);
         }
 
-        .content {
-            padding: 40px 30px;
+        /* Content */
+        .content-card {
+            background: var(--white);
+            border: 1px solid var(--cream-dark);
+            border-radius: 20px;
+            padding: 3rem;
+            margin: 1rem 0 2rem;
+            box-shadow: 0 4px 24px var(--shadow);
         }
 
-        h2 {
-            color: #667eea;
-            margin: 30px 0 15px 0;
-            font-size: 1.5em;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
+        .content-card h2 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--brown);
+            margin: 2.2rem 0 1rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 2px solid var(--cream-dark);
         }
 
-        h3 {
-            color: #764ba2;
-            margin: 20px 0 10px 0;
-            font-size: 1.2em;
+        .content-card h2:first-of-type {
+            margin-top: 1.5rem;
         }
 
-        p {
-            margin-bottom: 15px;
-            text-align: justify;
+        .content-card h3 {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--gold-dark);
+            margin: 1.4rem 0 0.6rem;
         }
 
-        ul {
-            margin: 15px 0 15px 30px;
+        .content-card p {
+            margin-bottom: 1rem;
+            color: var(--brown-light);
+            font-size: 0.95rem;
         }
 
-        li {
-            margin-bottom: 8px;
+        .content-card ul {
+            margin: 0.8rem 0 1.2rem 1.6rem;
+        }
+
+        .content-card li {
+            margin-bottom: 0.5rem;
+            color: var(--brown-light);
+            font-size: 0.95rem;
+        }
+
+        .content-card a {
+            color: var(--gold-dark);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .content-card a:hover {
+            text-decoration: underline;
         }
 
         .highlight {
-            background: #f0f4ff;
-            padding: 20px;
-            border-left: 4px solid #667eea;
-            margin: 20px 0;
-            border-radius: 4px;
+            background: var(--cream);
+            border-left: 4px solid var(--gold);
+            border-radius: 0 12px 12px 0;
+            padding: 1.2rem 1.5rem;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+            color: var(--brown-light);
         }
 
         .warning {
-            background: #fff3cd;
-            border-left-color: #ffc107;
-            padding: 20px;
-            border-left: 4px solid #ffc107;
-            margin: 20px 0;
-            border-radius: 4px;
+            background: #fdf3e0;
+            border-left: 4px solid var(--gold-dark);
+            border-radius: 0 12px 12px 0;
+            padding: 1.2rem 1.5rem;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+            color: var(--brown-light);
         }
 
         .date {
             text-align: center;
-            color: #666;
-            font-style: italic;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
+            color: var(--brown-dim);
+            font-size: 0.85rem;
+            margin-top: 2.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--cream-dark);
         }
 
+        /* Footer */
         footer {
-            background: #2d3748;
-            color: white;
+            padding: 3rem 0;
             text-align: center;
-            padding: 30px;
-            margin-top: 40px;
+            border-top: 1px solid var(--cream-dark);
+            margin-top: 2rem;
+        }
+
+        footer p {
+            color: var(--brown-dim);
+            font-size: 0.85rem;
         }
 
         footer a {
-            color: #667eea;
+            color: var(--gold-dark);
             text-decoration: none;
         }
 
@@ -117,38 +249,52 @@
             text-decoration: underline;
         }
 
-        @media (max-width: 600px) {
-            .content {
-                padding: 20px;
-            }
+        .footer-brand {
+            font-family: 'Bricolage Grotesque', sans-serif;
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--brown);
+            margin-bottom: 0.5rem;
+        }
 
-            header {
-                padding: 30px 20px;
-            }
-
-            header h1 {
-                font-size: 1.5em;
-            }
+        @media (max-width: 768px) {
+            .page-hero h2 { font-size: 1.8rem; }
+            .content-card { padding: 2rem 1.5rem; }
+            .header-badge { display: none; }
+            .brand-text h1 { font-size: 1.3rem; }
         }
     </style>
 </head>
 <body>
+    <div class="pattern-bg"></div>
+
     <div class="container">
         <header>
-            <h1>📋 Termos de Serviço</h1>
-            <p>Meu Dízimo - Assistente Digital para Dizimistas</p>
+            <a class="brand" href="index.html">
+                <div class="brand-icon">⛪</div>
+                <div class="brand-text">
+                    <h1>Meu Dízimo Aparecida</h1>
+                    <span>Pastoral do Dízimo Digital</span>
+                </div>
+            </a>
+            <a class="header-badge" href="index.html">← Voltar ao início</a>
         </header>
 
-        <div class="content">
+        <section class="page-hero">
+            <div class="hero-label">✦ Condições de Uso ✦</div>
+            <h2>Termos de Serviço</h2>
+        </section>
+
+        <div class="content-card">
             <div class="highlight">
-                <strong>Bem-vindo ao Meu Dízimo!</strong> Estes Termos de Serviço estabelecem as condições de uso do nosso assistente digital. Ao utilizar o serviço, você concorda com todos os termos aqui descritos.
+                <strong>Bem-vindo ao Meu Dízimo Aparecida!</strong> Estes Termos de Serviço estabelecem as condições de uso do nosso assistente digital. Ao utilizar o serviço, você concorda com todos os termos aqui descritos.
             </div>
 
             <h2>1. Definições</h2>
-            
+
             <p>Para fins destes Termos, considera-se:</p>
             <ul>
-                <li><strong>"Serviço" ou "Meu Dízimo":</strong> Assistente digital via WhatsApp para gestão de dízimo</li>
+                <li><strong>"Serviço" ou "Meu Dízimo Aparecida":</strong> Assistente digital via WhatsApp para gestão de dízimo</li>
                 <li><strong>"Usuário" ou "Dizimista":</strong> Pessoa que utiliza o serviço</li>
                 <li><strong>"Comunidade":</strong> Organização religiosa responsável pelo serviço</li>
                 <li><strong>"Devolução":</strong> Contribuição voluntária do dízimo</li>
@@ -156,9 +302,9 @@
             </ul>
 
             <h2>2. Aceitação dos Termos</h2>
-            
+
             <h3>2.1 Concordância</h3>
-            <p>Ao se cadastrar como dizimista através do assistente Meu Dízimo, você declara que:</p>
+            <p>Ao se cadastrar como dizimista através do assistente Meu Dízimo Aparecida, você declara que:</p>
             <ul>
                 <li>Leu, compreendeu e concorda com estes Termos de Serviço</li>
                 <li>Leu e concorda com nossa Política de Privacidade</li>
@@ -175,9 +321,9 @@
             </ul>
 
             <h2>3. Descrição do Serviço</h2>
-            
+
             <h3>3.1 Funcionalidades</h3>
-            <p>O Meu Dízimo oferece:</p>
+            <p>O Meu Dízimo Aparecida oferece:</p>
             <ul>
                 <li><strong>Cadastro de Dizimistas:</strong> Registro e atualização de dados pessoais</li>
                 <li><strong>Orientação sobre Devolução:</strong> Informações sobre como devolver o dízimo</li>
@@ -199,7 +345,7 @@
             </div>
 
             <h2>4. Cadastro e Conta</h2>
-            
+
             <h3>4.1 Requisitos de Cadastro</h3>
             <p>Para se cadastrar como dizimista, você deve:</p>
             <ul>
@@ -227,7 +373,7 @@
             </ul>
 
             <h2>5. Devolução do Dízimo</h2>
-            
+
             <h3>5.1 Natureza da Contribuição</h3>
             <p>É importante esclarecer que:</p>
             <ul>
@@ -238,11 +384,11 @@
             </ul>
 
             <h3>5.2 Processo de Devolução</h3>
-            <p>Ao devolver o dízimo através do Meu Dízimo:</p>
+            <p>Ao devolver o dízimo através do Meu Dízimo Aparecida:</p>
             <ul>
                 <li>Você receberá um QR Code PIX padrão da comunidade</li>
                 <li>O pagamento é processado diretamente pela instituição bancária</li>
-                <li><strong>O Meu Dízimo NÃO processa pagamentos</strong></li>
+                <li><strong>O Meu Dízimo Aparecida NÃO processa pagamentos</strong></li>
                 <li>Após o pagamento, você pode enviar o comprovante voluntariamente</li>
             </ul>
 
@@ -256,13 +402,13 @@
 
             <h3>5.4 Não Processamento Automático</h3>
             <div class="warning">
-                <strong>⚠️ Atenção:</strong> O Meu Dízimo é apenas um assistente de orientação. NÃO processamos pagamentos automaticamente, NÃO temos acesso a dados bancários e NÃO validamos transações automaticamente.
+                <strong>⚠️ Atenção:</strong> O Meu Dízimo Aparecida é apenas um assistente de orientação. NÃO processamos pagamentos automaticamente, NÃO temos acesso a dados bancários e NÃO validamos transações automaticamente.
             </div>
 
             <h2>6. Uso Aceitável</h2>
-            
+
             <h3>6.1 Proibições</h3>
-            <p>Ao usar o Meu Dízimo, você concorda em NÃO:</p>
+            <p>Ao usar o Meu Dízimo Aparecida, você concorda em NÃO:</p>
             <ul>
                 <li>Fornecer informações falsas ou enganosas</li>
                 <li>Usar o serviço para fins ilegais ou não autorizados</li>
@@ -284,13 +430,13 @@
             </ul>
 
             <h2>7. Propriedade Intelectual</h2>
-            
-            <h3>7.1 Direitos da Comunidade</h3>
-            <p>Todos os direitos sobre o Meu Dízimo pertencem à comunidade, incluindo:</p>
+
+            <h3>7.1 Direitos</h3>
+            <p>Todos os direitos sobre o Meu Dízimo Aparecida pertencem aos seus titulares, incluindo:</p>
             <ul>
                 <li>Código-fonte do sistema</li>
                 <li>Design e interface</li>
-                <li>Marca "Meu Dízimo"</li>
+                <li>Marca "Meu Dízimo Aparecida"</li>
                 <li>Conteúdo e textos</li>
                 <li>Metodologia e processos</li>
             </ul>
@@ -310,8 +456,8 @@
             </ul>
 
             <h2>8. Privacidade e Proteção de Dados</h2>
-            
-            <p>O tratamento dos seus dados pessoais é regido por nossa <a href="politica-privacidade.html" style="color: #667eea;">Política de Privacidade</a>, que faz parte integrante destes Termos.</p>
+
+            <p>O tratamento dos seus dados pessoais é regido por nossa <a href="politica_privacidade.html">Política de Privacidade</a>, que faz parte integrante destes Termos.</p>
 
             <p>Destacamos que:</p>
             <ul>
@@ -322,7 +468,7 @@
             </ul>
 
             <h2>9. Limitação de Responsabilidade</h2>
-            
+
             <h3>9.1 Fornecimento "Como Está"</h3>
             <p>O serviço é fornecido "como está" e "conforme disponível", sem garantias de qualquer tipo, expressas ou implícitas.</p>
 
@@ -349,7 +495,7 @@
             <p>Em nenhuma hipótese seremos responsáveis por danos indiretos, incidentais, especiais, consequenciais ou punitivos, incluindo lucros cessantes, mesmo que tenhamos sido avisados da possibilidade de tais danos.</p>
 
             <h2>10. Indenização</h2>
-            
+
             <p>Você concorda em indenizar, defender e isentar a comunidade, seus diretores, funcionários e agentes de e contra quaisquer reclamações, responsabilidades, danos, perdas e despesas (incluindo honorários advocatícios) decorrentes de:</p>
             <ul>
                 <li>Seu uso do serviço</li>
@@ -359,7 +505,7 @@
             </ul>
 
             <h2>11. Rescisão</h2>
-            
+
             <h3>11.1 Por Sua Parte</h3>
             <p>Você pode encerrar seu cadastro a qualquer momento:</p>
             <ul>
@@ -388,7 +534,7 @@
             </ul>
 
             <h2>12. Disposições Gerais</h2>
-            
+
             <h3>12.1 Acordo Integral</h3>
             <p>Estes Termos, juntamente com a Política de Privacidade, constituem o acordo integral entre você e a comunidade.</p>
 
@@ -410,7 +556,7 @@
             </ul>
 
             <h2>13. Lei Aplicável e Foro</h2>
-            
+
             <h3>13.1 Legislação</h3>
             <p>Estes Termos são regidos pelas leis da República Federativa do Brasil, especialmente:</p>
             <ul>
@@ -432,10 +578,10 @@
             <p>Fica eleito o foro da comarca de [Sua Cidade/Estado] para dirimir quaisquer controvérsias decorrentes destes Termos, com exclusão de qualquer outro, por mais privilegiado que seja.</p>
 
             <h2>14. Contato</h2>
-            
+
             <p>Para questões relacionadas a estes Termos de Serviço:</p>
             <ul>
-                <li><strong>WhatsApp:</strong> Através do assistente Meu Dízimo</li>
+                <li><strong>WhatsApp:</strong> Através do assistente Meu Dízimo Aparecida</li>
                 <li><strong>E-mail:</strong> [termos@comunidade.com]</li>
                 <li><strong>Endereço:</strong> [Endereço completo da comunidade]</li>
                 <li><strong>Telefone:</strong> [telefone]</li>
@@ -447,8 +593,8 @@
             </div>
 
             <h2>15. Declaração Final</h2>
-            
-            <p>Ao utilizar o serviço Meu Dízimo, você declara que:</p>
+
+            <p>Ao utilizar o serviço Meu Dízimo Aparecida, você declara que:</p>
             <ul>
                 <li>✅ Leu e compreendeu estes Termos de Serviço na íntegra</li>
                 <li>✅ Leu e compreendeu a Política de Privacidade</li>
@@ -465,14 +611,17 @@
         </div>
 
         <footer>
-            <p><strong>🙏 Meu Dízimo</strong></p>
-            <p>Assistente Digital para Dizimistas</p>
-            <p style="margin-top: 15px;">
-                <a href="termos-servico.html">Termos de Serviço</a> | 
-                <a href="politica-privacidade.html">Política de Privacidade</a>
+            <div class="footer-brand">Meu Dízimo Aparecida</div>
+            <p>Assistente digital da Pastoral do Dízimo — Paróquia Nossa Senhora Aparecida</p>
+            <p style="margin-top: 0.8rem;">
+                <strong>Meu Dízimo Aparecida</strong> é um produto de
+                <strong>EWERTON L VALE TECH</strong> (<a href="https://ewertonlvale.github.io/lealtech/">Leal Tech Solutions</a>),
+                desenvolvido para a Pastoral do Dízimo da Paróquia Nossa Senhora Aparecida.
             </p>
-            <p style="margin-top: 15px; font-size: 0.9em; opacity: 0.8;">
-                © 2026 - Todos os direitos reservados
+            <p style="margin-top: 0.8rem;">
+                <a href="politica_privacidade.html">Política de Privacidade</a>
+                · <a href="termo_uso.html">Termo de Uso</a>
+                · © 2026 EWERTON L VALE TECH
             </p>
         </footer>
     </div>
