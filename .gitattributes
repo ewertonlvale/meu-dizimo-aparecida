@@ -1,0 +1,4 @@
+# Normaliza o fim de linha automaticamente.
+# O Git passa a guardar tudo em LF internamente e para de acusar
+# mudanca quando a diferenca e apenas CRLF (Windows) vs LF.
+* text=auto
