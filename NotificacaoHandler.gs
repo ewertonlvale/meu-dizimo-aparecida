@@ -17,7 +17,10 @@ const NotificacaoHandler = {
    */
   enviarLembreteSimples(dizimista) {
     const config = getConfig();  // ✅ CORRIGido: buscar config dinamicamente
-    
+
+    console.log(`📤 [Notif] Enviando template "${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}" ` +
+                `para dizimista id=${dizimista.id} (${dizimista.x_name}) fone=${dizimista.x_studio_partner_phone}`);
+
     const payload = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
@@ -34,15 +37,15 @@ const NotificacaoHandler = {
             parameters: [
               {
                 type: "text",
-                text: dizimista.x_name  // {{1}} - Nome
+                text: dizimista.x_name || 'Dizimista'  // {{1}} - Nome
               },
               {
                 type: "text",
-                text: dizimista.x_studio_value.toFixed(2)  // {{2}} - Valor
+                text: Number(dizimista.x_studio_value || 0).toFixed(2)  // {{2}} - Valor
               },
               {
                 type: "text",
-                text: dizimista.x_studio_dia_preferido.toString()  // {{3}} - Dia
+                text: String(dizimista.x_studio_dia_preferido || 10)  // {{3}} - Dia
               }
             ]
           }
@@ -64,17 +67,34 @@ const NotificacaoHandler = {
         }
       );
       
-      const resultado = JSON.parse(response.getContentText());
-      
-      if (response.getResponseCode() !== 200) {
-        throw new Error(`Erro WhatsApp: ${resultado.error?.message || 'Desconhecido'}`);
+      const statusCode = response.getResponseCode();
+      const corpo      = response.getContentText();
+      let resultado;
+      try {
+        resultado = JSON.parse(corpo);
+      } catch (eParse) {
+        // Resposta não-JSON (ex.: HTML de erro 5xx) — logar o corpo bruto ajuda a diagnosticar.
+        console.error(`❌ [Notif] Resposta não-JSON (HTTP ${statusCode}) para id=${dizimista.id}: ${corpo}`);
+        throw new Error(`Resposta inválida do WhatsApp (HTTP ${statusCode})`);
       }
-      
-      Logger.log(`✅ Notificação enviada para ${dizimista.x_name}`);
+
+      if (statusCode !== 200) {
+        const err = resultado.error || {};
+        console.error(`❌ [Notif] WhatsApp HTTP ${statusCode} para id=${dizimista.id} (${dizimista.x_name}): ` +
+          `code=${err.code} type=${err.type} msg="${err.message}" ` +
+          `details="${err.error_data?.details || ''}" fbtrace=${err.fbtrace_id || ''}`);
+        console.error(`❌ [Notif] Corpo completo: ${corpo}`);
+        throw new Error(`Erro WhatsApp (HTTP ${statusCode}): ${err.message || 'Desconhecido'}`);
+      }
+
+      const msgId = resultado.messages?.[0]?.id || '(sem id)';
+      const statusMsg = resultado.messages?.[0]?.message_status || '';
+      console.log(`✅ [Notif] Enviado para id=${dizimista.id} (${dizimista.x_name}) — messageId=${msgId} ${statusMsg}`);
       return resultado;
-      
+
     } catch (erro) {
-      Logger.log(`❌ Erro ao enviar para ${dizimista.x_name}: ${erro.message}`);
+      console.error(`❌ [Notif] Falha ao enviar para id=${dizimista.id} (${dizimista.x_name}): ${erro.message}`);
+      if (erro.stack) console.error(`❌ [Notif] Stack: ${erro.stack}`);
       throw erro;
     }
   }
@@ -85,48 +105,82 @@ const NotificacaoHandler = {
 // ============================================================================
 
 function executarNotificacoesDiarias() {
+  const t0 = Date.now();
+  const agora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  console.log(`━━━━━━ [Notif] INÍCIO da rotina de notificações — ${agora} (${TIMEZONE}) ━━━━━━`);
+
   try {
-    Logger.log('=== Iniciando rotina de notificações ===');
-    
-    const notificacoesAtivas = OdooService.buscarParametro('notificacao_ativa');
+    // Etapa 0: diagnóstico de configuração (sem expor segredos)
+    try {
+      const cfg = getConfig();
+      console.log(`🔧 [Notif] Config OK — phoneId=${cfg.WHATSAPP_PHONE_ID} ` +
+                  `token=${cfg.WHATSAPP_TOKEN ? 'presente' : 'AUSENTE'} ` +
+                  `template="${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}"`);
+    } catch (eCfg) {
+      console.error(`❌ [Notif] Config inválida: ${eCfg.message}`);
+      throw eCfg;
+    }
+
+    // Etapa 1: flag global de notificações no Odoo
+    let notificacoesAtivas;
+    try {
+      notificacoesAtivas = OdooService.buscarParametro('notificacao_ativa');
+    } catch (eParam) {
+      console.error(`❌ [Notif] Falha ao ler parâmetro 'notificacao_ativa' no Odoo: ${eParam.message}`);
+      throw eParam;
+    }
+    console.log(`🔎 [Notif] Parâmetro notificacao_ativa = "${notificacoesAtivas}"`);
     if (notificacoesAtivas !== 'true') {
-      Logger.log('❌ Notificações desativadas no sistema');
+      console.log('⏹️ [Notif] Notificações desativadas no sistema — encerrando.');
       return;
     }
-    
-    const dizimistasParaNotificar = buscarDizimistasElegiveis();
-    
-    Logger.log(`📊 Encontrados ${dizimistasParaNotificar.length} dizimistas para notificar`);
-    
+
+    // Etapa 2: selecionar elegíveis
+    let dizimistasParaNotificar;
+    try {
+      dizimistasParaNotificar = buscarDizimistasElegiveis();
+    } catch (eBusca) {
+      console.error(`❌ [Notif] Falha ao buscar dizimistas elegíveis: ${eBusca.message}`);
+      if (eBusca.stack) console.error(`❌ [Notif] Stack: ${eBusca.stack}`);
+      throw eBusca;
+    }
+
+    console.log(`📊 [Notif] ${dizimistasParaNotificar.length} dizimista(s) elegível(is) hoje.`);
     if (dizimistasParaNotificar.length === 0) {
-      Logger.log('✅ Nenhum dizimista para notificar hoje');
+      console.log('✅ [Notif] Nenhum dizimista para notificar hoje — encerrando.');
       return;
     }
-    
+
+    // Etapa 3: enviar
     let sucessos = 0;
-    let erros = 0;
-    
+    let erros    = 0;
+    const falhas = [];
+
     dizimistasParaNotificar.forEach((dizimista, index) => {
+      console.log(`➡️ [Notif] (${index + 1}/${dizimistasParaNotificar.length}) ` +
+                  `id=${dizimista.id} ${dizimista.x_name}`);
       try {
-        if (index > 0) {
-          Utilities.sleep(2000);  // Delay de 2s entre envios
-        }
-        
+        if (index > 0) Utilities.sleep(2000);  // Delay de 2s entre envios (rate limit)
+
         NotificacaoHandler.enviarLembreteSimples(dizimista);
         registrarLogNotificacao(dizimista.id, 'sucesso', null);
         sucessos++;
-        
       } catch (erro) {
-        Logger.log(`❌ Erro ao notificar ${dizimista.x_name}: ${erro.message}`);
+        console.error(`❌ [Notif] Erro ao notificar id=${dizimista.id} (${dizimista.x_name}): ${erro.message}`);
         registrarLogNotificacao(dizimista.id, 'erro', erro.message);
+        falhas.push(`${dizimista.id}:${dizimista.x_name}`);
         erros++;
       }
     });
-    
-    Logger.log(`=== Rotina concluída: ${sucessos} sucessos, ${erros} erros ===`);
-    
+
+    const dt = ((Date.now() - t0) / 1000).toFixed(1);
+    console.log(`━━━━━━ [Notif] FIM — ${sucessos} sucesso(s), ${erros} erro(s) em ${dt}s ━━━━━━`);
+    if (erros > 0) console.error(`❌ [Notif] Falharam: ${falhas.join(', ')}`);
+
   } catch (erro) {
-    Logger.log(`❌ Erro crítico na rotina: ${erro.message}`);
+    const dt = ((Date.now() - t0) / 1000).toFixed(1);
+    console.error(`💥 [Notif] ERRO CRÍTICO após ${dt}s — a rotina foi abortada: ${erro.message}`);
+    if (erro.stack) console.error(`💥 [Notif] Stack: ${erro.stack}`);
   }
 }
 
@@ -145,40 +199,52 @@ function buscarDizimistasElegiveis() {
     ['x_studio_notificacao_ativa', '=', true]
   ];
   
-  const dizimistas = OdooService.executar(
+  const dizimistas = OdooService.searchRead(
     'x_dizimista',
-    'search_read',
-    [filtros],
-    {
-      fields: [
-        'x_name',
-        'x_studio_partner_phone',
-        'x_studio_value',
-        'x_studio_dia_preferido'
-      ]
-    }
+    ['x_name', 'x_studio_partner_phone', 'x_studio_value', 'x_studio_dia_preferido'],
+    filtros,
+    { limit: false }
   );
-  
-  return dizimistas.filter(d => {
-    const diaVencimento = d.x_studio_dia_preferido || 10;
+
+  console.log(`🔎 [Notif] ${dizimistas.length} dizimista(s) ativo(s) com notificação ligada. ` +
+              `Hoje é dia ${diaHoje} (${mesAtual}/${anoAtual}).`);
+
+  const elegiveis = dizimistas.filter(d => {
+    const diaVencimento  = d.x_studio_dia_preferido || 10;
     const diaNotificacao = calcularDiaNotificacao(diaVencimento);
-    
+
+    // Fora do dia de notificação deste dizimista: silencioso (seria muito verboso).
     if (diaNotificacao !== diaHoje) {
       return false;
     }
-    
-    if (jaFoiNotificadoEsteMes(d.id, mesAtual, anoAtual)) {
-      Logger.log(`${d.x_name} já foi notificado este mês. Pulando.`);
+
+    // A partir daqui é candidato do dia — logamos cada decisão.
+    if (!d.x_studio_partner_phone) {
+      console.warn(`⚠️ [Notif] id=${d.id} (${d.x_name}) SEM telefone — pulando.`);
       return false;
     }
-    
-    if (jaDevolveueEsteMes(d.id, mesAtual, anoAtual)) {
-      Logger.log(`${d.x_name} já devolveu este mês. Pulando notificação.`);
+
+    try {
+      if (jaFoiNotificadoEsteMes(d.id, mesAtual, anoAtual)) {
+        console.log(`⏭️ [Notif] id=${d.id} (${d.x_name}) já notificado este mês — pulando.`);
+        return false;
+      }
+      if (jaDevolveueEsteMes(d.id, mesAtual, anoAtual)) {
+        console.log(`⏭️ [Notif] id=${d.id} (${d.x_name}) já devolveu este mês — pulando.`);
+        return false;
+      }
+    } catch (e) {
+      // Erro ao consultar histórico no Odoo: não abortar a rotina inteira nem
+      // arriscar notificação indevida — pula este e registra para análise.
+      console.error(`❌ [Notif] Erro ao checar histórico de id=${d.id} (${d.x_name}): ${e.message} — pulando por segurança.`);
       return false;
     }
-    
+
+    console.log(`✔️ [Notif] id=${d.id} (${d.x_name}) elegível (dia preferido ${diaVencimento}).`);
     return true;
   });
+
+  return elegiveis;
 }
 
 function calcularDiaNotificacao(diaVencimento) {
@@ -194,17 +260,13 @@ function calcularDiaNotificacao(diaVencimento) {
 function jaFoiNotificadoEsteMes(dizimistaId, mes, ano) {
   const mesReferencia = `${ano}-${mes.toString().padStart(2, '0')}`;
   
-  const logs = OdooService.executar(
-    'x_notificacao_log',
-    'search_count',
-    [[
-      ['x_studio_dizimista', '=', dizimistaId],
-      ['x_studio_mes_referencia', '=', mesReferencia],
-      ['x_studio_tipo', '=', 'lembrete'],
-      ['x_studio_status_envio', '=', 'sucesso']
-    ]]
-  );
-  
+  const logs = OdooService.count('x_notificacao_log', [
+    ['x_studio_dizimista', '=', dizimistaId],
+    ['x_studio_mes_referencia', '=', mesReferencia],
+    ['x_studio_tipo', '=', 'lembrete'],
+    ['x_studio_status_envio', '=', 'sucesso']
+  ]);
+
   return logs > 0;
 }
 
@@ -212,16 +274,12 @@ function jaDevolveueEsteMes(dizimistaId, mes, ano) {
   const primeiroDia = new Date(ano, mes - 1, 1).toISOString().split('T')[0];
   const ultimoDia = new Date(ano, mes, 0).toISOString().split('T')[0];
   
-  const devolucoes = OdooService.executar(
-    'x_devolucao',
-    'search_count',
-    [[
-      ['x_studio_dizimista', '=', dizimistaId],
-      ['x_studio_date', '>=', primeiroDia],
-      ['x_studio_date', '<=', ultimoDia]
-    ]]
-  );
-  
+  const devolucoes = OdooService.count('x_devolucao', [
+    ['x_studio_dizimista', '=', dizimistaId],
+    ['x_studio_data_da_devolucao', '>=', primeiroDia],
+    ['x_studio_data_da_devolucao', '<=', ultimoDia]
+  ]);
+
   return devolucoes > 0;
 }
 
@@ -239,9 +297,11 @@ function registrarLogNotificacao(dizimistaId, status, mensagemErro) {
   };
   
   try {
-    OdooService.executar('x_notificacao_log', 'create', [payload]);
+    const logId = OdooService.create('x_notificacao_log', payload);
+    console.log(`🗒️ [Notif] Log gravado no Odoo (id=${logId}) — dizimista=${dizimistaId} status=${status} ref=${mesReferencia}`);
   } catch (erro) {
-    Logger.log(`Erro ao registrar log: ${erro.message}`);
+    // Não relança: a falha em registrar o log não deve derrubar o envio.
+    console.error(`❌ [Notif] Falha ao gravar log no Odoo (dizimista=${dizimistaId} status=${status}): ${erro.message}`);
   }
 }
 
@@ -253,19 +313,38 @@ function getMesReferenciaAtual() {
 }
 
 // ============================================================================
-// PROCESSAR RESPOSTA DO USUÁRIO
+// INSTALAÇÃO DO ACIONADOR (executar UMA VEZ no editor)
 // ============================================================================
 
-function processarRespostaNotificacao(from, mensagem) {
-  const texto = mensagem.text.body.toLowerCase().trim();
-  
-  if (texto.includes('devolver')) {
-    DevolucaoHandler.iniciar(from);
-    return;
-  }
-  
-  if (texto.includes('histórico') || texto.includes('historico')) {
-    HistoricoHandler.mostrar(from);
-    return;
-  }
+/**
+ * Instala o acionador diário que dispara os lembretes.
+ * A própria executarNotificacoesDiarias decide, dia a dia, quem notificar
+ * (com base no dia preferido de cada dizimista), então basta rodar 1x/dia.
+ *
+ * Menu do editor: Executar → instalarTriggerNotificacoes
+ */
+function instalarTriggerNotificacoes() {
+  removerTriggerNotificacoes();
+
+  ScriptApp.newTrigger('executarNotificacoesDiarias')
+    .timeBased()
+    .everyDays(1)
+    .atHour(9)          // ~09h no fuso do projeto (America/Sao_Paulo)
+    .create();
+
+  console.log('✅ Acionador instalado: executarNotificacoesDiarias (diário, ~09h)');
 }
+
+/** Remove o(s) acionador(es) da rotina de notificações. */
+function removerTriggerNotificacoes() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'executarNotificacoesDiarias') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+}
+
+// NOTA: a resposta do usuário ao lembrete (botão "Devolver agora" do template)
+// é tratada no Router (mensagem type 'button' → DevolucaoHandler.iniciarDevolucao).
+// A antiga processarRespostaNotificacao foi removida (código morto e quebrado:
+// chamava DevolucaoHandler.iniciar e HistoricoHandler.mostrar, inexistentes).
