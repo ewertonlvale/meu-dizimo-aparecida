@@ -49,22 +49,55 @@ const StateManager = {
   },
 
   /**
+   * BL-20: executa uma seção crítica sob LockService, protegendo o
+   * read-modify-write de `dados_${from}` contra mensagens concorrentes do
+   * mesmo usuário (o cache não é transacional).
+   *
+   * Limitação: o Apps Script só oferece lock global (não por usuário), então
+   * isto serializa brevemente as gravações de todos os usuários. É uma
+   * mitigação aceitável no volume atual — a solução definitiva é processar o
+   * webhook de forma assíncrona (ver BL-21). Best-effort: se o lock não for
+   * obtido no tempo limite, a operação segue mesmo assim (melhor gravar sem
+   * lock do que perder o dado).
+   * @private
+   */
+  _comLock(fn) {
+    const lock = LockService.getScriptLock();
+    let locked = false;
+    try {
+      lock.waitLock(3000);
+      locked = true;
+    } catch (e) {
+      console.warn('⚠️ [StateManager] Lock não obtido, seguindo sem lock:', e.message);
+    }
+    try {
+      return fn();
+    } finally {
+      if (locked) { try { lock.releaseLock(); } catch (ignore) {} }
+    }
+  },
+
+  /**
    * Helper: salva um único campo e muda o estado em uma única chamada.
    */
   salvarCampoEMudarEstado(from, campo, valor, novoEstado) {
-    const dados = this.getDadosTemporarios(from);
-    dados[campo] = valor;
-    this.setDadosTemporarios(from, dados);
-    this.setEstado(from, novoEstado);
+    this._comLock(() => {
+      const dados = this.getDadosTemporarios(from);
+      dados[campo] = valor;
+      this.setDadosTemporarios(from, dados);
+      this.setEstado(from, novoEstado);
+    });
   },
 
   /**
    * Helper: mescla múltiplos campos de uma vez nos dados temporários.
    */
   salvarMultiplosCampos(from, campos) {
-    const dados = this.getDadosTemporarios(from);
-    Object.assign(dados, campos);
-    this.setDadosTemporarios(from, dados);
+    this._comLock(() => {
+      const dados = this.getDadosTemporarios(from);
+      Object.assign(dados, campos);
+      this.setDadosTemporarios(from, dados);
+    });
   },
 
   /**

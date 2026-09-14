@@ -306,10 +306,10 @@ const CadastroHandler = {
       const info = MediaService.obterInfoMidia(imagem.id);
       
       if (info && info.url) {
-        const dados = StateManager.getDadosTemporarios(from);
-        dados.fotoMediaId = imagem.id;
-        StateManager.setDadosTemporarios(from, dados);
-        
+        // BL-20: usar o helper com lock em vez de get/set cru (evita perder
+        // outros campos se houver gravação concorrente).
+        StateManager.salvarMultiplosCampos(from, { fotoMediaId: imagem.id });
+
         Utils.enviarSimples(from, '✅ Foto recebida!');
         console.log(`✅ Foto de perfil registrada para ${from} (mediaId: ${imagem.id})`);
         

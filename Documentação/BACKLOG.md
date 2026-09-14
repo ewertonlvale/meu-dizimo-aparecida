@@ -3,6 +3,7 @@
 **Criado em:** 14/09/2026
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
+**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`. Pendências principais: BL-01 (notificações) após mitigações de carga, BL-09, BL-11 e itens de robustez/manutenção. ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
 ## Legenda
@@ -22,25 +23,25 @@
 | ID | Título | Sev. | Esforço | Status |
 |----|--------|------|---------|--------|
 | BL-01 | Notificações mensais quebradas (`OdooService.executar` inexistente) | 🔴 | M | Aberto |
-| BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | Aberto |
+| BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | ✅ Concluído |
 | BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | Aberto |
 | BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | Aberto |
-| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | Aberto — **simulação** |
-| BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | Aberto — **verificar Odoo** |
-| BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | Aberto |
-| BL-07 | `AGUARDANDO_COMPROVANTE` setado mesmo sem dados de pagamento | 🟠 | P | Aberto |
-| BL-08 | Validação de data de nascimento aceita datas impossíveis/futuras | 🟠 | P | Aberto |
+| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ✅ Concluído |
+| BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | ✅ Fechado (campo related/stored — sem código) |
+| BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | ✅ Concluído |
+| BL-07 | `AGUARDANDO_COMPROVANTE` setado mesmo sem dados de pagamento | 🟠 | P | ✅ Concluído |
+| BL-08 | Validação de data de nascimento aceita datas impossíveis/futuras | 🟠 | P | ✅ Concluído |
 | BL-09 | Webhook processa só a 1ª mensagem do lote | 🟠 | M | Aberto |
-| BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | Aberto |
+| BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | ✅ Concluído |
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | Aberto |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | Aberto |
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | Aberto |
-| BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | Aberto — **simulação** |
+| BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
 | BL-15 | Efeito colateral: busca de dizimista atualiza telefone no Odoo | 🟡 | P | Aberto |
 | BL-16 | Separar arquivos de teste do deploy de produção | 🟡 | M | Aberto |
 | BL-17 | Segurança: uid Odoo dedicado + `WEBHOOK_SECRET` obrigatório | 🟡 | M | Aberto |
 | **Concorrência / carga** | | | | |
-| BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | Aberto |
+| BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | ✅ Concluído (mitigação) |
 | BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | Aberto |
 | BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟡 | M | Aberto |
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | Aberto |
