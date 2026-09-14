@@ -395,3 +395,50 @@ function testarNotificacaoAgora() {
     console.error(`❌ [Notif][TESTE] Falha no envio de teste: ${e.message}`);
   }
 }
+
+/**
+ * DIAGNÓSTICO: confirma se dá para GRAVAR em x_notificacao_log com os campos
+ * que o código usa. Grava um registro com tipo='lembrete' e status='erro' —
+ * a deduplicação só considera status='sucesso', então NÃO bloqueia o envio
+ * real de amanhã. Se falhar, o log aponta o campo/modelo problemático.
+ * Depois de rodar, você pode apagar o registro criado no Odoo (Notificação Log).
+ * Menu: Executar → testarGravacaoLog
+ */
+function testarGravacaoLog() {
+  const props  = PropertiesService.getScriptProperties();
+  const numero = props.getProperty('NUMERO_TESTE') || '5586988521231';
+
+  let dizimista;
+  try {
+    dizimista = OdooService.buscarDizimistaPorWhatsapp(numero);
+  } catch (e) {
+    console.error(`❌ [Notif][TESTE-LOG] Erro ao buscar dizimista: ${e.message}`);
+    return;
+  }
+  if (!dizimista) {
+    console.error(`❌ [Notif][TESTE-LOG] Dizimista ${numero} não encontrado.`);
+    return;
+  }
+
+  const hoje   = new Date();
+  const mesRef = `${hoje.getFullYear()}-${(hoje.getMonth() + 1).toString().padStart(2, '0')}`;
+  const payload = {
+    x_studio_dizimista:      dizimista.id,
+    x_studio_tipo:           'lembrete',
+    x_studio_data_envio:     hoje.toISOString(),
+    x_studio_mes_referencia: mesRef,
+    x_studio_status_envio:   'erro',   // 'erro' NÃO conta na deduplicação (que exige 'sucesso')
+    x_studio_mensagem_erro:  'DIAGNOSTICO BL-01 — pode apagar este registro'
+  };
+
+  console.log('🧪 [Notif][TESTE-LOG] Tentando gravar registro de diagnóstico em x_notificacao_log...');
+  try {
+    const id = OdooService.create('x_notificacao_log', payload);
+    console.log(`✅ [Notif][TESTE-LOG] GRAVOU! id=${id}. Modelo e campos OK — a deduplicação vai funcionar amanhã.`);
+    console.log('ℹ️ [Notif][TESTE-LOG] Pode apagar esse registro no Odoo (Notificação Log). Ele não bloqueia o envio real.');
+  } catch (e) {
+    console.error(`❌ [Notif][TESTE-LOG] FALHOU ao gravar: ${e.message}`);
+    console.error('❌ [Notif][TESTE-LOG] Verifique se existem no modelo x_notificacao_log os campos: ' +
+      'x_studio_dizimista, x_studio_tipo, x_studio_data_envio, x_studio_mes_referencia, x_studio_status_envio, x_studio_mensagem_erro.');
+  }
+}
