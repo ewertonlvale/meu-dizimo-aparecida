@@ -28,10 +28,32 @@ const Router = {
       case 'text':        this._rotearTexto(from, message);      break;
       case 'image':       this._rotearImagem(from, message);     break;
       case 'document':    this._rotearDocumento(from, message);  break;
+      case 'button':      this._rotearBotaoTemplate(from, message); break;
       default:
         console.log(`⚠️ Tipo de mensagem não tratado: ${tipo}`);
         MenuHandler.menuPrincipal(from);
     }
+  },
+
+  // ==========================================================================
+  // RESPOSTA A TEMPLATE (botão de resposta rápida)
+  // ==========================================================================
+
+  /**
+   * Trata a resposta a um template do WhatsApp (ex.: botão "Devolver agora" do
+   * lembrete de devolução), que chega como mensagem do tipo 'button'.
+   */
+  _rotearBotaoTemplate(from, message) {
+    const texto = String(message.button?.text || message.button?.payload || '').toLowerCase();
+    console.log(`🔘 Resposta de template: "${texto}"`);
+
+    if (texto.includes('devolver')) {
+      DevolucaoHandler.iniciarDevolucao(from);
+      return;
+    }
+
+    // Qualquer outra resposta ao template cai no menu principal.
+    MenuHandler.menuPrincipal(from);
   },
 
   // ==========================================================================

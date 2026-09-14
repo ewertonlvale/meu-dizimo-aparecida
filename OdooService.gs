@@ -78,6 +78,28 @@ const OdooService = {
   },
 
   /**
+   * Conta registros que satisfazem o domínio (search_count).
+   * @param {string} model  - Nome do modelo
+   * @param {Array}  domain - Filtros
+   * @returns {number} quantidade de registros
+   */
+  count(model, domain = []) {
+    const cfg = getOdooConfig();
+
+    const payload = {
+      jsonrpc: '2.0',
+      method:  'call',
+      params: {
+        service: 'object',
+        method:  'execute_kw',
+        args: [cfg.database, cfg.uid, cfg.apiKey, model, 'search_count', [domain]]
+      }
+    };
+
+    return this._rpc(cfg.url, payload);
+  },
+
+  /**
    * Atualiza um registro existente no Odoo.
    * @returns {boolean} true se bem-sucedido
    */
