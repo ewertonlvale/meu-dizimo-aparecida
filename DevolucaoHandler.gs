@@ -63,7 +63,20 @@ const DevolucaoHandler = {
    * Coloca a conversa em modo AGUARDANDO_COMPROVANTE.
    */
   iniciarDevolucao(from) {
-    const dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+    let dizimista;
+    try {
+      dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+    } catch (e) {
+      // Odoo indisponível: não falhar em silêncio (a exceção subiria até o
+      // doPost e o usuário não receberia nada). Avisa e mantém o menu.
+      console.error('❌ [DevolucaoHandler] Erro ao buscar dizimista no Odoo:', e.message);
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Estamos com uma instabilidade temporária.*\n\n' +
+        'Não consegui acessar seu cadastro agora. Por favor, tente novamente ' +
+        'em alguns minutos. 🙏'
+      );
+      return;
+    }
 
     if (!dizimista) {
       Utils.enviarSimples(from, '❌ Você ainda não está cadastrado.\n\nDigite *menu* para se cadastrar.');

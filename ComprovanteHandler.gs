@@ -221,44 +221,81 @@ const ComprovanteHandler = {
 
     // ===== REGISTRAR NO ODOO =====
     console.log('🎯 [_tratarResultado] Registrando no Odoo...');
-    
+
+    // Três desfechos distintos — nunca declarar sucesso sem registro real:
+    //   devolucaoId != null          → devolução criada com sucesso
+    //   erroOdoo === true            → Odoo indisponível/falhou (nada gravado)
+    //   dizimista == null sem erro   → número realmente não cadastrado
+    let devolucaoId = null;
+    let dizimista   = null;
+    let erroOdoo    = false;
+
     try {
-      const dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+      dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
       console.log('🎯 [_tratarResultado] Dizimista:', dizimista ? dizimista.id : 'NULL');
-      
-      if (dizimista) {
+    } catch (e) {
+      erroOdoo = true;
+      console.error('🎯 [_tratarResultado] ❌ ERRO ao buscar dizimista no Odoo:', e.message);
+      console.error('🎯 [_tratarResultado] Stack:', e.stack);
+    }
+
+    if (dizimista) {
+      try {
         const tipoComprovante = resultado.tipo === 'pdf' ? 'pdf' : 'imagem';
-        
-        const devolucaoId = OdooService.registrarDevolucao(
-          dizimista.id, 
-          resultado.dados, 
+        devolucaoId = OdooService.registrarDevolucao(
+          dizimista.id,
+          resultado.dados,
           resultado.arquivoOriginalBase64,
           tipoComprovante
         );
-        
         console.log('🎯 [_tratarResultado] ✅ Devolução registrada! ID:', devolucaoId);
-      } else {
-        console.error('🎯 [_tratarResultado] ❌ Dizimista não encontrado!');
+      } catch (e) {
+        erroOdoo = true;
+        console.error('🎯 [_tratarResultado] ❌ ERRO ao registrar no Odoo:', e.message);
+        console.error('🎯 [_tratarResultado] Stack:', e.stack);
       }
-    } catch (e) {
-      console.error('🎯 [_tratarResultado] ❌ ERRO ao registrar no Odoo:', e.message);
-      console.error('🎯 [_tratarResultado] Stack:', e.stack);
-      
-      Utils.enviarSimples(from,
-        '⚠️ Houve um problema ao registrar sua devolução.\n\n' +
-        'Por favor, entre em contato com a secretaria informando:\n' +
-        (dados.valor > 0 ? `• Valor: R$ ${dados.valor}\n` : '') +
-        (dados.data ? `• Data: ${dados.data}\n` : '') +
-        '\nSeu comprovante foi recebido e será processado manualmente.'
-      );
     }
 
-    StateManager.limparDados(from);
+    // ===== RESPOSTA FINAL — honesta quanto ao que realmente aconteceu =====
+    const dadosResumo =
+      (dados.valor > 0 ? `• Valor: R$ ${dados.valor.toFixed(2).replace('.', ',')}\n` : '') +
+      (dados.data     ? `• Data: ${dados.data}\n` : '');
 
-    Utils.enviarComBotaoMenu(from,
-      '✅ *Comprovante recebido com sucesso!*\n\n' +
-      'Sua devolução foi registrada e será confirmada em breve.\n\n' +
-      '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
+    // 1) Sucesso real: devolução criada. Encerra a sessão.
+    if (devolucaoId) {
+      StateManager.limparDados(from);
+      Utils.enviarComBotaoMenu(from,
+        '✅ *Comprovante recebido com sucesso!*\n\n' +
+        'Sua devolução foi registrada e será confirmada em breve.\n\n' +
+        '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
+      );
+      return;
+    }
+
+    // 2) Falha transitória (Odoo indisponível). MANTÉM o estado
+    //    AGUARDANDO_COMPROVANTE para o usuário reenviar sem refazer o fluxo.
+    if (erroOdoo) {
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Não consegui registrar sua devolução agora.*\n\n' +
+        'Estamos com uma instabilidade temporária, então seu comprovante ' +
+        '*ainda não foi registrado*. Por favor, *reenvie o comprovante* em ' +
+        'alguns minutos ou fale com a secretaria' +
+        (dadosResumo ? ' informando:\n' + dadosResumo : '.') +
+        '\nPeço desculpas pelo transtorno. 🙏'
+      );
+      return;
+    }
+
+    // 3) Número realmente não cadastrado. Nada foi registrado; volta ao menu.
+    StateManager.limparDados(from);
+    Utils.enviarMenu(from,
+      '⚠️ *Não encontrei seu cadastro* para registrar a devolução.\n\n' +
+      'Por isso, seu comprovante *ainda não foi registrado*. Para concluir, ' +
+      'faça seu cadastro como dizimista ou entre em contato com a secretaria.',
+      [
+        { id: 'btn_ser_dizimista', title: '🙏 Ser Dizimista' },
+        { id: 'btn_menu',          title: '🔙 Menu' }
+      ]
     );
   }
 };
