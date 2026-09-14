@@ -83,8 +83,12 @@ const DevolucaoHandler = {
       return;
     }
 
-    this._enviarDadosPagamento(from, dizimista);
-    StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE);
+    // BL-07: só colocar em AGUARDANDO_COMPROVANTE se os dados de pagamento
+    // foram realmente enviados. Sem chave PIX, o usuário viu um erro e não
+    // deve ter uma imagem posterior tratada como comprovante.
+    if (this._enviarDadosPagamento(from, dizimista)) {
+      StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE);
+    }
   },
 
   // ==========================================================================
@@ -152,7 +156,7 @@ const DevolucaoHandler = {
       Utils.enviarSimples(from,
         '❌ Erro: Dados de pagamento não configurados.\n\nEntre em contato com a secretaria.'
       );
-      return;
+      return false;
     }
 
     const nomeUsual    = dizimista.x_name;
@@ -185,6 +189,8 @@ const DevolucaoHandler = {
     } catch (e) {
       console.warn('⚠️ QR Code PIX não pôde ser gerado:', e.message);
     }
+
+    return true;
   }
 
 };
