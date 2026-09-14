@@ -2,6 +2,7 @@
 
 **Criado em:** 14/09/2026
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
+**Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
 ## Legenda
@@ -24,6 +25,7 @@
 | BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | Aberto |
 | BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | Aberto |
 | BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | Aberto |
+| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | Aberto — **simulação** |
 | BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | Aberto — **verificar Odoo** |
 | BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | Aberto |
 | BL-07 | `AGUARDANDO_COMPROVANTE` setado mesmo sem dados de pagamento | 🟠 | P | Aberto |
@@ -33,7 +35,7 @@
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | Aberto |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | Aberto |
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | Aberto |
-| BL-14 | OCR captura o primeiro `R$` (pode ser tarifa/saldo) | 🟡 | M | Aberto |
+| BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | Aberto — **simulação** |
 | BL-15 | Efeito colateral: busca de dizimista atualiza telefone no Odoo | 🟡 | P | Aberto |
 | BL-16 | Separar arquivos de teste do deploy de produção | 🟡 | M | Aberto |
 | BL-17 | Segurança: uid Odoo dedicado + `WEBHOOK_SECRET` obrigatório | 🟡 | M | Aberto |
@@ -72,6 +74,12 @@
 **Problema:** monta rows com todas as comunidades (até 50). WhatsApp aceita no máximo 10 → chamada falha com 11+, usuário trava.
 **Correção:** paginar (seções ou "ver mais") ou, no mínimo, `slice(0,10)` como o RelatorioHandler — mas paginação é o ideal para não ocultar comunidades. Considerar busca por texto se a lista crescer.
 **Aceite:** com ≥11 comunidades cadastradas, o usuário consegue selecionar qualquer uma.
+
+### BL-26 — Comprovante não validado contra o destinatário correto 🔴 (M) — **descoberto em simulação real**
+**Arquivo:** `VisionService.gs:300` (`validarComprovante`) · `ComprovanteHandler.gs` · `DevolucaoHandler.gs`
+**Problema:** o bot aceita qualquer comprovante que "pareça" um pagamento — nunca confere se ele foi feito para a chave PIX da comunidade. Na simulação (cadastro + devolução real), o bot instruiu pagar para **Inter / Daniel Fernandes Silva / `037.756.033-12`**, mas o comprovante enviado era para **Caixa / Marlize Ferreira Rodrigues De Sousa / `160.740.093-68`** — destinatário, banco e chave totalmente diferentes — e ainda assim foi registrado como "devolução recebida com sucesso". `validarComprovante` só soma pontos por *presença* de valor/data/tipo/palavras-chave; não há checagem de destino. Na prática, qualquer comprovante de terceiros, antigo ou de valor simbólico é aceito como dízimo (vetor de fraude/erro).
+**Correção:** ao validar, comparar a chave PIX (e, se possível, nome/instituição do recebedor) extraída do comprovante com a `x_studio_chave_pix`/titular da comunidade do dizimista. Se não bater: **não** confirmar automaticamente — marcar a devolução para revisão manual (status pendente + aviso claro ao usuário de que será conferida), em vez de dizer "registrada com sucesso". Depende de BL-14 (extração confiável da chave). Considerar também validar a data (recente) e alertar divergências grosseiras.
+**Aceite:** um comprovante cuja chave de destino ≠ chave da comunidade não é confirmado como sucesso; cai em revisão manual com mensagem honesta ao usuário.
 
 ---
 
@@ -129,8 +137,11 @@
 ### BL-13 — Secretaria com placeholder 🟡 (P)
 `MenuHandler.gs:52-53` mostra `(00) 0000-0000` / `secretaria@exemplo.com`. Buscar de `OdooService.buscarParametros()` (`x_studio_secretaria_whatsapp`, `x_studio_secretaria_email`).
 
-### BL-14 — OCR pega o primeiro `R$` 🟡 (M)
-`VisionService.gs:218-238` retorna o primeiro valor `R$` encontrado, que pode ser tarifa/saldo. Melhorar heurística (proximidade de "valor"/"total"/"pix", maior valor, contexto).
+### BL-14 — Extração frágil de valor e chave PIX do OCR 🟠 (M) — *refinado por simulação*
+`VisionService.gs:218-272`. Dois problemas confirmados na simulação real:
+- **Valor:** `_extrairValor` retorna o primeiro `R$` encontrado, que pode ser tarifa/saldo, não o valor transferido.
+- **Chave PIX:** `_extrairChavePix` retornou `4339441920260` — que **não é uma chave**, mas os 13 primeiros dígitos do *ID da transação* (`E**4339441920260**4052103uuGZ7BZQ3g5`). O padrão de telefone (primeiro do array) casa com o trecho numérico do ID antes de chegar à chave real (`160.740.093-68`). Isso grava dado enganoso no Odoo e inviabiliza o BL-26.
+**Correção:** melhorar heurística de valor (proximidade de "valor"/"total"/"pix", maior valor, contexto) e de chave (ignorar sequências dentro do "ID da transação"/"identificador"; priorizar padrões ancorados por rótulo "Chave Pix:"; reordenar padrões para não deixar telefone capturar IDs). Elevada de 🟡 para 🟠 por bloquear a validação do BL-26.
 
 ### BL-15 — Efeito colateral em busca 🟡 (P)
 `OdooService.gs:171` — `buscarDizimistaPorWhatsapp` grava telefone no Odoo dentro de uma leitura. Extrair a atualização para o chamador ou documentar explicitamente.
@@ -198,7 +209,7 @@ Instrumentar contagem diária de chamadas externas e alertar ao aproximar da cot
 
 ## Sugestão de ordem de execução
 
-1. **Sprint 1 (críticos, baixo esforço):** BL-02, BL-03, BL-04 → depois BL-01 (reativa notificações). Antes de BL-01 ir a produção, tratar BL-21/BL-24 pelo risco de rajada.
+1. **Sprint 1 (integridade da devolução):** BL-02 → **BL-14 → BL-26** (a validação do destinatário depende da extração confiável da chave) → BL-04 → BL-03.
 2. **Sprint 2 (médios):** BL-05 (verificar Odoo primeiro), BL-06, BL-07, BL-08, BL-20, BL-10.
-3. **Sprint 3 (robustez/carga):** BL-09, BL-11, BL-21, BL-22, BL-24.
-4. **Contínuo:** BL-12 a BL-17, BL-23, BL-25.
+3. **Sprint 3 (notificações + robustez/carga):** BL-21 e BL-24 **antes** de reativar BL-01; depois BL-09, BL-11, BL-22.
+4. **Contínuo:** BL-12, BL-13, BL-15, BL-16, BL-17, BL-23, BL-25.
