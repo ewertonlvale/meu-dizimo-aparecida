@@ -178,28 +178,45 @@ const Router = {
   // ==========================================================================
 
   _rotearTexto(from, message) {
-    const texto  = message.text.body.trim();
-    const estado = StateManager.getEstado(from);
+    const texto      = message.text.body.trim();
+    const estado     = StateManager.getEstado(from);
+    const lower      = texto.toLowerCase();
+    const emCadastro = ESTADOS_CADASTRO.includes(estado);
     console.log(`💬 Texto: "${texto}" | Estado: ${estado}`);
 
-    // Atalho global: menu (exceto quando aguardando código de relatório)
+    // Atalhos globais — desabilitados enquanto aguardamos código/mês de relatório
     if (estado !== ESTADOS.AGUARDANDO_CODIGO_RELATORIO &&
         estado !== ESTADOS.AGUARDANDO_MES_CUSTOMIZADO) {
-      if (texto.toLowerCase() === 'menu' || texto === '0') {
-        MenuHandler.menuPrincipal(from);
-        return;
-      }
-
-      // Atalho global: relatório
-      if (PALAVRAS_RELATORIO.includes(texto.toLowerCase())) {
-        StateManager.limparDados(from);
-        RelatorioHandler.iniciar(from);
-        return;
+      if (emCadastro) {
+        // BL-10: durante o cadastro, só "menu" é atalho — e pede confirmação
+        // antes de descartar. 'rel' e '0' NÃO são atalhos aqui, pois colidem
+        // com entradas legítimas (apelido "Rel", dia/valor "0").
+        if (lower === 'menu') {
+          Utils.enviarMenu(from,
+            '🤔 Deseja mesmo sair do cadastro?\n\nSeu progresso atual será descartado.',
+            [
+              { id: 'btn_sessao_sair',      title: '❌ Sim, sair' },
+              { id: 'btn_sessao_continuar', title: '✅ Continuar'  }
+            ]
+          );
+          return;
+        }
+      } else {
+        // Fora do cadastro: atalhos completos.
+        if (lower === 'menu' || texto === '0') {
+          MenuHandler.menuPrincipal(from);
+          return;
+        }
+        if (PALAVRAS_RELATORIO.includes(lower)) {
+          StateManager.limparDados(from);
+          RelatorioHandler.iniciar(from);
+          return;
+        }
       }
     }
 
     // Verifica expiração de sessão e appenda log durante fluxo de cadastro
-    if (ESTADOS_CADASTRO.includes(estado)) {
+    if (emCadastro) {
       StateManager.verificarExpiracaoSessao(from, estado);
       StateManager.appendLog(from, texto);
     }
