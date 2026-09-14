@@ -141,6 +141,44 @@ const ComprovanteHandler = {
   },
 
   // ==========================================================================
+  // CONFERÊNCIA DE CHAVE (BL-26)
+  // ==========================================================================
+
+  /**
+   * Confere se a chave PIX extraída do comprovante corresponde à chave da
+   * comunidade do dizimista.
+   * @param {string|null} extraida - Chave lida do comprovante (VisionService)
+   * @param {string|null} esperada - Chave PIX cadastrada na comunidade
+   * @returns {{conferido: boolean, motivo: string}}
+   *          motivo: 'ok' | 'divergente' | 'ausente' | 'sem_referencia'
+   * @private
+   */
+  _conferirChave(extraida, esperada) {
+    if (!esperada) return { conferido: false, motivo: 'sem_referencia' };
+    if (!extraida) return { conferido: false, motivo: 'ausente' };
+
+    // E-mail: compara em minúsculas. Demais tipos (CPF/CNPJ/telefone/aleatória):
+    // compara só os dígitos, tolerando o DDI 55 via sufixo.
+    const norm = k => {
+      k = String(k).trim().toLowerCase();
+      return k.indexOf('@') >= 0 ? k : k.replace(/\D/g, '');
+    };
+    const a = norm(extraida);
+    const b = norm(esperada);
+    if (!a || !b) return { conferido: false, motivo: 'ausente' };
+
+    let iguais;
+    if (a.indexOf('@') >= 0 || b.indexOf('@') >= 0) {
+      iguais = a === b;
+    } else {
+      iguais = a === b ||
+        (a.length >= 11 && b.length >= 11 && (a.endsWith(b) || b.endsWith(a)));
+    }
+
+    return { conferido: iguais, motivo: iguais ? 'ok' : 'divergente' };
+  },
+
+  // ==========================================================================
   // TRATAMENTO DO RESULTADO
   // ==========================================================================
 
@@ -229,6 +267,7 @@ const ComprovanteHandler = {
     let devolucaoId = null;
     let dizimista   = null;
     let erroOdoo    = false;
+    let conferido   = false;   // BL-26: chave do comprovante confere com a da comunidade?
 
     try {
       dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
@@ -242,11 +281,33 @@ const ComprovanteHandler = {
     if (dizimista) {
       try {
         const tipoComprovante = resultado.tipo === 'pdf' ? 'pdf' : 'imagem';
+
+        // BL-26: conferir se o comprovante foi feito para a chave PIX da comunidade.
+        // Se não bater (ou não houver chave legível), registra mesmo assim, porém
+        // marcado para conferência manual — nunca confirmamos como verificado.
+        let chaveEsperada = null;
+        try {
+          const comunidade = OdooService.buscarDadosPagamentoComunidade(dizimista);
+          chaveEsperada = comunidade && comunidade.x_studio_chave_pix;
+        } catch (eCom) {
+          console.warn('⚠️ [_tratarResultado] Não obtive a chave da comunidade:', eCom.message);
+        }
+
+        const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+        conferido = conf.conferido;
+        console.log(`🎯 [_tratarResultado] Conferência de chave: ${conferido ? 'OK' : 'PENDENTE'} (${conf.motivo})`);
+
+        const observacao = conferido ? '' :
+          (conf.motivo === 'divergente'
+            ? '⚠️ CONFERIR: chave do comprovante diverge da comunidade'
+            : '⚠️ CONFERIR: chave não identificada no comprovante');
+
         devolucaoId = OdooService.registrarDevolucao(
           dizimista.id,
           resultado.dados,
           resultado.arquivoOriginalBase64,
-          tipoComprovante
+          tipoComprovante,
+          observacao
         );
         console.log('🎯 [_tratarResultado] ✅ Devolução registrada! ID:', devolucaoId);
       } catch (e) {
@@ -264,11 +325,22 @@ const ComprovanteHandler = {
     // 1) Sucesso real: devolução criada. Encerra a sessão.
     if (devolucaoId) {
       StateManager.limparDados(from);
-      Utils.enviarComBotaoMenu(from,
-        '✅ *Comprovante recebido com sucesso!*\n\n' +
-        'Sua devolução foi registrada e será confirmada em breve.\n\n' +
-        '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
-      );
+      if (conferido) {
+        // Chave do comprovante confere com a da comunidade.
+        Utils.enviarComBotaoMenu(from,
+          '✅ *Comprovante recebido com sucesso!*\n\n' +
+          'Sua devolução foi registrada e será confirmada em breve.\n\n' +
+          '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
+        );
+      } else {
+        // BL-26: chave divergente ou não identificada — não prometer confirmação.
+        Utils.enviarComBotaoMenu(from,
+          '✅ *Comprovante recebido!*\n\n' +
+          'Sua devolução foi registrada e passará por *conferência da secretaria* ' +
+          'antes de ser confirmada.\n\n' +
+          '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
+        );
+      }
       return;
     }
 

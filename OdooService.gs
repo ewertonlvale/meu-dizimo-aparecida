@@ -313,7 +313,7 @@ const OdooService = {
    * @param {string}      tipoComprovante    - 'imagem' ou 'pdf'
    * @returns {number} ID da devolução criada
    */
-  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem') {
+  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', observacao = '') {
     const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
     let dataOdoo = hoje;
@@ -328,7 +328,10 @@ const OdooService = {
       }
     }
 
-    const descricao = `Devolução de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
+    // observacao (BL-26): marca de conferência manual quando a chave do
+    // comprovante não confere/está ausente — fica visível no nome do registro.
+    let descricao = `Devolução de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
+    if (observacao) descricao += ` — ${observacao}`;
 
     const dados = {
       x_name:                        descricao,
