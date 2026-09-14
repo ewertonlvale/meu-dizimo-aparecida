@@ -348,3 +348,50 @@ function removerTriggerNotificacoes() {
 // é tratada no Router (mensagem type 'button' → DevolucaoHandler.iniciarDevolucao).
 // A antiga processarRespostaNotificacao foi removida (código morto e quebrado:
 // chamava DevolucaoHandler.iniciar e HistoricoHandler.mostrar, inexistentes).
+
+// ============================================================================
+// TESTE MANUAL — enviar UM lembrete AGORA (ignora o filtro de dia/mês)
+// ============================================================================
+
+/**
+ * Envia imediatamente um lembrete de devolução para um número, para validar
+ * o template e a integração sem esperar o dia do mês. NÃO grava log no Odoo
+ * (para não bloquear o envio real do mês nem depender do modelo x_notificacao_log).
+ *
+ * Como usar:
+ *   1. Defina o número em Script Properties na chave NUMERO_TESTE
+ *      (formato internacional, ex.: 5586988521231) — ou edite a const abaixo.
+ *   2. No editor: Executar → testarNotificacaoAgora
+ *   3. Acompanhe os logs [Notif][TESTE] na aba Execuções.
+ */
+function testarNotificacaoAgora() {
+  const props  = PropertiesService.getScriptProperties();
+  const numero = props.getProperty('NUMERO_TESTE') || '5586988521231'; // <- ajuste se necessário
+
+  console.log(`🧪 [Notif][TESTE] Lembrete imediato para ${numero} (ignora filtro de dia/mês)`);
+
+  let dizimista;
+  try {
+    dizimista = OdooService.buscarDizimistaPorWhatsapp(numero);
+  } catch (e) {
+    console.error(`❌ [Notif][TESTE] Erro ao buscar dizimista no Odoo: ${e.message}`);
+    if (e.stack) console.error(`❌ [Notif][TESTE] Stack: ${e.stack}`);
+    return;
+  }
+
+  if (!dizimista) {
+    console.error(`❌ [Notif][TESTE] Nenhum dizimista com o número ${numero}. ` +
+      `Cadastre esse número no bot ou ajuste NUMERO_TESTE.`);
+    return;
+  }
+
+  console.log(`🧪 [Notif][TESTE] Dizimista id=${dizimista.id} (${dizimista.x_name}) ` +
+    `valor=${dizimista.x_studio_value} dia=${dizimista.x_studio_dia_preferido}`);
+
+  try {
+    NotificacaoHandler.enviarLembreteSimples(dizimista);
+    console.log('✅ [Notif][TESTE] Lembrete de teste enviado — verifique o WhatsApp.');
+  } catch (e) {
+    console.error(`❌ [Notif][TESTE] Falha no envio de teste: ${e.message}`);
+  }
+}
