@@ -215,12 +215,15 @@ function buscarDizimistasElegiveis() {
     const diaVencimento  = d.x_studio_dia_preferido || 10;
     const diaNotificacao = calcularDiaNotificacao(diaVencimento);
 
-    // Fora do dia de notificação deste dizimista: silencioso (seria muito verboso).
-    if (diaNotificacao !== diaHoje) {
-      return false;
+    // Repescagem: notifica a PARTIR do dia de notificação (não só no dia exato).
+    // Se um disparo diário atrasar/pular a janela, o grupo é recuperado no dia
+    // seguinte — a deduplicação (jaFoiNotificadoEsteMes) garante um único envio
+    // por mês, e jaDevolveueEsteMes evita lembrar quem já devolveu.
+    if (diaHoje < diaNotificacao) {
+      return false;   // ainda não chegou o dia deste dizimista
     }
 
-    // A partir daqui é candidato do dia — logamos cada decisão.
+    // A partir daqui é candidato — logamos cada decisão.
     if (!d.x_studio_partner_phone) {
       console.warn(`⚠️ [Notif] id=${d.id} (${d.x_name}) SEM telefone — pulando.`);
       return false;
