@@ -364,6 +364,14 @@ const OdooService = {
       x_studio_tipo_comprovante:     tipoComprovante
     };
 
+    // Forma de pagamento: mapear o tipo detectado pelo OCR para o campo
+    // selection do Odoo (valores existentes: 'Pix' | 'Dinheiro'). Só definimos
+    // quando há mapeamento seguro (PIX); nos demais casos deixamos o padrão do
+    // Odoo. (Antes ficava sempre 'Dinheiro' num comprovante, o que é incorreto.)
+    const FORMA_PAGAMENTO = { 'PIX': 'Pix' };
+    const forma = FORMA_PAGAMENTO[dadosAnalise?.tipo];
+    if (forma) dados.x_studio_forma_de_pagamento = forma;
+
     if (comprovanteBase64) {
       dados.x_studio_comprovante = comprovanteBase64;
       // Nome amigável para download no Odoo
