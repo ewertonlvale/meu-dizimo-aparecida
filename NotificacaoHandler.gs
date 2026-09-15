@@ -292,7 +292,10 @@ function registrarLogNotificacao(dizimistaId, status, mensagemErro) {
   const payload = {
     x_studio_dizimista: dizimistaId,
     x_studio_tipo: 'lembrete',
-    x_studio_data_envio: hoje.toISOString(),
+    // x_studio_data_envio é um campo DATE no Odoo → precisa de 'yyyy-MM-dd'.
+    // Antes gravava toISOString() (datetime ISO), o que o Odoo rejeitava e
+    // impedia o registro do log (quebrando a deduplicação).
+    x_studio_data_envio: Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'),
     x_studio_mes_referencia: mesReferencia,
     x_studio_status_envio: status,
     x_studio_mensagem_erro: mensagemErro || false
@@ -427,7 +430,7 @@ function testarGravacaoLog() {
   const payload = {
     x_studio_dizimista:      dizimista.id,
     x_studio_tipo:           'lembrete',
-    x_studio_data_envio:     hoje.toISOString(),
+    x_studio_data_envio:     Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'), // campo DATE
     x_studio_mes_referencia: mesRef,
     x_studio_status_envio:   'erro',   // 'erro' NÃO conta na deduplicação (que exige 'sucesso')
     x_studio_mensagem_erro:  'DIAGNOSTICO BL-01 — pode apagar este registro'
