@@ -442,3 +442,72 @@ function testarGravacaoLog() {
       'x_studio_dizimista, x_studio_tipo, x_studio_data_envio, x_studio_mes_referencia, x_studio_status_envio, x_studio_mensagem_erro.');
   }
 }
+
+// ============================================================================
+// PRÉ-VISUALIZAÇÃO (dry-run) — quem seria notificado num determinado dia
+// ============================================================================
+
+/**
+ * Lista, SEM enviar nada, os dizimistas que seriam notificados no dia informado.
+ * Aplica exatamente as mesmas regras da rotina real (dia de notificação =
+ * dia_preferido + 2, teto 28; pula quem já foi notificado ou já devolveu no mês;
+ * pula sem telefone), mas apenas imprime no log.
+ *
+ * @param {number} [diaAlvo=15] - Dia de notificação a simular. Rodando sem
+ *        argumento no editor, assume 15 (→ dia preferido 13).
+ *
+ * Menu: Executar → listarNotificacoesDoDia   (usa 15 por padrão)
+ */
+function listarNotificacoesDoDia(diaAlvo) {
+  diaAlvo = diaAlvo || 15;
+
+  const hoje     = new Date();
+  const mesAtual = hoje.getMonth() + 1;
+  const anoAtual = hoje.getFullYear();
+
+  console.log(`🔎 [Notif][PREVIEW] Quem seria notificado no DIA ${diaAlvo} ` +
+              `(referência do mês ${mesAtual}/${anoAtual}) — nenhuma mensagem é enviada.`);
+
+  let dizimistas;
+  try {
+    dizimistas = OdooService.searchRead(
+      'x_dizimista',
+      ['x_name', 'x_studio_partner_phone', 'x_studio_value', 'x_studio_dia_preferido'],
+      [['x_active', '=', true], ['x_studio_notificacao_ativa', '=', true]],
+      { limit: false }
+    );
+  } catch (e) {
+    console.error(`❌ [Notif][PREVIEW] Erro ao buscar dizimistas no Odoo: ${e.message}`);
+    return;
+  }
+
+  // Filtra os cujo dia de notificação (dia_preferido + 2, teto 28) cai no diaAlvo.
+  const doDia = dizimistas.filter(d => calcularDiaNotificacao(d.x_studio_dia_preferido || 10) === diaAlvo);
+
+  console.log(`📊 [Notif][PREVIEW] ${doDia.length} dizimista(s) com dia de notificação = ${diaAlvo} ` +
+              `(entre ${dizimistas.length} ativos com notificação ligada).`);
+
+  let receberao = 0;
+  doDia.forEach((d, i) => {
+    let status = 'ELEGÍVEL ✅';
+    if (!d.x_studio_partner_phone) {
+      status = 'PULADO — sem telefone';
+    } else {
+      try {
+        if (jaFoiNotificadoEsteMes(d.id, mesAtual, anoAtual)) {
+          status = 'PULADO — já notificado este mês';
+        } else if (jaDevolveueEsteMes(d.id, mesAtual, anoAtual)) {
+          status = 'PULADO — já devolveu este mês';
+        }
+      } catch (e) {
+        status = `ERRO ao checar histórico: ${e.message}`;
+      }
+    }
+    if (status.indexOf('ELEGÍVEL') === 0) receberao++;
+
+    console.log(`  ${i + 1}. id=${d.id} | ${d.x_name} | fone=${d.x_studio_partner_phone || '-'} | ` +
+                `valor=${d.x_studio_value} | diaPreferido=${d.x_studio_dia_preferido} | ${status}`);
+  });
+
+  console.log(`✅ [Notif][PREVIEW] RESULTADO: ${receberao} de ${doDia.length} receberão o lembrete no dia ${diaAlvo}.`);
+}
