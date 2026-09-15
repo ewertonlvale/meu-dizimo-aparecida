@@ -208,7 +208,7 @@ const StateManager = {
     if (!inicio || jaAvisado) return false;
 
     const minutosDecorridos = (Date.now() - parseInt(inicio)) / 60000;
-    if (minutosDecorridos < 10) return false;
+    if (minutosDecorridos < 50) return false;   // BL-03: avisa a 50 min (10 min antes de expirar em 60)
 
     console.log(`⚠️ Sessão de ${from} prestes a expirar (${Math.floor(minutosDecorridos)} min)`);
 

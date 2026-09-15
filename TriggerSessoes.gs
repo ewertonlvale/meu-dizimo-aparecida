@@ -59,7 +59,7 @@ function verificarSessoesAbandonadas() {
 
         const minutosDecorridos = (Date.now() - parseInt(inicio)) / 60000;
 
-        if (minutosDecorridos >= 15) {
+        if (minutosDecorridos >= 60) {   // BL-03: sessão de 60 min (alinha com o texto ao usuário)
           console.log(`⏰ [Trigger] Sessão de ${from} com ${Math.floor(minutosDecorridos)} min — persistindo`);
           _tentarPersistir(from, cache);
           StateManager.limparDados(from);
@@ -67,7 +67,7 @@ function verificarSessoesAbandonadas() {
           return;
         }
 
-        if (minutosDecorridos >= 10) {
+        if (minutosDecorridos >= 50) {   // BL-03: aviso 10 min antes de expirar
           const jaAvisado = cache.get(`aviso_sessao_${from}`);
           if (!jaAvisado) {
             console.log(`⚠️ [Trigger] Enviando aviso de expiração para ${from}`);
@@ -132,7 +132,7 @@ function instalarTriggerSessoes() {
     .everyMinutes(5)
     .create();
 
-  console.log('✅ Trigger instalada: verificarSessoesAbandonadas a cada 20 minutos');
+  console.log('✅ Trigger instalada: verificarSessoesAbandonadas a cada 5 minutos');
 }
 
 /**

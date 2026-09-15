@@ -77,22 +77,40 @@ const CadastroHandler = {
       return;
     }
 
-    const sections = [{
-      title: 'Comunidades Disponíveis',
-      rows: comunidades.map(c => ({
-        id:          `com_${c.id}`,
-        title:       c.x_name.substring(0, 24),
-        description: c.x_name.length > 24 ? c.x_name.substring(24, 72) : ''
-      }))
-    }];
-
-    Utils.enviarLista(from,
-      `${this._progresso(1)}\n\nPerfeito! Vamos começar seu cadastro.\n\n📍 De qual comunidade você faz parte?`,
-      sections,
-      { textoBotao: 'Ver Comunidades' }
-    );
+    // BL-04: a lista do WhatsApp aceita no máximo 10 linhas. Paginamos (9 por
+    // página + "Ver mais") em vez de truncar — nenhuma comunidade fica oculta.
+    StateManager.salvarMultiplosCampos(from, { comunidadesOffset: 0 });
+    this._enviarPaginaComunidades(from, comunidades, 0, true);
 
     StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMUNIDADE);
+  },
+
+  /**
+   * Envia uma "página" de comunidades como lista interativa.
+   * Até 9 comunidades + a linha "Ver mais" (id `com_mais`) quando houver mais,
+   * respeitando o limite de 10 linhas do WhatsApp (BL-04).
+   * @private
+   */
+  _enviarPaginaComunidades(from, comunidades, offset, primeira) {
+    const POR_PAGINA = 9;
+    const fatia   = comunidades.slice(offset, offset + POR_PAGINA);
+    const temMais = offset + POR_PAGINA < comunidades.length;
+
+    const rows = fatia.map(c => ({
+      id:          `com_${c.id}`,
+      title:       c.x_name.substring(0, 24),
+      description: c.x_name.length > 24 ? c.x_name.substring(24, 72) : ''
+    }));
+    if (temMais) {
+      rows.push({ id: 'com_mais', title: '➡️ Ver mais', description: 'Mostrar outras comunidades' });
+    }
+
+    const texto = primeira
+      ? `${this._progresso(1)}\n\nPerfeito! Vamos começar seu cadastro.\n\n📍 De qual comunidade você faz parte?`
+      : '📍 Outras comunidades disponíveis:';
+
+    Utils.enviarLista(from, texto, [{ title: 'Comunidades Disponíveis', rows }],
+      { textoBotao: 'Ver Comunidades' });
   },
 
   // ==========================================================================
@@ -100,6 +118,15 @@ const CadastroHandler = {
   // ==========================================================================
 
   processarComunidade(from, itemId, itemTitle) {
+    // BL-04: "Ver mais" avança para a próxima página, sem sair do estado.
+    if (itemId === 'com_mais') {
+      const comunidades = OdooService.listarComunidades();
+      const offset = (StateManager.getCampo(from, 'comunidadesOffset') || 0) + 9;
+      StateManager.salvarMultiplosCampos(from, { comunidadesOffset: offset });
+      this._enviarPaginaComunidades(from, comunidades, offset, false);
+      return;
+    }
+
     const comunidadeId = parseInt(itemId.replace('com_', ''));
 
     StateManager.salvarMultiplosCampos(from, {

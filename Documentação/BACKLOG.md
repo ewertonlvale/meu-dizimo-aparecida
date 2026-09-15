@@ -24,8 +24,8 @@
 |----|--------|------|---------|--------|
 | BL-01 | Notificações mensais quebradas (`OdooService.executar` inexistente) | 🔴 | M | Aberto |
 | BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | ✅ Concluído |
-| BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | Aberto |
-| BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | Aberto |
+| BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | ✅ Concluído (60 min; aviso em 50) |
+| BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | ✅ Concluído (paginação "Ver mais") |
 | BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ✅ Concluído |
 | BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | ✅ Fechado — `x_studio_comunidade` é related de `x_studio_dizimista.x_studio_comunidade` (stored/readonly); confirmado no schema e em produção |
 | BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | ✅ Concluído |
