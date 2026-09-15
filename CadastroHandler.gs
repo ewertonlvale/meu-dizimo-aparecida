@@ -41,8 +41,9 @@ const CadastroHandler = {
         `👋 Olá, *${nome}*!\n\nVocê já está cadastrado(a) em nosso sistema!\n\n` +
         `Se deseja atualizar seus dados, entre em contato com a secretaria.`,
         [
-          { id: 'btn_devolver_dizimo', title: '💰 Devolver dízimo' },
-          { id: 'btn_menu',            title: '🔙 Menu'            }
+          { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
+          { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },
+          { id: 'btn_menu',             title: '🔙 Menu'             }
         ]
       );
       return;
@@ -63,6 +64,47 @@ const CadastroHandler = {
     );
 
     StateManager.setEstado(from, ESTADOS.AGUARDANDO_CONFIRMACAO_NUMERO);
+  },
+
+  // ==========================================================================
+  // ADICIONAR MEMBRO DA FAMÍLIA (Fase 1)
+  // ==========================================================================
+
+  /**
+   * Inicia o cadastro de um familiar, vinculado ao responsável (o número atual).
+   * Reaproveita as etapas do cadastro, mas pula número (o membro não tem
+   * telefone), comunidade (herda a do responsável) e notificações.
+   * Ponto de entrada: botão 'btn_adicionar_membro'.
+   */
+  iniciarCadastroMembro(from) {
+    const responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
+    if (!responsavel) {
+      Utils.enviarComBotaoMenu(from, '❌ Não encontrei seu cadastro. Digite *menu* para começar.');
+      return;
+    }
+
+    // Comunidade do responsável (many2one → [id, nome]).
+    const com = responsavel.x_studio_comunidade;
+    const comunidadeId   = Array.isArray(com) ? com[0] : com;
+    const comunidadeNome = Array.isArray(com) ? com[1] : '';
+
+    StateManager.limparDados(from);
+    StateManager.iniciarSessaoCadastro(from);
+    StateManager.registrarSessaoAtiva(from);
+    StateManager.salvarMultiplosCampos(from, {
+      cadastrandoMembro: true,
+      responsavelId:     responsavel.id,
+      comunidadeId:      comunidadeId,
+      comunidadeNome:    comunidadeNome
+    });
+
+    Utils.enviarSimples(from,
+      `👨‍👩‍👧 *Adicionar membro da família*\n\n` +
+      `Vamos cadastrar um familiar na sua comunidade *${comunidadeNome || '—'}*.\n\n` +
+      `📝 *Nome Completo*\n\nDigite o nome completo do familiar:`
+    );
+
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_NOME);
   },
 
   // ==========================================================================
@@ -238,13 +280,18 @@ const CadastroHandler = {
       return;
     }
 
-    // ✅ CORRIGIDO: Usar o padrão salvarCampoEMudarEstado
-    StateManager.salvarCampoEMudarEstado(from, 'valorMensal', valor, ESTADOS.AGUARDANDO_NOTIFICACAO);
-    
+    StateManager.salvarMultiplosCampos(from, { valorMensal: valor });
     Utils.enviarSimples(from, `Valor registrado: *R$ ${valor.toFixed(2).replace('.', ',')}* ✅`);
     Utilities.sleep(1000);
-    
-    // Perguntar sobre notificações
+
+    // Membro da família: pula notificações e foto → vai direto ao resumo.
+    if (StateManager.getCampo(from, 'cadastrandoMembro')) {
+      this.mostrarResumo(from);
+      return;
+    }
+
+    // Cadastro normal: pergunta sobre notificações.
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_NOTIFICACAO);
     Utils.enviarConfirmar(from,
       `${this._progresso(7)}\n\n📲 *NOTIFICAÇÕES*\n\n` +
       'Deseja receber lembretes mensais sobre suas devoluções?\n\n',
@@ -369,24 +416,24 @@ const CadastroHandler = {
 
   mostrarResumo(from) {
     const dados = StateManager.getDadosTemporarios(from);
+    const ehMembro = !!dados.cadastrandoMembro;
 
-    // Montar texto de notificação
-    let textoNotificacao = '';
-    if (dados.notificacaoAtiva) {
-      textoNotificacao = `📲 *Notificações:* Ativadas (dia ${dados.diaPreferido})\n`;
-    } else {
-      textoNotificacao = `📲 *Notificações:* Desativadas\n`;
-    }
+    // Linha final: membro não tem notificações; cadastro normal mostra o status.
+    const linhaExtra = ehMembro
+      ? `👨‍👩‍👧 *Membro da família* (mesma comunidade)\n`
+      : (dados.notificacaoAtiva
+          ? `📲 *Notificações:* Ativadas (dia ${dados.diaPreferido})\n`
+          : `📲 *Notificações:* Desativadas\n`);
 
     const resumo =
-      `📋 *RESUMO DO CADASTRO*\n\n` +
+      `📋 *${ehMembro ? 'RESUMO DO MEMBRO' : 'RESUMO DO CADASTRO'}*\n\n` +
       `👤 *Nome:* ${dados.nome}\n` +
       `💛 *Como chamar:* ${dados.nomeUsual}\n` +
       `📅 *Nascimento:* ${dados.dataNascimento}\n` +
       `🏘️ *Comunidade:* ${dados.comunidadeNome}\n\n` +
       `🏠 *Endereço:* ${dados.endereco}\n\n` +
       `💰 *Dízimo mensal:* R$ ${parseFloat(dados.valorMensal).toFixed(2).replace('.', ',')}\n` +
-      textoNotificacao +
+      linhaExtra +
       `\nOs dados estão corretos?`;
 
     Utils.enviarMenu(from, resumo,
@@ -394,16 +441,39 @@ const CadastroHandler = {
         { id: 'btn_confirmar_cadastro', title: '✅ Confirmar'  },
         { id: 'btn_cancelar_cadastro',  title: '❌ Corrigir'   }
       ],
-      { header: '💛 Confirmação de Cadastro' }
+      { header: ehMembro ? '👨‍👩‍👧 Confirmação do Membro' : '💛 Confirmação de Cadastro' }
     );
   },
 
   finalizar(from) {
-    Utils.enviarSimples(from, '⏳ Salvando seu cadastro...');
-
     const dados = StateManager.getDadosTemporarios(from);
+    const ehMembro = !!dados.cadastrandoMembro;
+
+    Utils.enviarSimples(from, ehMembro ? '⏳ Adicionando membro...' : '⏳ Salvando seu cadastro...');
 
     try {
+      // ── Membro da família ────────────────────────────────────────────────
+      if (ehMembro) {
+        OdooService.criarMembro(dados, dados.responsavelId);
+        StateManager.limparDados(from);
+
+        let msg = `🎉 *Membro adicionado!*\n\n` +
+                  `*${dados.nomeUsual}* foi vinculado(a) à sua família.`;
+        try {
+          const familia = OdooService.listarFamilia(dados.responsavelId);
+          if (familia && familia.length) {
+            msg += `\n\n👨‍👩‍👧 Sua família agora tem *${familia.length}* pessoa(s).`;
+          }
+        } catch (e) {
+          console.warn('⚠️ listarFamilia falhou (apenas contagem):', e.message);
+        }
+        msg += `\n\nVocê já pode devolver o dízimo dele(a) por você. 💛`;
+
+        Utils.enviarComBotaoMenu(from, msg);
+        return;
+      }
+
+      // ── Cadastro normal (responsável) ────────────────────────────────────
       const id = OdooService.criarDizimista(dados);
 
       // Upload da foto se existir mediaId
@@ -429,18 +499,20 @@ const CadastroHandler = {
       let mensagemFinal = `🎉 *Cadastro realizado com sucesso!*\n\n` +
                           `Bem-vindo(a), *${dados.nomeUsual}*! 💛\n\n` +
                           `Você já pode devolver seu dízimo pelo WhatsApp.`;
-      
+
       if (dados.notificacaoAtiva) {
         mensagemFinal += `\n\n📲 Você receberá lembretes todo dia *${dados.diaPreferido}* do mês.`;
       }
-      
+
       mensagemFinal += `\n\nQue Deus abençoe sua generosidade! 🙏`;
 
       Utils.enviarComBotaoMenu(from, mensagemFinal);
 
     } catch (error) {
       console.error('❌ Erro ao salvar cadastro:', error);
-      MenuHandler.erro(from, 'Ocorreu um erro ao salvar seu cadastro. Tente novamente ou entre em contato com a secretaria.');
+      MenuHandler.erro(from, ehMembro
+        ? 'Ocorreu um erro ao adicionar o membro. Tente novamente ou fale com a secretaria.'
+        : 'Ocorreu um erro ao salvar seu cadastro. Tente novamente ou entre em contato com a secretaria.');
     }
   },
 

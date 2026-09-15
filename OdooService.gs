@@ -222,6 +222,49 @@ const OdooService = {
   },
 
   /**
+   * Cria um MEMBRO da família, vinculado ao responsável.
+   * Diferenças do cadastro normal: grava x_studio_responsavel, herda a
+   * comunidade, NÃO grava telefone (membro não fala com o bot) e deixa as
+   * notificações desligadas.
+   * @param {Object} dados         - Dados temporários do cadastro do membro
+   * @param {number} responsavelId - ID do dizimista responsável
+   * @returns {number} ID criado
+   */
+  criarMembro(dados, responsavelId) {
+    const [dia, mes, ano] = dados.dataNascimento.split('/');
+    const dataOdoo = `${ano}-${mes}-${dia}`;
+
+    return this.create('x_dizimista', {
+      x_studio_nome_completo:     dados.nome,
+      x_name:                     dados.nomeUsual,
+      x_studio_endereco:          dados.endereco,
+      x_studio_date:              dataOdoo,
+      x_studio_value:             dados.valorMensal,
+      x_studio_comunidade:        dados.comunidadeId,
+      x_studio_responsavel:       responsavelId,
+      x_studio_notificacao_ativa: false
+      // sem x_studio_partner_phone: o membro não tem número próprio
+    });
+  },
+
+  /**
+   * Lista a família de um responsável: o próprio responsável + os membros
+   * que apontam para ele (x_studio_responsavel), apenas ativos.
+   * @param {number} responsavelId
+   * @returns {Array} [{ id, x_name, x_studio_value, x_studio_comunidade, x_studio_responsavel }]
+   */
+  listarFamilia(responsavelId) {
+    return this.searchRead(
+      'x_dizimista',
+      ['id', 'x_name', 'x_studio_value', 'x_studio_comunidade', 'x_studio_responsavel'],
+      ['&', ['x_active', '=', true],
+            '|', ['id', '=', responsavelId],
+                 ['x_studio_responsavel', '=', responsavelId]],
+      { order: 'id asc', limit: false }
+    );
+  },
+
+  /**
    * Atualiza campos de um dizimista existente.
    * @param {number} id   - ID do dizimista
    * @param {Object} data - Campos a atualizar (chaves Odoo)

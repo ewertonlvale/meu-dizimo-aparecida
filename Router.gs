@@ -145,7 +145,8 @@ const Router = {
 
     switch (buttonId) {
       // --- Cadastro ---
-      case 'btn_ser_dizimista':      CadastroHandler.iniciar(from);           break;
+      case 'btn_ser_dizimista':      CadastroHandler.iniciar(from);              break;
+      case 'btn_adicionar_membro':   CadastroHandler.iniciarCadastroMembro(from); break;
       case 'btn_numero_confirmar':   CadastroHandler.confirmarNumero(from);   break;
       case 'btn_numero_cancelar':    CadastroHandler.cancelar(from);          break;
       case 'btn_foto_sim':           CadastroHandler.solicitarFoto(from);     break;
