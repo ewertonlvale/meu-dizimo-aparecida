@@ -306,6 +306,8 @@ function registrarLogNotificacao(dizimistaId, status, mensagemErro) {
   const mesReferencia = `${hoje.getFullYear()}-${(hoje.getMonth() + 1).toString().padStart(2, '0')}`;
   
   const payload = {
+    // x_name (Descrição) é OBRIGATÓRIO no x_notificacao_log.
+    x_name: `Lembrete ${mesReferencia} — dizimista ${dizimistaId} (${status})`,
     x_studio_dizimista: dizimistaId,
     x_studio_tipo: 'lembrete',
     // x_studio_data_envio é um campo DATE no Odoo → precisa de 'yyyy-MM-dd'.
@@ -447,6 +449,7 @@ function testarGravacaoLog() {
   const hoje   = new Date();
   const mesRef = `${hoje.getFullYear()}-${(hoje.getMonth() + 1).toString().padStart(2, '0')}`;
   const payload = {
+    x_name:                  `DIAGNÓSTICO — ${dizimista.x_name} — ${mesRef}`, // obrigatório
     x_studio_dizimista:      dizimista.id,
     x_studio_tipo:           'lembrete',
     x_studio_data_envio:     Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'), // campo DATE
