@@ -22,7 +22,7 @@
 
 | ID | Título | Sev. | Esforço | Status |
 |----|--------|------|---------|--------|
-| BL-01 | Notificações mensais quebradas (`OdooService.executar` inexistente) | 🔴 | M | Aberto |
+| BL-01 | Notificações mensais quebradas (`OdooService.executar` inexistente) | 🔴 | M | ✅ Concluído (+ fail-open, fix `date`, repescagem, botão do template) |
 | BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | ✅ Concluído |
 | BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | ✅ Concluído (60 min; aviso em 50) |
 | BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | ✅ Concluído (paginação "Ver mais") |
