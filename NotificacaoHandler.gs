@@ -104,10 +104,23 @@ const NotificacaoHandler = {
 // SCHEDULER - ROTINA DIÁRIA
 // ============================================================================
 
+// Janela de envio (horário útil). Como o acionador roda de hora em hora, isto
+// evita mandar lembrete de madrugada — fora da janela a rotina roda mas não envia.
+// Ajuste conforme a preferência da paróquia.
+const NOTIF_HORA_INICIO = 8;   // inclusive
+const NOTIF_HORA_FIM    = 20;  // exclusivo (envia até as 19h59)
+
 function executarNotificacoesDiarias() {
   const t0 = Date.now();
   const agora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
   console.log(`━━━━━━ [Notif] INÍCIO da rotina de notificações — ${agora} (${TIMEZONE}) ━━━━━━`);
+
+  // Só envia em horário útil (evita lembrete de madrugada com o acionador horário).
+  const horaAtual = Number(Utilities.formatDate(new Date(), TIMEZONE, 'H'));
+  if (horaAtual < NOTIF_HORA_INICIO || horaAtual >= NOTIF_HORA_FIM) {
+    console.log(`🌙 [Notif] Fora da janela de envio (${horaAtual}h; envia ${NOTIF_HORA_INICIO}h–${NOTIF_HORA_FIM}h) — encerrando sem enviar.`);
+    return;
+  }
 
   try {
     // Etapa 0: diagnóstico de configuração (sem expor segredos)
@@ -325,22 +338,25 @@ function getMesReferenciaAtual() {
 // ============================================================================
 
 /**
- * Instala o acionador diário que dispara os lembretes.
- * A própria executarNotificacoesDiarias decide, dia a dia, quem notificar
- * (com base no dia preferido de cada dizimista), então basta rodar 1x/dia.
+ * Instala o acionador que dispara os lembretes DE HORA EM HORA.
+ * A própria executarNotificacoesDiarias decide quem notificar (dia preferido de
+ * cada dizimista + repescagem) e só envia em horário útil (NOTIF_HORA_INICIO/FIM).
+ * A deduplicação mensal garante um único envio por dizimista — desde que o log
+ * (x_notificacao_log) esteja gravando; confirme com testarGravacaoLog.
  *
  * Menu do editor: Executar → instalarTriggerNotificacoes
+ * (Rodar de novo substitui o acionador anterior, inclusive o diário antigo.)
  */
 function instalarTriggerNotificacoes() {
   removerTriggerNotificacoes();
 
   ScriptApp.newTrigger('executarNotificacoesDiarias')
     .timeBased()
-    .everyDays(1)
-    .atHour(9)          // ~09h no fuso do projeto (America/Sao_Paulo)
+    .everyHours(1)     // de hora em hora; o envio só ocorre em horário útil (ver NOTIF_HORA_*)
     .create();
 
-  console.log('✅ Acionador instalado: executarNotificacoesDiarias (diário, ~09h)');
+  console.log(`✅ Acionador instalado: executarNotificacoesDiarias (de hora em hora; ` +
+              `envio ${NOTIF_HORA_INICIO}h–${NOTIF_HORA_FIM}h). Rode este instalador de novo para reaplicar.`);
 }
 
 /** Remove o(s) acionador(es) da rotina de notificações. */
