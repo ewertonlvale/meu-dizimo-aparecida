@@ -75,6 +75,16 @@ const Router = {
 
       const estado = StateManager.getEstado(from);
 
+      // ── Família: seleção de quem devolver / de quem é o histórico ──────────
+      if (itemId && itemId.indexOf('fam_') === 0) {
+        DevolucaoHandler.processarSelecaoFamilia(from, itemId);
+        return;
+      }
+      if (itemId && itemId.indexOf('hist_') === 0) {
+        DevolucaoHandler.processarSelecaoHistorico(from, itemId);
+        return;
+      }
+
       // ── Relatório v2: seleção de período do consolidado ────────────────────
       if (estado === ESTADOS.AGUARDANDO_PERIODO_CONSOLIDADO) {
         RelatorioHandler.processarPeriodoConsolidado(from, itemId);
@@ -122,6 +132,16 @@ const Router = {
 
   _rotearBotao(from, buttonId) {
     console.log(`🔘 Botão clicado: ${buttonId}`);
+
+    // ── Família: botões de seleção (ids dinâmicos fam_* / hist_*) ──────────
+    if (buttonId && buttonId.indexOf('fam_') === 0) {
+      DevolucaoHandler.processarSelecaoFamilia(from, buttonId);
+      return;
+    }
+    if (buttonId && buttonId.indexOf('hist_') === 0) {
+      DevolucaoHandler.processarSelecaoHistorico(from, buttonId);
+      return;
+    }
 
     // Log de botões relevantes ao cadastro
     const botoesLogaveis = {
@@ -207,6 +227,13 @@ const Router = {
     const emCadastro = ESTADOS_CADASTRO.includes(estado);
     console.log(`💬 Texto: "${texto}" | Estado: ${estado}`);
 
+    // Família: "Escolher vários" → números digitados (ex.: "1,3"). Tratado antes
+    // dos atalhos para não confundir os números com comandos.
+    if (estado === ESTADOS.AGUARDANDO_SELECAO_FAMILIA) {
+      DevolucaoHandler.processarNumerosFamilia(from, texto);
+      return;
+    }
+
     // Atalhos globais — desabilitados enquanto aguardamos código/mês de relatório
     if (estado !== ESTADOS.AGUARDANDO_CODIGO_RELATORIO &&
         estado !== ESTADOS.AGUARDANDO_MES_CUSTOMIZADO) {
@@ -282,7 +309,8 @@ const Router = {
 
     if (estado === ESTADOS.AGUARDANDO_FOTO_PERFIL) {
       CadastroHandler.processarFotoPerfil(from, message.image);
-    } else if (estado === ESTADOS.AGUARDANDO_COMPROVANTE) {
+    } else if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
+               estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
       ComprovanteHandler.processar(from, message.image);
     } else {
       MenuHandler.erro(from, 'Não estou esperando uma imagem agora. Digite *menu* para voltar.');
@@ -297,7 +325,8 @@ const Router = {
     console.log('📄 Documento recebido');
     const estado = StateManager.getEstado(from);
 
-    if (estado === ESTADOS.AGUARDANDO_COMPROVANTE) {
+    if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
+        estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
       ComprovanteHandler.processar(from, message.document);
     } else {
       MenuHandler.erro(from, 'Não estou esperando um documento agora. Digite *menu* para voltar.');
