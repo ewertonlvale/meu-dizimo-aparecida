@@ -1,7 +1,7 @@
 # Especificação — Gestão de Família (dízimo familiar)
 
 **Criado em:** 14/09/2026 · **Revisado em:** 15/09/2026
-**Status:** proposta (aguardando Fase 0 no Odoo para implementar a Fase 1)
+**Status:** ✅ implementado (Fases 1–3 na `main`) · Fase 0 concluída (campo `x_studio_responsavel` criado) · `x_studio_grupo_pagamento` (agrupamento) não usado ainda.
 
 ## Conceito
 
