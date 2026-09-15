@@ -578,17 +578,24 @@ const OdooService = {
   },
 
   /**
-   * Busca um parâmetro específico por chave.
+   * Busca um parâmetro específico por chave em x_parametros_line.
+   * Defensivo: se o modelo/campo não existir no Odoo, retorna null em vez de
+   * lançar — assim um parâmetro opcional não derruba quem chama.
+   * @returns {string|null}
    */
   buscarParametro(chave) {
-    const resultado = this.searchRead(
-      'x_parametros_line',
-      ['x_studio_valor'],
-      [['x_studio_chave', '=', chave]],
-      { limit: 1 }
-    );
-
-    return resultado.length > 0 ? resultado[0].x_studio_valor : null;
+    try {
+      const resultado = this.searchRead(
+        'x_parametros_line',
+        ['x_studio_valor'],
+        [['x_studio_chave', '=', chave]],
+        { limit: 1 }
+      );
+      return resultado.length > 0 ? resultado[0].x_studio_valor : null;
+    } catch (e) {
+      console.warn(`⚠️ [OdooService] buscarParametro('${chave}') indisponível: ${e.message}`);
+      return null;
+    }
   }
 
 };
