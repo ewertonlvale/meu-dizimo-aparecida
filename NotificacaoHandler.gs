@@ -134,19 +134,20 @@ function executarNotificacoesDiarias() {
       throw eCfg;
     }
 
-    // Etapa 1: interruptor global (OPCIONAL). O parâmetro fica em
-    // x_parametros_line, que pode não existir no Odoo. Comportamento fail-open:
-    // se não der para ler, assumimos ATIVADO; só paramos se estiver
-    // EXPLICITAMENTE desligado ('false'/'0'/'nao'/'off').
-    const notificacoesAtivas = OdooService.buscarParametro('notificacao_ativa'); // já é defensivo (retorna null em erro)
+    // Etapa 1: interruptor global via Script Property NOTIFICACOES_ATIVAS.
+    // Padrão: ATIVADO (ausente = ligado). Para desligar, defina
+    // NOTIFICACOES_ATIVAS = 'false' em Script Properties.
+    // (Antes lia de x_parametros_line, modelo inexistente no Odoo, o que poluía
+    //  o log com um erro a cada execução — agora sem consulta que falha.)
+    const flagNotif = PropertiesService.getScriptProperties().getProperty('NOTIFICACOES_ATIVAS');
     const desligado = ['false', '0', 'nao', 'não', 'off', 'desativado']
-      .indexOf(String(notificacoesAtivas || '').trim().toLowerCase()) >= 0;
+      .indexOf(String(flagNotif || '').trim().toLowerCase()) >= 0;
 
-    console.log(`🔎 [Notif] notificacao_ativa = ` +
-      (notificacoesAtivas === null ? '(ausente → assumindo ATIVADO)' : `"${notificacoesAtivas}"`));
+    console.log(`🔎 [Notif] NOTIFICACOES_ATIVAS = ` +
+      (flagNotif === null ? '(ausente → ATIVADO)' : `"${flagNotif}"`));
 
     if (desligado) {
-      console.log('⏹️ [Notif] Notificações desativadas (parâmetro desligado) — encerrando.');
+      console.log('⏹️ [Notif] Notificações desativadas (NOTIFICACOES_ATIVAS) — encerrando.');
       return;
     }
 
