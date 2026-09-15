@@ -63,55 +63,233 @@ const DevolucaoHandler = {
    * Coloca a conversa em modo AGUARDANDO_COMPROVANTE.
    */
   iniciarDevolucao(from) {
-    let dizimista;
+    let responsavel;
     try {
-      dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+      responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
     } catch (e) {
-      // Odoo indisponível: não falhar em silêncio (a exceção subiria até o
-      // doPost e o usuário não receberia nada). Avisa e mantém o menu.
       console.error('❌ [DevolucaoHandler] Erro ao buscar dizimista no Odoo:', e.message);
       Utils.enviarComBotaoMenu(from,
         '⚠️ *Estamos com uma instabilidade temporária.*\n\n' +
-        'Não consegui acessar seu cadastro agora. Por favor, tente novamente ' +
-        'em alguns minutos. 🙏'
+        'Não consegui acessar seu cadastro agora. Por favor, tente novamente em alguns minutos. 🙏'
       );
       return;
     }
 
-    if (!dizimista) {
+    if (!responsavel) {
       Utils.enviarSimples(from, '❌ Você ainda não está cadastrado.\n\nDigite *menu* para se cadastrar.');
       return;
     }
 
-    // BL-07: só colocar em AGUARDANDO_COMPROVANTE se os dados de pagamento
-    // foram realmente enviados. Sem chave PIX, o usuário viu um erro e não
-    // deve ter uma imagem posterior tratada como comprovante.
-    if (this._enviarDadosPagamento(from, dizimista)) {
-      StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE);
+    // Monta a família (responsável + membros).
+    let familia;
+    try {
+      familia = OdooService.listarFamilia(responsavel.id);
+    } catch (e) {
+      console.error('❌ [DevolucaoHandler] Erro ao listar família:', e.message);
+      familia = [responsavel];   // fallback: trata como individual
     }
+
+    // 1 pessoa → fluxo individual (BL-07: só aguarda comprovante se enviou os dados).
+    if (!familia || familia.length <= 1) {
+      if (this._enviarDadosPagamento(from, responsavel)) {
+        StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE);
+      }
+      return;
+    }
+
+    // 2+ → pergunta de quem é a devolução; guarda a família (leve) no contexto.
+    const familiaLeve = familia.map(f => ({ id: f.id, nome: f.x_name || '—', valor: f.x_studio_value || 0 }));
+    StateManager.salvarMultiplosCampos(from, { familia: familiaLeve });
+    this._perguntarQuemDevolve(from, familiaLeve);
+  },
+
+  /**
+   * Pergunta de quem é a devolução (Opção B: 2 pessoas → botões; 3+ → lista).
+   * @private
+   */
+  _perguntarQuemDevolve(from, familia) {
+    const total = familia.reduce((s, f) => s + (f.valor || 0), 0);
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_SELECAO_FAMILIA);
+
+    if (familia.length === 2) {
+      Utils.enviarMenu(from,
+        '👨‍👩‍👧 *De quem é a devolução?*',
+        familia.map(f => ({ id: `fam_${f.id}`, title: f.nome.substring(0, 20) }))
+          .concat([{ id: 'fam_todos', title: '👨‍👩‍👧 Todos' }])
+      );
+      return;
+    }
+
+    const rows = [{ id: 'fam_todos', title: '✅ Todos', description: `Total ${this._reais(total)}` }];
+    familia.slice(0, 8).forEach((f, i) => {
+      rows.push({ id: `fam_${f.id}`, title: `${i + 1}. ${f.nome}`.substring(0, 24), description: this._reais(f.valor) });
+    });
+    rows.push({ id: 'fam_escolher', title: '✏️ Escolher vários…', description: 'Digitar os números (ex.: 1,3)' });
+
+    Utils.enviarLista(from, '👨‍👩‍👧 *De quem é a devolução?*', [{ title: 'Família', rows }], { textoBotao: 'Ver família' });
+  },
+
+  /** Toque num item da seleção de família (fam_todos | fam_<id> | fam_escolher). */
+  processarSelecaoFamilia(from, id) {
+    const familia = StateManager.getCampo(from, 'familia') || [];
+    if (!familia.length) return this._selecaoExpirada(from);
+
+    if (id === 'fam_escolher') {
+      Utils.enviarSimples(from, '✏️ Digite os *números* das pessoas separados por vírgula (ex.: *1,3*):');
+      return;   // permanece em AGUARDANDO_SELECAO_FAMILIA (agora aguardando o texto)
+    }
+    if (id === 'fam_todos') {
+      return this._prepararPagamentoLote(from, familia);
+    }
+    const alvoId = parseInt(String(id).replace('fam_', ''), 10);
+    const sel = familia.filter(f => f.id === alvoId);
+    if (!sel.length) return this._selecaoExpirada(from);
+    return this._prepararPagamentoLote(from, sel);
+  },
+
+  /** Números digitados após "Escolher vários" (ex.: "1,3"). */
+  processarNumerosFamilia(from, texto) {
+    const familia = StateManager.getCampo(from, 'familia') || [];
+    if (!familia.length) return this._selecaoExpirada(from);
+
+    const indices = String(texto).split(/[^\d]+/).filter(Boolean).map(n => parseInt(n, 10));
+    const sel = [];
+    const vistos = {};
+    indices.forEach(n => {
+      const f = familia[n - 1];   // "1" = primeiro da lista exibida
+      if (f && !vistos[f.id]) { vistos[f.id] = true; sel.push(f); }
+    });
+
+    if (!sel.length) {
+      Utils.enviarSimples(from, '❌ Não entendi. Digite os números da lista separados por vírgula (ex.: *1,3*):');
+      return;
+    }
+    return this._prepararPagamentoLote(from, sel);
+  },
+
+  /**
+   * Mostra os dados de pagamento (total) e coloca em AGUARDANDO_COMPROVANTE_FAMILIA.
+   * @private
+   */
+  _prepararPagamentoLote(from, selecionados) {
+    const responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
+    if (!responsavel) return this._selecaoExpirada(from);
+
+    if (this._enviarDadosPagamentoLote(from, responsavel, selecionados)) {
+      StateManager.salvarMultiplosCampos(from, { devolucaoLote: selecionados });
+      StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA);
+    }
+  },
+
+  /**
+   * Dados de pagamento para uma devolução em lote (vários membros, um PIX só).
+   * @private
+   */
+  _enviarDadosPagamentoLote(from, responsavel, selecionados) {
+    const comunidade = OdooService.buscarDadosPagamentoComunidade(responsavel);
+    if (!comunidade || !comunidade.x_studio_chave_pix) {
+      Utils.enviarSimples(from, '❌ Erro: dados de pagamento não configurados.\n\nEntre em contato com a secretaria.');
+      return false;
+    }
+
+    const total = selecionados.reduce((s, f) => s + (f.valor || 0), 0);
+
+    let msg = `━━━━━━━━━━━━━━━━━━━━\n💰 *DEVOLUÇÃO DA FAMÍLIA*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    msg += `Você vai devolver o dízimo de:\n`;
+    selecionados.forEach(f => { msg += `• ${f.nome}: ${this._reais(f.valor)}\n`; });
+    msg += `\n🧮 *Total:* ${this._reais(total)}\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n💳 *DADOS PARA PAGAMENTO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+    if (comunidade.x_studio_banco)         msg += `🏦 *Banco:* ${comunidade.x_studio_banco}\n\n`;
+    if (comunidade.x_studio_titular_conta) msg += `👤 *Titular:* ${comunidade.x_studio_titular_conta}\n\n`;
+    msg += `🔑 *Chave PIX:* \`${comunidade.x_studio_chave_pix}\`\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n\n📸 *Faça um único pagamento do total e envie o comprovante aqui.*\n\nAceito: imagem (foto) ou PDF.`;
+
+    Utils.enviarSimples(from, msg);
+    try {
+      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, total);
+    } catch (e) {
+      console.warn('⚠️ QR Code PIX (lote) não pôde ser gerado:', e.message);
+    }
+    return true;
+  },
+
+  _selecaoExpirada(from) {
+    StateManager.limparDados(from);
+    Utils.enviarComBotaoMenu(from, '⏱️ A seleção expirou. Toque em *Devolver dízimo* para recomeçar.');
+  },
+
+  /** Formata número em Real (R$ 1.234,56 → simples). */
+  _reais(v) {
+    return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
   },
 
   // ==========================================================================
   // HISTÓRICO
   // ==========================================================================
 
-  /** Busca e exibe as últimas devoluções do dizimista. */
+  /**
+   * Histórico. Com 1 cadastro → direto. Com família (2+) → pergunta de quem
+   * (Opção B: 2–3 → botões; 4+ → lista; SEM "Todos") e mostra o individual.
+   */
   exibirHistorico(from) {
-    const dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
-
-    if (!dizimista) {
+    let responsavel;
+    try {
+      responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
+    } catch (e) {
+      Utils.enviarComBotaoMenu(from, '⚠️ Instabilidade temporária. Tente novamente em instantes. 🙏');
+      return;
+    }
+    if (!responsavel) {
       Utils.enviarSimples(from, '❌ Cadastro não encontrado.');
       return;
     }
 
+    let familia;
+    try { familia = OdooService.listarFamilia(responsavel.id); }
+    catch (e) { familia = [responsavel]; }
+
+    if (!familia || familia.length <= 1) {
+      return this._mostrarHistoricoDe(from, responsavel.id, responsavel.x_name);
+    }
+
+    const familiaLeve = familia.map(f => ({ id: f.id, nome: f.x_name || '—' }));
+    StateManager.salvarMultiplosCampos(from, { familiaHist: familiaLeve });
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_SELECAO_HISTORICO);
+
+    if (familiaLeve.length <= 3) {
+      Utils.enviarMenu(from, '📊 *De quem é o histórico?*',
+        familiaLeve.map(f => ({ id: `hist_${f.id}`, title: f.nome.substring(0, 20) })));
+      return;
+    }
+    const rows = familiaLeve.slice(0, 10).map((f, i) => ({
+      id: `hist_${f.id}`, title: `${i + 1}. ${f.nome}`.substring(0, 24), description: ''
+    }));
+    Utils.enviarLista(from, '📊 *De quem é o histórico?*', [{ title: 'Família', rows }], { textoBotao: 'Ver família' });
+  },
+
+  /** Escolha do membro para histórico (hist_<id>). */
+  processarSelecaoHistorico(from, id) {
+    const familia = StateManager.getCampo(from, 'familiaHist') || [];
+    const alvoId = parseInt(String(id).replace('hist_', ''), 10);
+    const sel = familia.filter(f => f.id === alvoId)[0];
+    if (!sel) return this._selecaoExpirada(from);
+    StateManager.limparDados(from);
+    this._mostrarHistoricoDe(from, sel.id, sel.nome);
+  },
+
+  /**
+   * Exibe o histórico individual de um dizimista.
+   * @private
+   */
+  _mostrarHistoricoDe(from, dizimistaId, nome) {
     Utils.enviarSimples(from, '📊 Buscando histórico...');
 
-    const devolucoes = OdooService.buscarDevolucoesDizimista(dizimista.id, 10);
+    const devolucoes = OdooService.buscarDevolucoesDizimista(dizimistaId, 10);
 
     if (!devolucoes || devolucoes.length === 0) {
       Utilities.sleep(1000);
       Utils.enviarMenu(from,
-        '📭 Você ainda não tem devoluções registradas.',
+        `📭 *${nome}* ainda não tem devoluções registradas.`,
         [
           { id: 'btn_devolver_dizimo', title: '💰 Devolver dízimo' },
           { id: 'btn_menu',            title: '🔙 Menu'             }
@@ -121,7 +299,7 @@ const DevolucaoHandler = {
     }
 
     let mensagem = `📊 *HISTÓRICO DE DEVOLUÇÕES*\n\n`;
-    mensagem += `Olá, ${dizimista.x_name}! Suas últimas ${devolucoes.length} devoluções:\n\n`;
+    mensagem += `*${nome}* — últimas ${devolucoes.length}:\n\n`;
 
     devolucoes.forEach((dev, index) => {
       const data   = Utils.formatarDataOdoo(dev.x_studio_data_da_devolucao);

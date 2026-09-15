@@ -179,6 +179,94 @@ const ComprovanteHandler = {
   },
 
   // ==========================================================================
+  // TRATAMENTO DO RESULTADO — FAMÍLIA (N devoluções)
+  // ==========================================================================
+
+  /**
+   * Contexto de família: cria UMA devolução por membro selecionado (cada uma
+   * com o valor mensal do membro e o MESMO comprovante anexado). A validação de
+   * chave (BL-26) é feita uma vez, contra a comunidade do responsável.
+   * @private
+   */
+  _tratarResultadoFamilia(from, resultado, lote) {
+    console.log(`🎯 [Família] Registrando devolução em lote (${lote.length} membro(s))...`);
+
+    let responsavel = null;
+    let erroOdoo = false;
+    try {
+      responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
+    } catch (e) {
+      erroOdoo = true;
+      console.error('❌ [Família] Erro ao buscar responsável:', e.message);
+    }
+
+    // Conferência de chave (uma vez, contra a comunidade do responsável).
+    let conferido = false;
+    let observacao = '';
+    if (responsavel) {
+      let chaveEsperada = null;
+      try {
+        const comunidade = OdooService.buscarDadosPagamentoComunidade(responsavel);
+        chaveEsperada = comunidade && comunidade.x_studio_chave_pix;
+      } catch (e) {
+        console.warn('⚠️ [Família] Não obtive a chave da comunidade:', e.message);
+      }
+      const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+      conferido = conf.conferido;
+      observacao = conferido ? '' :
+        (conf.motivo === 'divergente'
+          ? '⚠️ CONFERIR: chave do comprovante diverge da comunidade'
+          : '⚠️ CONFERIR: chave não identificada no comprovante');
+    }
+
+    // Cria uma devolução por membro (valor = valor do membro).
+    const tipoComprovante = resultado.tipo === 'pdf' ? 'pdf' : 'imagem';
+    const registrados = [];
+    if (responsavel) {
+      for (const m of lote) {
+        try {
+          const dadosMembro = {
+            valor: m.valor || 0,
+            data:  resultado.dados && resultado.dados.data,
+            tipo:  resultado.dados && resultado.dados.tipo
+          };
+          const devId = OdooService.registrarDevolucao(
+            m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, observacao
+          );
+          if (devId) registrados.push(m.nome);
+        } catch (e) {
+          erroOdoo = true;
+          console.error(`❌ [Família] Falha ao registrar membro id=${m.id} (${m.nome}): ${e.message}`);
+        }
+      }
+    }
+
+    // Sucesso (ao menos uma criada): encerra a sessão.
+    if (registrados.length > 0) {
+      StateManager.limparDados(from);
+      const base  = `✅ *Comprovante recebido!*\n\nRegistrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
+      const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
+      Utils.enviarComBotaoMenu(from, conferido
+        ? `${base}\n\nSerá confirmada em breve.${fecho}`
+        : `${base}\n\nPassará por *conferência da secretaria* antes de ser confirmada.${fecho}`);
+      return;
+    }
+
+    // Falha (Odoo/instabilidade): MANTÉM o estado para o usuário reenviar.
+    if (erroOdoo || !responsavel) {
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Não consegui registrar as devoluções agora.*\n\n' +
+        'Seu comprovante foi recebido, mas houve uma falha ao salvar. ' +
+        'Por favor, *reenvie o comprovante* em alguns minutos ou fale com a secretaria. 🙏'
+      );
+      return;
+    }
+
+    StateManager.limparDados(from);
+    Utils.enviarComBotaoMenu(from, '⚠️ Não consegui registrar as devoluções. Tente novamente.');
+  },
+
+  // ==========================================================================
   // TRATAMENTO DO RESULTADO
   // ==========================================================================
 
@@ -256,6 +344,12 @@ const ComprovanteHandler = {
     }
     
     Utilities.sleep(2000);
+
+    // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
+    const lote = StateManager.getCampo(from, 'devolucaoLote');
+    if (lote && lote.length) {
+      return this._tratarResultadoFamilia(from, resultado, lote);
+    }
 
     // ===== REGISTRAR NO ODOO =====
     console.log('🎯 [_tratarResultado] Registrando no Odoo...');
