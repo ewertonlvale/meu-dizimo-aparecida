@@ -66,34 +66,31 @@ function doPost(e) {
 
     const body = JSON.parse(e.postData.contents);
 
-    const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    // BL-09: a Meta pode agrupar várias entradas/mensagens num único POST.
+    // Iteramos entry[] → changes[] → value.messages[], processando TODAS.
+    const entries = Array.isArray(body.entry) ? body.entry : [];
+    let processadas = 0;
 
-    if (message) {
-      const from      = message.from;
-      const messageId = message.id;
+    for (const entry of entries) {
+      const changes = Array.isArray(entry.changes) ? entry.changes : [];
+      for (const change of changes) {
+        const messages = change.value && change.value.messages;
+        if (!Array.isArray(messages)) continue;   // ex.: eventos de status
 
-      // ── Idempotência: ignorar mensagens já processadas ──────────────
-      const cache    = CacheService.getScriptCache();
-      const cacheKey = `msg_${messageId}`;
-
-      if (cache.get(cacheKey)) {
-        console.log(`⚠️ Mensagem duplicada ignorada: ${messageId}`);
-        return ContentService.createTextOutput('OK');
+        for (const message of messages) {
+          // Isola cada mensagem: uma falha não impede as demais do lote.
+          try {
+            _processarMensagemWebhook(message);
+            processadas++;
+          } catch (errMsg) {
+            console.error(`❌ Erro ao processar mensagem ${message && message.id}:`, errMsg);
+          }
+        }
       }
+    }
 
-      // Marcar ANTES de processar (previne race condition)
-      cache.put(cacheKey, '1', 600); // TTL 10 minutos
-      // ────────────────────────────────────────────────────────────────
-
-      console.log(`📱 Mensagem de ${from} (id: ${messageId})`);
-
-      // Boas-vindas apenas no primeiro contato
-      if (StateManager.ehPrimeiroContato(from)) {
-        MenuHandler.boasVindas(from);
-        Utilities.sleep(2000);
-      }
-
-      Router.rotear(from, message);
+    if (!processadas) {
+      console.log('ℹ️ POST sem mensagens de usuário (provável evento de status).');
     }
 
     return ContentService.createTextOutput('OK');
@@ -103,4 +100,39 @@ function doPost(e) {
     console.error('Stack:', error.stack);
     return ContentService.createTextOutput('Error');
   }
+}
+
+/**
+ * Processa UMA mensagem do webhook, com idempotência por messageId.
+ * Extraído do doPost para permitir o loop do lote (BL-09).
+ * @param {Object} message - Objeto de mensagem do payload do WhatsApp
+ */
+function _processarMensagemWebhook(message) {
+  if (!message || !message.id || !message.from) return;
+
+  const from      = message.from;
+  const messageId = message.id;
+
+  // ── Idempotência: ignorar mensagens já processadas ──────────────────
+  const cache    = CacheService.getScriptCache();
+  const cacheKey = `msg_${messageId}`;
+
+  if (cache.get(cacheKey)) {
+    console.log(`⚠️ Mensagem duplicada ignorada: ${messageId}`);
+    return;
+  }
+
+  // Marcar ANTES de processar (previne reprocessamento em retry concorrente).
+  cache.put(cacheKey, '1', 600); // TTL 10 minutos
+  // ─────────────────────────────────────────────────────────────────────
+
+  console.log(`📱 Mensagem de ${from} (id: ${messageId})`);
+
+  // Boas-vindas apenas no primeiro contato
+  if (StateManager.ehPrimeiroContato(from)) {
+    MenuHandler.boasVindas(from);
+    Utilities.sleep(2000);
+  }
+
+  Router.rotear(from, message);
 }
