@@ -12,6 +12,18 @@
  */
 
 /**
+ * Assets estáticos do bot. (BL-12: este objeto não era declarado, então
+ * `getAvatar()` sempre caía em ReferenceError e retornava null.)
+ *
+ * AVATAR_DRIVE_ID: ID do arquivo de avatar no Google Drive, compartilhado como
+ * "qualquer pessoa com o link". Enquanto começar com "COLE_AQUI", getAvatar()
+ * retorna null de forma silenciosa (as boas-vindas usam o avatar do Odoo).
+ */
+const ASSETS = {
+  AVATAR_DRIVE_ID: 'COLE_AQUI_O_ID_DO_DRIVE'
+};
+
+/**
  * Busca o avatar do Google Drive e retorna em base64.
  * Usa UrlFetchApp para baixar o binário diretamente via URL de exportação,
  * evitando erros de servidor do DriveApp.getBlob() com arquivos binários.
