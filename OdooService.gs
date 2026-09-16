@@ -367,6 +367,70 @@ const OdooService = {
     return registros?.[0] || null;
   },
 
+  /**
+   * Retorna os contatos da pastoral do dízimo de uma comunidade.
+   * Fonte primária: "Usuários Pastoral" (m2m `x_studio_usuarios` → res.users),
+   * usando nome + telefone/celular de cada usuário. Fallback: o coordenador do
+   * dízimo (campos `x_studio_coordenador_dizimo` / `x_studio_whatsapp_coordenador`).
+   * @param {number} comunidadeId
+   * @returns {{comunidade: string|null, contatos: Array<{nome: string, whatsapp: string}>}}
+   */
+  buscarContatosComunidade(comunidadeId) {
+    const regs = this.searchRead(
+      'x_comunidade',
+      ['id', 'x_name', 'x_studio_usuarios',
+       'x_studio_coordenador_dizimo', 'x_studio_whatsapp_coordenador'],
+      [['id', '=', comunidadeId]],
+      { limit: 1 }
+    );
+    const com = regs?.[0];
+    if (!com) return { comunidade: null, contatos: [] };
+
+    const contatos = [];
+
+    // 1) Usuários Pastoral (many2many → res.users). No Odoo 18 o telefone fica em
+    //    'phone' (o campo 'mobile' foi removido), e o res.users já o expõe.
+    const userIds = Array.isArray(com.x_studio_usuarios) ? com.x_studio_usuarios : [];
+    if (userIds.length) {
+      let users = [];
+      try {
+        users = this.searchRead(
+          'res.users',
+          ['id', 'name', 'phone'],
+          [['id', 'in', userIds]],
+          { limit: 20 }
+        ) || [];
+      } catch (e) {
+        console.warn('⚠️ [OdooService] Falha ao ler res.users (contatos):', e.message);
+      }
+      users.forEach(u => {
+        if (u.phone) contatos.push({ nome: u.name || 'Pastoral do Dízimo', whatsapp: String(u.phone) });
+      });
+    }
+
+    // 2) Fallback: coordenador do dízimo (campos texto da própria comunidade).
+    if (!contatos.length && com.x_studio_whatsapp_coordenador) {
+      contatos.push({
+        nome:     com.x_studio_coordenador_dizimo || 'Coordenador do Dízimo',
+        whatsapp: String(com.x_studio_whatsapp_coordenador)
+      });
+    }
+
+    return { comunidade: com.x_name || null, contatos };
+  },
+
+  /**
+   * Extrai o id da comunidade do dizimista e retorna seus contatos.
+   * @param {Object} dizimista - Registro do dizimista
+   * @returns {{comunidade: string|null, contatos: Array}}
+   */
+  contatosDoDizimista(dizimista) {
+    const rel = dizimista && dizimista.x_studio_comunidade;
+    if (!rel || !rel.length) return { comunidade: null, contatos: [] };
+    const comunidadeId = Array.isArray(rel[0]) ? rel[0][0] : rel[0];
+    return this.buscarContatosComunidade(comunidadeId);
+  },
+
   // ==========================================================================
   // DEVOLUÇÕES
   // ==========================================================================
