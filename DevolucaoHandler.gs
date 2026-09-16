@@ -334,6 +334,19 @@ const DevolucaoHandler = {
     return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
   },
 
+  /**
+   * Rótulo amigável do status para o dizimista. O valor "Pendente" no Odoo é
+   * status de CONFERÊNCIA (a secretaria ainda vai validar o comprovante), não de
+   * "falta devolver" — por isso não mostramos "Pendente" cru ao usuário.
+   */
+  _rotuloStatus(status) {
+    switch (status) {
+      case 'Confirmado': return 'Status: Confirmada';
+      case 'Rejeitado':  return 'Status: Não aceita — fale com a secretaria';
+      default:           return 'Status: Em análise pela pastoral do dízimo';
+    }
+  },
+
   /** Formata 'yyyy-MM-dd' → 'dd/MM/yyyy'. Retorna '' se vazio/ inválido. */
   _formatarDataBr(iso) {
     const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -439,10 +452,10 @@ const DevolucaoHandler = {
       const data   = Utils.formatarDataOdoo(dev.x_studio_data_da_devolucao);
       const valor  = Utils.formatarValor(dev.x_studio_value);
       const status = dev.x_studio_status || 'Pendente';
-      const emoji  = status === 'Confirmado' ? '✅' : '⏳';
+      const emoji  = status === 'Confirmado' ? '✅' : (status === 'Rejeitado' ? '❌' : '⏳');
 
       mensagem += `${emoji} *${data}* – ${valor}\n`;
-      mensagem += `   Status: ${status}\n`;
+      mensagem += `   ${this._rotuloStatus(status)}\n`;
       if (index < devolucoes.length - 1) mensagem += '\n';
     });
 
