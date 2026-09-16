@@ -89,8 +89,24 @@ const DevolucaoHandler = {
       familia = [responsavel];   // fallback: trata como individual
     }
 
-    // 1 pessoa → fluxo individual (BL-07: só aguarda comprovante se enviou os dados).
+    // 1 pessoa → fluxo individual.
     if (!familia || familia.length <= 1) {
+      // Aviso (não bloqueia) se já houver devolução neste mês.
+      let jaTem = 0;
+      try { jaTem = OdooService.jaDevolveuNoMes(responsavel.id); } catch (e) {}
+      if (jaTem > 0) {
+        StateManager.salvarMultiplosCampos(from, { duplicataContexto: 'individual' });
+        StateManager.setEstado(from, ESTADOS.AGUARDANDO_CONFIRMA_DUPLICATA);
+        Utils.enviarMenu(from,
+          `⚠️ *Atenção*\n\nVocê já tem *${jaTem}* devolução(ões) registrada(s) em *${this._nomeMesAtual()}*.\n\nDeseja registrar outra assim mesmo?`,
+          [
+            { id: 'btn_dev_prosseguir', title: '✅ Sim, registrar' },
+            { id: 'btn_menu',           title: '🔙 Voltar'         }
+          ]
+        );
+        return;
+      }
+      // BL-07: só aguarda comprovante se os dados de pagamento foram enviados.
       if (this._enviarDadosPagamento(from, responsavel)) {
         StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE);
       }
@@ -186,6 +202,37 @@ const DevolucaoHandler = {
    * @private
    */
   _prepararPagamentoLote(from, selecionados) {
+    // Aviso (não bloqueia): membros que já têm devolução neste mês.
+    const jaDevolveram = [];
+    try {
+      selecionados.forEach(f => {
+        if (OdooService.jaDevolveuNoMes(f.id) > 0) jaDevolveram.push(f.nome);
+      });
+    } catch (e) { console.warn('⚠️ [Família] Falha ao checar duplicata:', e.message); }
+
+    if (jaDevolveram.length > 0) {
+      StateManager.salvarMultiplosCampos(from, {
+        duplicataContexto: 'lote',
+        loteSelecionado:   selecionados
+      });
+      StateManager.setEstado(from, ESTADOS.AGUARDANDO_CONFIRMA_DUPLICATA);
+      const quem = jaDevolveram.join(', ');
+      const verbo = jaDevolveram.length > 1 ? 'já têm' : 'já tem';
+      Utils.enviarMenu(from,
+        `⚠️ *Atenção*\n\n${quem} ${verbo} devolução registrada em *${this._nomeMesAtual()}*.\n\nDeseja registrar assim mesmo?`,
+        [
+          { id: 'btn_dev_prosseguir', title: '✅ Sim, registrar' },
+          { id: 'btn_menu',           title: '🔙 Voltar'         }
+        ]
+      );
+      return;
+    }
+
+    this._enviarLoteEAguardar(from, selecionados);
+  },
+
+  /** Envia os dados de pagamento do lote e passa a aguardar o comprovante. */
+  _enviarLoteEAguardar(from, selecionados) {
     const responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
     if (!responsavel) return this._selecaoExpirada(from);
 
@@ -193,6 +240,36 @@ const DevolucaoHandler = {
       StateManager.salvarMultiplosCampos(from, { devolucaoLote: selecionados });
       StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA);
     }
+  },
+
+  /** Usuário confirmou registrar mesmo já tendo devolução no mês. */
+  prosseguirAposAviso(from) {
+    const contexto = StateManager.getCampo(from, 'duplicataContexto');
+
+    if (contexto === 'lote') {
+      const selecionados = StateManager.getCampo(from, 'loteSelecionado') || [];
+      if (!selecionados.length) return this._selecaoExpirada(from);
+      this._enviarLoteEAguardar(from, selecionados);
+      return;
+    }
+
+    // Individual.
+    const responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
+    if (!responsavel) {
+      Utils.enviarComBotaoMenu(from, '❌ Cadastro não encontrado. Digite *menu*.');
+      return;
+    }
+    if (this._enviarDadosPagamento(from, responsavel)) {
+      StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMPROVANTE);
+    }
+  },
+
+  /** Nome do mês/ano atual (ex.: "setembro/2026"). */
+  _nomeMesAtual() {
+    const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+                   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const d = new Date();
+    return `${meses[d.getMonth()]}/${d.getFullYear()}`;
   },
 
   /**

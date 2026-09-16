@@ -183,6 +183,7 @@ const Router = {
       // --- Devolução ---
       case 'btn_ja_sou_dizimista':   DevolucaoHandler.verificarDizimista(from); break;
       case 'btn_devolver_dizimo':    DevolucaoHandler.iniciarDevolucao(from);   break;
+      case 'btn_dev_prosseguir':     DevolucaoHandler.prosseguirAposAviso(from); break;
       case 'btn_minhas_devolucoes':  DevolucaoHandler.exibirHistorico(from);    break;
 
       // --- Geral ---
