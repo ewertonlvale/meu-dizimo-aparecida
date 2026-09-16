@@ -92,13 +92,15 @@ const DevolucaoHandler = {
     // 1 pessoa → fluxo individual.
     if (!familia || familia.length <= 1) {
       // Aviso (não bloqueia) se já houver devolução neste mês.
-      let jaTem = 0;
-      try { jaTem = OdooService.jaDevolveuNoMes(responsavel.id); } catch (e) {}
-      if (jaTem > 0) {
+      let jaDevs = [];
+      try { jaDevs = OdooService.devolucoesDoMes(responsavel.id); } catch (e) {}
+      if (jaDevs.length > 0) {
         StateManager.salvarMultiplosCampos(from, { duplicataContexto: 'individual' });
         StateManager.setEstado(from, ESTADOS.AGUARDANDO_CONFIRMA_DUPLICATA);
         Utils.enviarMenu(from,
-          `⚠️ *Atenção*\n\nVocê já tem *${jaTem}* devolução(ões) registrada(s) em *${this._nomeMesAtual()}*.\n\nDeseja registrar outra assim mesmo?`,
+          `⚠️ *Atenção*\n\nVocê já tem devolução registrada em *${this._nomeMesAtual()}*:\n` +
+          this._listaDevolucoes(jaDevs) +
+          `\n\nDeseja registrar outra assim mesmo?`,
           [
             { id: 'btn_dev_prosseguir', title: '✅ Sim, registrar' },
             { id: 'btn_menu',           title: '🔙 Voltar'         }
@@ -202,33 +204,51 @@ const DevolucaoHandler = {
    * @private
    */
   _prepararPagamentoLote(from, selecionados) {
-    // Aviso (não bloqueia): membros que já têm devolução neste mês.
-    const jaDevolveram = [];
+    // Separa quem já devolveu neste mês (com detalhes) de quem ainda falta.
+    const jaDevolveram = [];   // [{ nome, devs: [{data, valor}] }]
+    const idsJa = {};
     try {
       selecionados.forEach(f => {
-        if (OdooService.jaDevolveuNoMes(f.id) > 0) jaDevolveram.push(f.nome);
+        const devs = OdooService.devolucoesDoMes(f.id);
+        if (devs.length > 0) { jaDevolveram.push({ nome: f.nome, devs }); idsJa[f.id] = true; }
       });
     } catch (e) { console.warn('⚠️ [Família] Falha ao checar duplicata:', e.message); }
 
-    if (jaDevolveram.length > 0) {
-      StateManager.salvarMultiplosCampos(from, {
-        duplicataContexto: 'lote',
-        loteSelecionado:   selecionados
-      });
-      StateManager.setEstado(from, ESTADOS.AGUARDANDO_CONFIRMA_DUPLICATA);
-      const quem = jaDevolveram.join(', ');
-      const verbo = jaDevolveram.length > 1 ? 'já têm' : 'já tem';
-      Utils.enviarMenu(from,
-        `⚠️ *Atenção*\n\n${quem} ${verbo} devolução registrada em *${this._nomeMesAtual()}*.\n\nDeseja registrar assim mesmo?`,
-        [
-          { id: 'btn_dev_prosseguir', title: '✅ Sim, registrar' },
-          { id: 'btn_menu',           title: '🔙 Voltar'         }
-        ]
-      );
+    // Ninguém devolveu ainda → segue direto com todos os selecionados.
+    if (jaDevolveram.length === 0) {
+      this._enviarLoteEAguardar(from, selecionados);
       return;
     }
 
-    this._enviarLoteEAguardar(from, selecionados);
+    const faltam = selecionados.filter(f => !idsJa[f.id]);
+
+    // Cabeçalho do aviso: lista quem já devolveu (com datas/valores).
+    let msg = `⚠️ *Atenção*\n\nJá há devolução registrada em *${this._nomeMesAtual()}*:\n`;
+    jaDevolveram.forEach(m => { msg += `\n*${m.nome}*\n` + this._listaDevolucoes(m.devs); });
+
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_CONFIRMA_DUPLICATA);
+
+    if (faltam.length > 0) {
+      // Caso misto: registra APENAS quem ainda não devolveu.
+      const totalFaltam = faltam.reduce((s, f) => s + (f.valor || 0), 0);
+      msg += `\n\n➡️ Vou registrar *apenas quem ainda não devolveu*:\n`;
+      faltam.forEach(f => { msg += `• ${f.nome}: ${this._reais(f.valor)}\n`; });
+      msg += `\n🧮 *Total:* ${this._reais(totalFaltam)}\n\nConfirmar?`;
+      StateManager.salvarMultiplosCampos(from, { duplicataContexto: 'lote', loteSelecionado: faltam });
+      Utils.enviarMenu(from, msg, [
+        { id: 'btn_dev_prosseguir', title: '✅ Registrar' },
+        { id: 'btn_menu',           title: '🔙 Voltar'   }
+      ]);
+      return;
+    }
+
+    // Todos os selecionados já devolveram → só registra se confirmar mesmo assim.
+    msg += `\n\nTodos os selecionados já devolveram este mês. Deseja registrar assim mesmo?`;
+    StateManager.salvarMultiplosCampos(from, { duplicataContexto: 'lote', loteSelecionado: selecionados });
+    Utils.enviarMenu(from, msg, [
+      { id: 'btn_dev_prosseguir', title: '✅ Sim, registrar' },
+      { id: 'btn_menu',           title: '🔙 Voltar'         }
+    ]);
   },
 
   /** Envia os dados de pagamento do lote e passa a aguardar o comprovante. */
@@ -312,6 +332,20 @@ const DevolucaoHandler = {
   /** Formata número em Real (R$ 1.234,56 → simples). */
   _reais(v) {
     return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
+  },
+
+  /** Formata 'yyyy-MM-dd' → 'dd/MM/yyyy'. Retorna '' se vazio/ inválido. */
+  _formatarDataBr(iso) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+  },
+
+  /** Monta as linhas "• dd/MM/yyyy — R$ x,yy" de uma lista de devoluções. */
+  _listaDevolucoes(devs) {
+    return (devs || []).map(d => {
+      const data = this._formatarDataBr(d.data);
+      return `• ${data ? data + ' — ' : ''}${this._reais(d.valor)}`;
+    }).join('\n');
   },
 
   // ==========================================================================
