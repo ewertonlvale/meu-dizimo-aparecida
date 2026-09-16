@@ -190,7 +190,11 @@ const OdooService = {
       );
 
       if (registros?.length > 0) {
-        this.atualizarDizimista(registros[0].id, { x_studio_partner_phone: whatsapp });
+        // BL-15: NÃO gravamos o telefone aqui. `x_studio_partner_phone` é related
+        // e gravável (store+related, não readonly no Odoo 18), então um write
+        // propagaria para `res.partner.phone` — efeito colateral indevido numa
+        // função de leitura. A busca com/sem 9º dígito já encontra o registro;
+        // se for preciso normalizar o número, faça em um ponto de escrita explícito.
         return registros[0];
       }
     }
@@ -505,23 +509,6 @@ const OdooService = {
       [['x_studio_dizimista', '=', dizimistaId]],
       { order: 'x_studio_data_da_devolucao desc', limit: limite }
     );
-  },
-
-  /**
-   * Conta quantas devoluções o dizimista já tem no MÊS-CALENDÁRIO atual
-   * (por x_studio_data_da_devolucao). Usado para avisar sobre duplicata.
-   * @param {number} dizimistaId
-   * @returns {number}
-   */
-  jaDevolveuNoMes(dizimistaId) {
-    const hoje = new Date();
-    const primeiro = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
-    const ultimo   = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
-    return this.count('x_devolucao', [
-      ['x_studio_dizimista', '=', dizimistaId],
-      ['x_studio_data_da_devolucao', '>=', primeiro],
-      ['x_studio_data_da_devolucao', '<=', ultimo]
-    ]);
   },
 
   /**
