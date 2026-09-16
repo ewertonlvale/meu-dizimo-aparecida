@@ -121,16 +121,22 @@ const DevolucaoHandler = {
     }
 
     const rows = [{ id: 'fam_todos', title: '✅ Todos', description: `Total ${this._reais(total)}` }];
-    familia.slice(0, 8).forEach((f, i) => {
+    familia.slice(0, 7).forEach((f, i) => {
       rows.push({ id: `fam_${f.id}`, title: `${i + 1}. ${f.nome}`.substring(0, 24), description: this._reais(f.valor) });
     });
     rows.push({ id: 'fam_escolher', title: '✏️ Escolher vários…', description: 'Digitar os números (ex.: 1,3)' });
+    rows.push({ id: 'fam_menu', title: '🔙 Menu', description: 'Voltar ao menu' });
 
     Utils.enviarLista(from, '👨‍👩‍👧 *De quem é a devolução?*', [{ title: 'Família', rows }], { textoBotao: 'Ver família' });
   },
 
   /** Toque num item da seleção de família (fam_todos | fam_<id> | fam_escolher). */
   processarSelecaoFamilia(from, id) {
+    if (id === 'fam_menu') {
+      StateManager.limparDados(from);
+      MenuHandler.menuPrincipal(from);
+      return;
+    }
     const familia = StateManager.getCampo(from, 'familia') || [];
     if (!familia.length) return this._selecaoExpirada(from);
 
@@ -149,6 +155,14 @@ const DevolucaoHandler = {
 
   /** Números digitados após "Escolher vários" (ex.: "1,3"). */
   processarNumerosFamilia(from, texto) {
+    // Escape por texto (o estado intercepta o texto para pegar os números).
+    const t = String(texto).trim().toLowerCase();
+    if (t === 'menu' || t === 'cancelar' || t === 'voltar' || t === 'sair') {
+      StateManager.limparDados(from);
+      MenuHandler.menuPrincipal(from);
+      return;
+    }
+
     const familia = StateManager.getCampo(from, 'familia') || [];
     if (!familia.length) return this._selecaoExpirada(from);
 
@@ -256,19 +270,28 @@ const DevolucaoHandler = {
     StateManager.salvarMultiplosCampos(from, { familiaHist: familiaLeve });
     StateManager.setEstado(from, ESTADOS.AGUARDANDO_SELECAO_HISTORICO);
 
-    if (familiaLeve.length <= 3) {
+    // 2 pessoas → botões [A][B][🔙 Menu]. 3+ → lista (com linha "Menu"),
+    // pois com 3 botões não sobra espaço para o "Voltar".
+    if (familiaLeve.length <= 2) {
       Utils.enviarMenu(from, '📊 *De quem é o histórico?*',
-        familiaLeve.map(f => ({ id: `hist_${f.id}`, title: f.nome.substring(0, 20) })));
+        familiaLeve.map(f => ({ id: `hist_${f.id}`, title: f.nome.substring(0, 20) }))
+          .concat([{ id: 'hist_menu', title: '🔙 Menu' }]));
       return;
     }
-    const rows = familiaLeve.slice(0, 10).map((f, i) => ({
+    const rows = familiaLeve.slice(0, 9).map((f, i) => ({
       id: `hist_${f.id}`, title: `${i + 1}. ${f.nome}`.substring(0, 24), description: ''
     }));
+    rows.push({ id: 'hist_menu', title: '🔙 Menu', description: 'Voltar ao menu' });
     Utils.enviarLista(from, '📊 *De quem é o histórico?*', [{ title: 'Família', rows }], { textoBotao: 'Ver família' });
   },
 
   /** Escolha do membro para histórico (hist_<id>). */
   processarSelecaoHistorico(from, id) {
+    if (id === 'hist_menu') {
+      StateManager.limparDados(from);
+      MenuHandler.menuPrincipal(from);
+      return;
+    }
     const familia = StateManager.getCampo(from, 'familiaHist') || [];
     const alvoId = parseInt(String(id).replace('hist_', ''), 10);
     const sel = familia.filter(f => f.id === alvoId)[0];
