@@ -134,8 +134,7 @@ const MenuHandler = {
     if (comunidadeNome) msg += `Comunidade: *${comunidadeNome}*\n`;
     msg += `\nFale com ${contatos.length > 1 ? 'uma destas pessoas' : 'o responsável'}:\n`;
     contatos.forEach(c => {
-      const link = this._linkWhatsApp(c.whatsapp);
-      msg += link ? `\n• *${c.nome}*\n  ${link}` : `\n• *${c.nome}* — ${c.whatsapp}`;
+      msg += `\n• *${c.nome}* — ${this._formatarTelefoneBr(c.whatsapp)}`;
     });
     msg += '\n\n🙏 Deus abençoe!';
 
@@ -158,10 +157,7 @@ const MenuHandler = {
     let msg = `📞 *Falar com a Pastoral*\n\n${motivo}\n`;
     if (whats || email) {
       msg += '\nVocê pode falar com a secretaria paroquial:\n';
-      if (whats) {
-        const link = this._linkWhatsApp(whats);
-        msg += link ? `\n📱 ${link}` : `\n📱 ${whats}`;
-      }
+      if (whats) msg += `\n📱 ${this._formatarTelefoneBr(whats)}`;
       if (email) msg += `\n📧 ${email}`;
     } else {
       msg += '\nProcure a secretaria paroquial da sua comunidade. 🙏';
@@ -169,12 +165,19 @@ const MenuHandler = {
     Utils.enviarComBotaoMenu(from, msg);
   },
 
-  /** Monta um link wa.me a partir de um telefone (adiciona DDI Brasil se faltar). */
-  _linkWhatsApp(tel) {
+  /**
+   * Formata um telefone no padrão brasileiro para exibição — ex.:
+   * "5586988777332" → "(86) 9 8877-7332". O WhatsApp detecta o número e o
+   * deixa clicável automaticamente (não precisa do link wa.me).
+   * Se o formato não for reconhecido, devolve o valor original.
+   */
+  _formatarTelefoneBr(tel) {
     let d = String(tel || '').replace(/\D/g, '');
-    if (!d) return null;
-    if (d.length <= 11) d = '55' + d;   // número local BR sem DDI
-    return 'https://wa.me/' + d;
+    if (!d) return String(tel || '');
+    if (d.length > 11 && d.startsWith('55')) d = d.slice(2);   // remove DDI Brasil
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d[2]} ${d.slice(3, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return String(tel);
   },
 
   // ==========================================================================
