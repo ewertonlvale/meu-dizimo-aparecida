@@ -317,7 +317,7 @@ const DevolucaoHandler = {
 
     Utils.enviarSimples(from, msg);
     try {
-      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, total);
+      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, total, comunidade.x_studio_titular_conta);
     } catch (e) {
       console.warn('⚠️ QR Code PIX (lote) não pôde ser gerado:', e.message);
     }
@@ -510,7 +510,7 @@ const DevolucaoHandler = {
 
     // Tentar enviar QR Code PIX via MediaService
     try {
-      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, dizimista.x_studio_value);
+      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, dizimista.x_studio_value, comunidade.x_studio_titular_conta);
     } catch (e) {
       console.warn('⚠️ QR Code PIX não pôde ser gerado:', e.message);
     }
