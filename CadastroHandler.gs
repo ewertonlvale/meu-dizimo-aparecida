@@ -92,10 +92,12 @@ const CadastroHandler = {
     StateManager.iniciarSessaoCadastro(from);
     StateManager.registrarSessaoAtiva(from);
     StateManager.salvarMultiplosCampos(from, {
-      cadastrandoMembro: true,
-      responsavelId:     responsavel.id,
-      comunidadeId:      comunidadeId,
-      comunidadeNome:    comunidadeNome
+      cadastrandoMembro:   true,
+      responsavelId:       responsavel.id,
+      comunidadeId:        comunidadeId,
+      comunidadeNome:      comunidadeNome,
+      responsavelEndereco: responsavel.x_studio_endereco || '',
+      responsavelDia:      responsavel.x_studio_dia_preferido || 10
     });
 
     Utils.enviarSimples(from,
@@ -235,13 +237,46 @@ const CadastroHandler = {
 
     const dataFormatada = `${dia}/${mes}/${ano}`;
     StateManager.salvarCampoEMudarEstado(from, 'dataNascimento', dataFormatada, ESTADOS.AGUARDANDO_ENDERECO);
+    Utils.enviarSimples(from, `Data registrada: *${dataFormatada}* ✅`);
+    Utilities.sleep(800);
 
-    Utils.enviarSimples(from, `Data registrada: *${dataFormatada}* ✅\n\nAgora preciso do seu endereço.`);
-    Utilities.sleep(1000);
+    // Membro: oferece o endereço do responsável (confirmar) ou digitar outro.
+    if (StateManager.getCampo(from, 'cadastrandoMembro')) {
+      const end = StateManager.getCampo(from, 'responsavelEndereco') || '(não informado)';
+      Utils.enviarMenu(from,
+        `🏠 *Endereço do familiar*\n\nÉ o mesmo endereço do responsável?\n\n_${end}_`,
+        [
+          { id: 'btn_end_mesmo', title: '🏠 Mesmo endereço' },
+          { id: 'btn_end_outro', title: '✏️ Outro endereço' }
+        ]
+      );
+      return;
+    }
+
     Utils.enviarSimples(from,
       `${this._progresso(5)}\n\n🏠 *Endereço*\n\nDigite seu endereço completo:\n\n` +
       `_Rua, número, bairro e ponto de referência_\n\n` +
       `Exemplo: Rua das Flores, 123, Centro, próximo à farmácia São João`
+    );
+  },
+
+  /** Membro: usa o endereço do responsável e segue para o valor. */
+  usarEnderecoDoResponsavel(from) {
+    const end = StateManager.getCampo(from, 'responsavelEndereco') || '';
+    StateManager.salvarCampoEMudarEstado(from, 'endereco', end, ESTADOS.AGUARDANDO_VALOR_MENSAL);
+    Utils.enviarSimples(from, `🏠 Endereço: *mesmo do responsável* ✅`);
+    Utilities.sleep(600);
+    Utils.enviarSimples(from,
+      `💰 *Valor Mensal do Dízimo*\n\nQuanto esse familiar costuma devolver mensalmente?\n\n` +
+      `Escreva só o valor (ex.: 50 ou 50,00).`
+    );
+  },
+
+  /** Membro: pede para digitar um endereço diferente. */
+  solicitarEnderecoDigitado(from) {
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_ENDERECO);
+    Utils.enviarSimples(from,
+      `🏠 *Endereço do familiar*\n\nDigite o endereço completo:\n\n_Rua, número, bairro e ponto de referência_`
     );
   },
 
@@ -284,9 +319,18 @@ const CadastroHandler = {
     Utils.enviarSimples(from, `Valor registrado: *R$ ${valor.toFixed(2).replace('.', ',')}* ✅`);
     Utilities.sleep(1000);
 
-    // Membro da família: pula notificações e foto → vai direto ao resumo.
+    // Membro: pula notificações e pergunta o dia da devolução (manter o do
+    // responsável ou informar outro).
     if (StateManager.getCampo(from, 'cadastrandoMembro')) {
-      this.mostrarResumo(from);
+      const dia = StateManager.getCampo(from, 'responsavelDia') || 10;
+      StateManager.setEstado(from, ESTADOS.AGUARDANDO_DIA_PREFERIDO);
+      Utils.enviarMenu(from,
+        `📅 *Dia da devolução*\n\nManter o mesmo dia do responsável?`,
+        [
+          { id: 'btn_dia_mesmo', title: `📅 Manter dia ${dia}`.substring(0, 20) },
+          { id: 'btn_dia_outro', title: '✏️ Outro dia' }
+        ]
+      );
       return;
     }
 
@@ -343,23 +387,57 @@ const CadastroHandler = {
       return;
     }
     
-    // ✅ CORRIGIDO: Usar o padrão salvarCampoEMudarEstado
-    StateManager.salvarCampoEMudarEstado(from, 'diaPreferido', dia, ESTADOS.AGUARDANDO_FOTO_PERFIL);
-    
+    StateManager.salvarMultiplosCampos(from, { diaPreferido: dia });
+
+    // Membro: sem texto de "lembrete" (não recebe notificações) → foto.
+    if (StateManager.getCampo(from, 'cadastrandoMembro')) {
+      Utils.enviarSimples(from, `📅 Dia da devolução: *${dia}* ✅`);
+      Utilities.sleep(600);
+      this._pedirFotoMembro(from);
+      return;
+    }
+
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_FOTO_PERFIL);
     Utils.enviarSimples(from,
       `✅ Perfeito!\n\n` +
       `Você receberá um lembrete amigável todo dia *${dia}* do mês.`
     );
-    
     Utilities.sleep(1000);
-    
-    // Solicitar uma foto
     Utils.enviarSimples(from,
       `📸 *Foto de Perfil*\n\n` +
       `Agora envie sua foto de perfil!\n\n` +
       `💡 Dica: use uma foto nítida e recente. 😊\n` +
       `Você pode tirar uma selfie ou enviar da galeria.`
     );
+  },
+
+  /** Membro: mantém o dia do responsável e segue para a foto. */
+  usarDiaDoResponsavel(from) {
+    const dia = StateManager.getCampo(from, 'responsavelDia') || 10;
+    StateManager.salvarMultiplosCampos(from, { diaPreferido: dia });
+    Utils.enviarSimples(from, `📅 Dia da devolução: *${dia}* ✅`);
+    Utilities.sleep(600);
+    this._pedirFotoMembro(from);
+  },
+
+  /** Membro: pede para digitar um dia diferente (1–28). */
+  solicitarDiaDigitado(from) {
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_DIA_PREFERIDO);
+    Utils.enviarSimples(from, '📅 Digite o dia da devolução (número de *1 a 28*):');
+  },
+
+  /** Membro: solicita a foto do familiar, com opção de pular. */
+  _pedirFotoMembro(from) {
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_FOTO_PERFIL);
+    Utils.enviarMenu(from,
+      `📸 *Foto do familiar*\n\nEnvie uma foto do familiar. Se não tiver agora, pode pular.`,
+      [{ id: 'btn_foto_pular_membro', title: '⏭️ Pular foto' }]
+    );
+  },
+
+  /** Membro: pula a foto e vai ao resumo. */
+  pularFotoMembro(from) {
+    this.mostrarResumo(from);
   },
 
   // ==========================================================================
@@ -420,7 +498,7 @@ const CadastroHandler = {
 
     // Linha final: membro não tem notificações; cadastro normal mostra o status.
     const linhaExtra = ehMembro
-      ? `👨‍👩‍👧 *Membro da família* (mesma comunidade)\n`
+      ? `👨‍👩‍👧 *Membro da família* (mesma comunidade)\n📅 *Dia da devolução:* ${dados.diaPreferido || '—'}\n`
       : (dados.notificacaoAtiva
           ? `📲 *Notificações:* Ativadas (dia ${dados.diaPreferido})\n`
           : `📲 *Notificações:* Desativadas\n`);
@@ -454,7 +532,18 @@ const CadastroHandler = {
     try {
       // ── Membro da família ────────────────────────────────────────────────
       if (ehMembro) {
-        OdooService.criarMembro(dados, dados.responsavelId);
+        const idMembro = OdooService.criarMembro(dados, dados.responsavelId);
+
+        // Foto do familiar, se foi enviada (é opcional para membros).
+        if (dados.fotoMediaId && idMembro) {
+          try {
+            const arq = MediaService.baixarArquivo(dados.fotoMediaId);
+            if (arq && arq.base64) OdooService.salvarFotoDizimista(idMembro, arq.base64);
+          } catch (e) {
+            console.warn('⚠️ Foto do membro não salva:', e.message);
+          }
+        }
+
         StateManager.limparDados(from);
 
         let msg = `🎉 *Membro adicionado!*\n\n` +

@@ -242,7 +242,8 @@ const OdooService = {
       x_studio_value:             dados.valorMensal,
       x_studio_comunidade:        dados.comunidadeId,
       x_studio_responsavel:       responsavelId,
-      x_studio_notificacao_ativa: false
+      x_studio_notificacao_ativa: false,
+      x_studio_dia_preferido:     dados.diaPreferido || 10
       // sem x_studio_partner_phone: o membro não tem número próprio
     });
   },

@@ -173,6 +173,13 @@ const Router = {
       case 'btn_confirmar_cadastro': CadastroHandler.finalizar(from);         break;
       case 'btn_cancelar_cadastro':  CadastroHandler.cancelar(from);          break;
 
+      // --- Cadastro de membro (família) ---
+      case 'btn_end_mesmo':          CadastroHandler.usarEnderecoDoResponsavel(from); break;
+      case 'btn_end_outro':          CadastroHandler.solicitarEnderecoDigitado(from); break;
+      case 'btn_dia_mesmo':          CadastroHandler.usarDiaDoResponsavel(from);      break;
+      case 'btn_dia_outro':          CadastroHandler.solicitarDiaDigitado(from);      break;
+      case 'btn_foto_pular_membro':  CadastroHandler.pularFotoMembro(from);           break;
+
       // --- Devolução ---
       case 'btn_ja_sou_dizimista':   DevolucaoHandler.verificarDizimista(from); break;
       case 'btn_devolver_dizimo':    DevolucaoHandler.iniciarDevolucao(from);   break;
