@@ -37,6 +37,9 @@ const ESTADOS = {
   // Aviso de que já existe devolução no mês (usuário confirma se registra outra)
   AGUARDANDO_CONFIRMA_DUPLICATA:   'AGUARDANDO_CONFIRMA_DUPLICATA',
 
+  // Contato da pastoral: usuário sem cadastro escolhe a comunidade para ver o responsável
+  AGUARDANDO_COMUNIDADE_CONTATO:   'AGUARDANDO_COMUNIDADE_CONTATO',
+
   AGUARDANDO_NOTIFICACAO:        'AGUARDANDO_NOTIFICACAO',
   AGUARDANDO_DIA_PREFERIDO:      'AGUARDANDO_DIA_PREFERIDO',
 

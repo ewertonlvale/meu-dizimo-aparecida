@@ -104,6 +104,12 @@ const Router = {
         return;
       }
 
+      // ── Falar com a Pastoral: seleção de comunidade (usuário sem cadastro) ──
+      if (estado === ESTADOS.AGUARDANDO_COMUNIDADE_CONTATO) {
+        MenuHandler.processarComunidadeContato(from, itemId, itemTitle);
+        return;
+      }
+
       // ── Relatório v2: seleção de comunidade para pendentes (admin) ──────
       if (estado === ESTADOS.AGUARDANDO_COMUNIDADE_PENDENTES) {
         RelatorioHandler.processarComunidadePendentes(from, itemId, itemTitle);
