@@ -31,11 +31,11 @@
 | BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | ✅ Concluído |
 | BL-07 | `AGUARDANDO_COMPROVANTE` setado mesmo sem dados de pagamento | 🟠 | P | ✅ Concluído |
 | BL-08 | Validação de data de nascimento aceita datas impossíveis/futuras | 🟠 | P | ✅ Concluído |
-| BL-09 | Webhook processa só a 1ª mensagem do lote | 🟠 | M | Aberto |
+| BL-09 | Webhook processa só a 1ª mensagem do lote | 🟠 | M | ✅ Concluído (loop entry/changes/messages + idempotência por messageId) |
 | BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | ✅ Concluído |
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | Aberto |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | Aberto |
-| BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | Aberto |
+| BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | ✅ Resolvido — opção "Secretaria" virou "Contato Pastoral" (contato do responsável por comunidade; secretaria de `x_parametros` como fallback) |
 | BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
 | BL-15 | Efeito colateral: busca de dizimista atualiza telefone no Odoo | 🟡 | P | Aberto |
 | BL-16 | Separar arquivos de teste do deploy de produção | 🟡 | M | Aberto |
