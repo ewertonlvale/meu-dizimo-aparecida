@@ -32,7 +32,7 @@ const MenuHandler = {
       [
         { id: 'btn_ser_dizimista',    title: '💛 Ser Dizimista'   },
         { id: 'btn_ja_sou_dizimista', title: '🙏 Já sou Dizimista' },
-        { id: 'btn_secretaria',       title: '📞 Falar com a Pastoral' }
+        { id: 'btn_secretaria',       title: '📞 Contato Pastoral' }
       ],
       { header: '💛 Pastoral do Dízimo' }
     );
