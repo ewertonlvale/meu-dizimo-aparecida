@@ -250,22 +250,22 @@ const MediaService = {
 
   /**
    * Gera e envia o QR Code PIX para o usuário.
-   * Usa a API qrcode.pix.ae (ou similar) para gerar a imagem.
    *
-   * @param {string} to          - Número do destinatário
-   * @param {string} chavePix    - Chave PIX da comunidade
-   * @param {number} valor       - Valor sugerido (opcional)
+   * @param {string} to            - Número do destinatário
+   * @param {string} chavePix      - Chave PIX da comunidade
+   * @param {number} valor         - Valor sugerido (opcional)
+   * @param {string} recebedorNome - Nome do recebedor (ex.: titular da conta)
+   * @param {string} cidade        - Cidade do recebedor (opcional)
    */
-  enviarQrCode(to, chavePix, valor) {
+  enviarQrCode(to, chavePix, valor, recebedorNome, cidade) {
     console.log(`💳 Gerando QR Code PIX para chave: ${chavePix}`);
 
     try {
-      // Gerar payload PIX (BR Code simplificado)
-      const pixPayload = this._gerarPayloadPix(chavePix, valor);
+      // Gera o BR Code (payload EMV) — o texto "copia e cola" do PIX.
+      const pixPayload = this._gerarPayloadPix(chavePix, valor, recebedorNome, cidade);
 
-      // Chamar API de geração de QR Code
+      // Imagem do QR Code a partir do payload.
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixPayload)}`;
-
       const response = UrlFetchApp.fetch(qrUrl, { muteHttpExceptions: true });
 
       if (response.getResponseCode() !== 200) {
@@ -274,7 +274,9 @@ const MediaService = {
       }
 
       const base64QR = Utilities.base64Encode(response.getContent());
-      this.enviarImagemBase64(to, base64QR, `💳 QR Code PIX\n\nChave: ${chavePix}`);
+      // Enviamos também o "copia e cola" para quem não consegue escanear.
+      this.enviarImagemBase64(to, base64QR,
+        `💳 *QR Code PIX*\n\nOu use o *PIX copia e cola*:\n${pixPayload}`);
 
     } catch (error) {
       console.warn('⚠️ Não foi possível gerar QR Code:', error.message);
@@ -283,25 +285,57 @@ const MediaService = {
   },
 
   /**
-   * Gera um payload BR Code mínimo para o PIX.
+   * Gera o payload BR Code (EMV) do PIX, conforme o padrão do Banco Central.
+   * Correções (BL-11): a tag 54 (valor) só é incluída quando há valor > 0;
+   * nome/cidade do recebedor são parametrizáveis e sanitizados; inclui a tag 62
+   * (txid estático "***") para maior compatibilidade entre bancos.
    * @private
    */
-  _gerarPayloadPix(chavePix, valor) {
-    // Implementação simplificada do padrão EMV QR Code
-    const nome     = 'PASTORAL DO DIZIMO';
-    const cidade   = 'FORTALEZA';
-    const valorStr = valor ? valor.toFixed(2) : '';
+  _gerarPayloadPix(chavePix, valor, recebedorNome, cidade) {
+    const nome = this._sanitizarTextoEmv(recebedorNome || 'PASTORAL DO DIZIMO', 25);
+    const cid  = this._sanitizarTextoEmv(cidade || 'CIDADE', 15);
+    const chave = String(chavePix || '').trim();
 
-    const merchantAccountInfo = `0014BR.GOV.BCB.PIX01${chavePix.length.toString().padStart(2, '0')}${chavePix}`;
-    const gui = `26${merchantAccountInfo.length.toString().padStart(2, '0')}${merchantAccountInfo}`;
+    // Merchant Account Information (tag 26): GUI do PIX + chave.
+    const mai = this._emv('00', 'BR.GOV.BCB.PIX') + this._emv('01', chave);
 
-    let payload = `000201${gui}52040000530398654${valorStr.length.toString().padStart(2, '0')}${valorStr}`;
-    payload    += `5802BR59${nome.length.toString().padStart(2, '0')}${nome}`;
-    payload    += `60${cidade.length.toString().padStart(2, '0')}${cidade}6304`;
+    let p = '';
+    p += this._emv('00', '01');        // Payload Format Indicator
+    p += this._emv('26', mai);         // Merchant Account Information — PIX
+    p += this._emv('52', '0000');      // Merchant Category Code
+    p += this._emv('53', '986');       // Moeda: BRL (986)
+    if (valor && Number(valor) > 0) {
+      p += this._emv('54', Number(valor).toFixed(2));   // Valor — só quando houver
+    }
+    p += this._emv('58', 'BR');        // País
+    p += this._emv('59', nome);        // Nome do recebedor
+    p += this._emv('60', cid);         // Cidade do recebedor
+    p += this._emv('62', this._emv('05', '***'));  // Additional Data — txid estático
+    p += '6304';                       // CRC (id 63 + len 04), valor logo abaixo
 
-    // CRC16 simplificado (checksum)
-    const crc = this._crc16(payload);
-    return payload + crc;
+    return p + this._crc16(p);
+  },
+
+  /** Monta um campo EMV "ID + comprimento(2) + valor". @private */
+  _emv(id, value) {
+    const v = String(value);
+    return id + v.length.toString().padStart(2, '0') + v;
+  },
+
+  /**
+   * Sanitiza texto para os campos EMV (nome/cidade): remove acentos, deixa
+   * maiúsculas, mantém apenas A-Z 0-9 e espaço, e limita o tamanho.
+   * @private
+   */
+  _sanitizarTextoEmv(texto, max) {
+    let s = String(texto || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove acentos
+      .toUpperCase()
+      .replace(/[^A-Z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!s) s = 'RECEBEDOR';
+    return s.substring(0, max).trim();
   },
 
   /** CRC16-CCITT para BR Code PIX */
