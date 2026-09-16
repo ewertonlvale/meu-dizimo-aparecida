@@ -461,6 +461,32 @@ const OdooService = {
   },
 
   /**
+   * Retorna as devoluções do dizimista no MÊS-CALENDÁRIO atual, com data e valor.
+   * Usado no aviso de duplicata para detalhar quando/quanto já foi devolvido.
+   * @param {number} dizimistaId
+   * @returns {Array<{data: string, valor: number}>}  data em 'yyyy-MM-dd'
+   */
+  devolucoesDoMes(dizimistaId) {
+    const hoje = new Date();
+    const primeiro = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
+    const ultimo   = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
+    const regs = this.searchRead(
+      'x_devolucao',
+      ['x_studio_data_da_devolucao', 'x_studio_value'],
+      [
+        ['x_studio_dizimista', '=', dizimistaId],
+        ['x_studio_data_da_devolucao', '>=', primeiro],
+        ['x_studio_data_da_devolucao', '<=', ultimo]
+      ],
+      { order: 'x_studio_data_da_devolucao asc' }
+    );
+    return (regs || []).map(r => ({
+      data:  r.x_studio_data_da_devolucao || '',
+      valor: r.x_studio_value || 0
+    }));
+  },
+
+  /**
    * Busca devoluções dentro de um intervalo de datas.
    * Usado pelo RelatorioHandler.
    * @param {string} dataInicio - Formato ISO: 'YYYY-MM-DD'
