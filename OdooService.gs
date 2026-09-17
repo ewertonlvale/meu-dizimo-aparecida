@@ -124,14 +124,30 @@ const OdooService = {
    * @private
    */
   _rpc(baseUrl, payload) {
-    console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${payload.params.args[4]}`);
+    const metodo = payload.params.args[4];
+    console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${metodo}`);
 
-    const response = UrlFetchApp.fetch(`${baseUrl}/jsonrpc`, {
-      method:      'post',
-      contentType: 'application/json',
-      payload:     JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
+    // BL-24: `create` não é idempotente — repetir um 5xx poderia gravar a mesma
+    // devolução duas vezes, pior que a falha original. Leituras e `write`
+    // (que só fixa valores) podem ser repetidas com segurança.
+    const response = Utils.fetchComRetry(
+      `${baseUrl}/jsonrpc`,
+      {
+        method:      'post',
+        contentType: 'application/json',
+        payload:     JSON.stringify(payload),
+        muteHttpExceptions: true
+      },
+      { idempotente: metodo !== 'create', rotulo: `Odoo ${metodo}` }
+    );
+
+    // Antes o corpo era parseado direto: um 5xx devolve HTML e estourava um
+    // SyntaxError de JSON, escondendo a causa real.
+    const code = response.getResponseCode();
+    if (code !== 200) {
+      console.error(`❌ [Odoo] HTTP ${code} em ${metodo}:`, response.getContentText().slice(0, 300));
+      throw new Error(`Odoo respondeu HTTP ${code} em ${metodo}`);
+    }
 
     const result = JSON.parse(response.getContentText());
 

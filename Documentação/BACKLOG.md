@@ -4,8 +4,8 @@
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
-**Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-23, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências principais:** os itens de carga **BL-21, BL-22 e BL-24**, ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01), mais BL-16 e BL-25.
+**Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
+**Pendências principais:** os itens de carga **BL-21 e BL-22**, ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01) — o BL-24 amenizou o risco, mas não o eliminou. Além deles, BL-16 e BL-25.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
@@ -49,7 +49,7 @@
 | BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | Aberto |
 | BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟠 | M | Aberto — **elevado de 🟡** na auditoria: a correção do BL-20 passou a usar o mesmo lock global em toda gravação de cadastro |
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | ✅ Concluído (lock + dupla checagem no cache miss) |
-| BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | Aberto |
+| BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | ✅ Concluído (`Utils.fetchComRetry`, com política por idempotência) |
 | BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | Aberto — monitorar |
 
 ---
@@ -249,6 +249,23 @@ Tornar `ehPrimeiroContato`/`registrarContatoBot` idempotente (checar/gravar cach
 ### BL-24 — Retry/backoff em chamadas externas 🟡 (M)
 Adicionar reenvio com backoff para 429/5xx em `Utils._post` (WhatsApp) e nas chamadas Odoo/Vision, com limite de tentativas. Aceite: um 429 transitório não perde a mensagem ao usuário.
 
+**✅ Corrigido em 17/09/2026.** Helper único `Utils.fetchComRetry(url, options, { idempotente, rotulo })`: no máximo 3 tentativas, backoff exponencial de 1 s e 2 s.
+
+**A decisão central é *quando não* repetir.** Reenviar cegamente um 5xx é perigoso: o servidor pode ter processado a requisição antes de falhar, e repetir um `create` no Odoo gravaria **a mesma devolução duas vezes** — exatamente a classe de bug do BL-23, com dado financeiro. A política é:
+| Situação | Repete? | Por quê |
+|---|---|---|
+| **429** (throttling) | Sempre | A requisição foi recusada *antes* de executar; repetir nunca duplica |
+| **5xx / exceção de rede**, chamada idempotente | Sim | `search_read`, `search_count`, `write`, OCR e downloads podem repetir sem efeito colateral |
+| **5xx / exceção de rede**, chamada não idempotente | **Não** | `create` no Odoo e envio de mensagem ao WhatsApp — repetir duplicaria registro ou mensagem |
+
+No Odoo a política é derivada do próprio payload (`args[4] !== 'create'`), sem mudar assinatura de método. Aplicado em: `Utils._post` (WhatsApp), `OdooService._rpc`, `VisionService` (imagem e PDF) e os dois GETs de `MediaService.baixarArquivo` — este último não estava no escopo original do item, mas falhar ali significa perder o comprovante que o usuário acabou de enviar.
+
+**Correção de bônus:** `_rpc` parseava o corpo como JSON sem olhar o status. Um 5xx do Odoo devolve HTML e estourava um `SyntaxError` de JSON, escondendo a causa real; agora vira um erro explícito com o código HTTP.
+
+**Testado localmente** (8 cenários, fora do Apps Script, com `UrlFetchApp`/`Utilities` stubados): 200 direto; 429→200 em chamada não idempotente; 500 não idempotente **não** repetindo; 500 idempotente esgotando as 3 tentativas com backoff 1 s/2 s; exceção de rede nos dois modos; 429 permanente devolvendo a resposta sem lançar; 503→200 recuperando.
+
+**Limite conhecido:** as esperas consomem o orçamento de 6 min por execução, por isso o teto é baixo (2 reenvios). Sob throttling sustentado isto ameniza, não resolve — a saída estrutural continua sendo o BL-21 (processar fora do webhook).
+
 ### BL-25 — Monitorar cota de UrlFetch 🟡 (P)
 Instrumentar contagem diária de chamadas externas e alertar ao aproximar da cota; documentar o teto conforme o tipo de conta. Aceite: visibilidade do consumo diário antes de estourar.
 
@@ -293,5 +310,5 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 3. **Sprint 3 (robustez/carga) — parcialmente feito:** BL-01, BL-09 e BL-11 concluídos. **Restam BL-21, BL-24 e BL-22** — e, como o BL-01 já está no ar, o BL-24 passou a ser o mais urgente do grupo.
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
    ~~**BL-27**~~ ✅ → ~~**reforço do BL-26**~~ ✅ (falta rodar `criarCampoConferenciaPix()` no Odoo) → ~~**BL-17**~~ ⚠️ metade feita (webhook fail-closed; falta o uid dedicado no Odoo) → ~~**BL-23**~~ ✅. **Sprint 4 encerrado em código.**
-5. **Sprint 5 (carga):** BL-24 **antes do próximo ciclo mensal de notificações** → BL-22 + BL-20 juntos (estão acoplados) → BL-21 (o item grande; resolve os dois anteriores de vez).
+5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → **BL-22 + BL-20 juntos** (estão acoplados) → **BL-21** (o item grande; resolve os dois anteriores de vez).
 6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.

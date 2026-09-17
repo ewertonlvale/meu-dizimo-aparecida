@@ -201,14 +201,17 @@ const MediaService = {
     console.log('📥 Baixando arquivo:', mediaId);
 
     try {
+      // BL-24: os dois GETs são idempotentes, e falhar aqui significa perder o
+      // comprovante que o usuário acabou de enviar — vale insistir.
       // 1. Obter URL da mídia
-      const urlInfoResponse = UrlFetchApp.fetch(
+      const urlInfoResponse = Utils.fetchComRetry(
         getWhatsAppUrl(mediaId),
         {
           method:  'get',
           headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'WhatsApp mídia (info)' }
       );
 
       const urlInfo = JSON.parse(urlInfoResponse.getContentText());
@@ -219,11 +222,15 @@ const MediaService = {
       }
 
       // 2. Baixar arquivo
-      const fileResponse = UrlFetchApp.fetch(urlInfo.url, {
-        method:  'get',
-        headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-        muteHttpExceptions: true
-      });
+      const fileResponse = Utils.fetchComRetry(
+        urlInfo.url,
+        {
+          method:  'get',
+          headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+          muteHttpExceptions: true
+        },
+        { idempotente: true, rotulo: 'WhatsApp mídia (download)' }
+      );
 
       if (fileResponse.getResponseCode() !== 200) {
         console.error('❌ Erro ao baixar arquivo, status:', fileResponse.getResponseCode());
