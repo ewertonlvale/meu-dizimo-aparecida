@@ -20,9 +20,15 @@
  *   teto     N usuários distintos mandam uma mensagem ao mesmo tempo.
  *            Mede o teto de execuções simultâneas e a latência sob carga.
  *
- *   corrida  UM usuário, levado até o meio do cadastro, recebe N mensagens
- *            simultâneas. É o cenário de lost update: cada mensagem dispara
- *            um read-modify-write de `dados_<from>` em `salvarCampoEMudarEstado`.
+ *   corrida  UM usuário, levado até o meio do cadastro, recebe as respostas
+ *            do cadastro com POUCO intervalo entre si (--intervalo, padrão
+ *            400ms). Como cada execução leva ~2,5s, elas se sobrepõem: é o
+ *            cenário de lost update no read-modify-write de `dados_<from>`.
+ *
+ *            O intervalo é essencial. Disparadas no mesmo instante, todas
+ *            cairiam no mesmo passo e gravariam o mesmo campo — a perda ficaria
+ *            indistinguível. Com intervalo, cada uma cai num passo diferente e
+ *            um campo faltando no fim denuncia a perda.
  *
  *            ⚠️ A PREPARAÇÃO É ESSENCIAL. Disparar texto num usuário em estado
  *            MENU não escreve campo de cadastro nenhum — o Router só mostraria
@@ -56,6 +62,7 @@ const MODO        = opt('modo', 'teto');
 const USUARIOS    = parseInt(opt('usuarios', '10'), 10);
 const MENSAGENS   = parseInt(opt('mensagens', '5'), 10);
 const COMUNIDADE  = opt('comunidade');
+const INTERVALO   = parseInt(opt('intervalo', '400'), 10);
 
 if (!URL_WEBHOOK || !TOKEN) {
   console.error('Faltou --url ou --token. Veja o cabeçalho do arquivo.');
@@ -173,19 +180,49 @@ async function main() {
 
     await prepararCadastro(from);
 
-    console.log(`\nDisparando ${MENSAGENS} mensagens simultâneas de texto.`);
-    console.log('Cada uma grava campo do cadastro — é aqui que o lost update apareceria.\n');
+    // As respostas seguem a ordem real do cadastro, e cada uma é VÁLIDA para o
+    // passo em que deveria cair. Isso é o que torna a perda visível: se tudo
+    // correr bem, o cadastro termina com os cinco campos preenchidos; se uma
+    // gravação sobrescrever outra, um campo fica faltando.
+    //
+    // Mandar as cinco no mesmo instante NÃO serve: todas cairiam no mesmo passo
+    // e gravariam o mesmo campo, e a perda ficaria indistinguível. Por isso o
+    // intervalo — curto o bastante para as execuções se sobreporem (cada uma
+    // leva ~2,5s), longo o bastante para o estado avançar entre elas.
+    const respostas = [
+      ['nome',           'Joao da Silva Teste'],
+      ['nomeUsual',      'Joao Teste'],
+      ['dataNascimento', '15/05/1980'],
+      ['endereco',       'Rua de Teste, 100 - Centro'],
+      ['valorMensal',    '50']
+    ];
+
+    const quantas = Math.min(MENSAGENS, respostas.length);
+    console.log(`\nDisparando ${quantas} mensagens com ${INTERVALO}ms de intervalo.`);
+    console.log('Cada execução leva ~2,5s, então elas se sobrepõem — é aí que a corrida ocorre.\n');
+    respostas.slice(0, quantas).forEach(([campo, texto]) => console.log(`  ${campo.padEnd(15)} → "${texto}"`));
+    console.log('');
 
     const inicio = Date.now();
-    const resultados = await Promise.all(
-      Array.from({ length: MENSAGENS }, (_, i) => enviar(from, comoTexto(`Nome Teste ${i + 1}`), i))
-    );
+    const disparos = [];
+    for (let i = 0; i < quantas; i++) {
+      disparos.push(enviar(from, comoTexto(respostas[i][1]), i));
+      if (i < quantas - 1) await espera(INTERVALO);
+    }
+    const resultados = await Promise.all(disparos);
     relatorio(resultados, ((Date.now() - inicio) / 1000).toFixed(1));
 
-    console.log('\nAgora confira no Odoo / nos logs:');
-    console.log('  - o cadastro manteve todos os campos, ou algum se perdeu?');
-    console.log('  - houve mais de um x_contato_bot para este número?');
-    console.log('  - nos logs do GAS: "Lock não obtido" indica a corrida acontecendo.');
+    console.log('\n─────────── Como interpretar ───────────');
+    console.log('No Odoo, procure o dizimista "Joao Teste" (ou o cadastro pela metade):');
+    console.log('  TODOS os campos preenchidos  → nenhuma perda nesta rodada');
+    console.log('  algum campo vazio/faltando   → LOST UPDATE confirmado');
+    console.log('');
+    console.log('Nos logs (Cloud Logging), filtre por:');
+    console.log('  "Lock não obtido"  → houve contenção: a proteção do BL-20 cedeu');
+    console.log('  "Estado de 5599"   → mostra em que passo cada mensagem caiu');
+    console.log('');
+    console.log('Se o cadastro completou sem falhas, repita com --intervalo menor');
+    console.log('(ex.: 150) para estreitar a janela e forçar mais sobreposição.');
 
   } else {
     console.log(`Modo TETO — ${USUARIOS} usuários distintos disparando ao mesmo tempo.\n`);
