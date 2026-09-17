@@ -28,6 +28,13 @@ TestesComprovantes.gs
 TesteRelatorio.gs
 TesteNotificacao.gs
 
+# ── Ferramentas que rodam fora do Apps Script ───────────────────────────────
+# O clasp envia QUALQUER .js como arquivo do projeto. O driver de carga é um
+# script Node e chama main() no topo — se fosse enviado, rodaria a cada carga
+# do script no GAS.
+ferramentas/**
+**/ferramentas/**
+
 # ── Site público servido pelo GitHub Pages (~97 KB) ─────────────────────────
 # O clasp trata QUALQUER .html como arquivo do projeto Apps Script, então sem
 # isto as páginas de política de privacidade e afins viravam parte do deploy.
