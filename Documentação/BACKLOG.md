@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências:** nenhum item aberto em código. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
+**Pendências:** **BL-28** (aberto em 17/09, descoberto no teste de carga). **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 **Escopo deste arquivo:** é um **registro de trabalho** — o que foi encontrado, decidido e por quê. Para *como o sistema funciona hoje* e as regras a respeitar ao mexer no código (armazenamento, chamadas externas, concorrência, publicação), veja **[ARQUITETURA.md](ARQUITETURA.md)**.
@@ -39,6 +39,7 @@
 | BL-09 | Webhook processa só a 1ª mensagem do lote | 🟠 | M | ✅ Concluído (loop entry/changes/messages + idempotência por messageId) |
 | BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | ✅ Concluído |
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | ✅ Payload corrigido (tag 54 condicional, nome/cidade do titular, tag 62, copia-e-cola). QR externo mantido por decisão (chave não é secreta, baixo risco) |
+| BL-28 | Resposta interativa fora de contexto aborta o cadastro em silêncio | 🟠 | P | Aberto — **descoberto no teste de carga de 17/09** |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | ✅ Concluído (objeto `ASSETS` declarado em Assets.gs) |
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | ✅ Resolvido — opção "Secretaria" virou "Contato Pastoral" (contato do responsável por comunidade; secretaria de `x_parametros` como fallback) |
 | BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
@@ -155,6 +156,26 @@ O que foi feito:
 **Problema:** tag `54` com length `00` quando valor vazio (EMV inválido); nome/cidade fixos no código; QR gerado via `api.qrserver.com` (terceiro sem SLA + envio da chave PIX e valor para fora).
 **Correção:** omitir a tag 54 quando não houver valor; puxar nome/cidade de parâmetros do Odoo; avaliar gerar o QR localmente (evita dependência externa e vazamento).
 **Aceite:** BR Code válido com e sem valor; sem chamada a serviço externo com dado sensível.
+
+---
+
+### BL-28 — Resposta interativa fora de contexto aborta o cadastro 🟠 (P) — **descoberto no teste de carga de 17/09/2026**
+**Arquivo:** `Router.gs` — fallback final de `_rotearInterativo`, ramo `list_reply`
+**Problema:** o tratamento de `list_reply` testa o estado atual contra uma sequência de casos conhecidos e, não casando com nenhum, cai em `MenuHandler.menuPrincipal(from)`. Isso **põe o usuário de volta no menu e abandona o cadastro em andamento**, sem aviso e sem explicação.
+
+Observado ao vivo no teste de carga: uma seleção de comunidade chegou enquanto o estado era `AGUARDANDO_CONFIRMACAO_NUMERO` e o log registrou
+```
+📋 Lista selecionada: com_30
+📊 Estado: AGUARDANDO_CONFIRMACAO_NUMERO
+📝 Estado → MENU
+```
+
+**Por que acontece de verdade, e não só em teste:** o WhatsApp mantém as mensagens interativas antigas clicáveis na conversa. Basta o usuário rolar para cima e tocar numa lista de uma etapa anterior — ou numa lista de outro fluxo — para perder o cadastro que estava preenchendo. Não é preciso concorrência nem má-fé.
+
+**Relação com o BL-10:** aquele item tratou exatamente este risco para os atalhos de *texto* (`menu`, `0`, `rel`), que passaram a não abortar o cadastro. As respostas *interativas* fora de contexto ficaram de fora e continuam abortando.
+
+**Correção sugerida:** durante os `ESTADOS_CADASTRO`, não deixar uma seleção desconhecida cair no menu. Mínimo: responder algo como "não entendi essa opção — vamos continuar de onde paramos" e reenviar a pergunta do passo atual, preservando estado e dados. O mesmo vale para `button_reply`, que deve ser verificado junto.
+**Aceite:** tocar numa lista antiga da conversa durante o cadastro não faz o usuário perder o que já preencheu.
 
 ---
 

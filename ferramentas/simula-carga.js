@@ -133,16 +133,24 @@ async function enviar(from, mensagemParcial, indice) {
  * estado em que uma mensagem de texto grava campo do cadastro.
  */
 async function prepararCadastro(from) {
+  // Esta sequência ESPELHA o fluxo real do CadastroHandler, estado por estado.
+  // Cada passo só é aceito no estado que o anterior deixou; mandar um passo
+  // fora de ordem faz o Router descartá-lo e voltar o estado para MENU — e daí
+  // a rajada cairia em MENU sem tocar no cadastro, dando um teste vazio.
+  //
+  // Se o fluxo de cadastro mudar, esta lista precisa mudar junto.
   const passos = [
-    ['primeiro contato',      comoTexto('menu')],
-    ['abrir cadastro',        comoBotao('btn_ser_dizimista', 'Ser Dizimista')],
-    ['escolher comunidade',   comoLista(`com_${COMUNIDADE}`, 'Comunidade de Teste')]
+    ['primeiro contato',    comoTexto('menu'),                                    'MENU'],
+    ['abrir cadastro',      comoBotao('btn_ser_dizimista', 'Ser Dizimista'),      'AGUARDANDO_CONFIRMACAO_NUMERO'],
+    ['confirmar número',    comoBotao('btn_numero_confirmar', 'Confirmar'),       'AGUARDANDO_COMUNIDADE'],
+    ['escolher comunidade', comoLista(`com_${COMUNIDADE}`, 'Comunidade de Teste'), 'AGUARDANDO_NOME']
   ];
 
   for (let i = 0; i < passos.length; i++) {
-    const [rotulo, msg] = passos[i];
+    const [rotulo, msg, estadoEsperado] = passos[i];
     const r = await enviar(from, msg, `prep${i}`);
-    console.log(`  preparação · ${rotulo}: ${r.ok ? 'ok' : 'FALHOU ' + r.status} (${r.ms}ms)`);
+    console.log(`  preparação · ${rotulo.padEnd(20)} ${r.ok ? 'ok' : 'FALHOU ' + r.status} ` +
+                `(${r.ms}ms) → estado esperado: ${estadoEsperado}`);
     if (!r.ok) {
       console.error('\nA preparação falhou — a rajada não testaria a corrida. Abortando.');
       process.exit(1);
@@ -150,6 +158,10 @@ async function prepararCadastro(from) {
     // Espaço para o bot processar e mudar de estado antes do próximo passo.
     await espera(2500);
   }
+
+  console.log('\n  ⚠️ Confira no Cloud Logging que os "📊 Estado de ..." batem com a coluna acima.');
+  console.log('     Se algum passo aparecer com estado MENU, a preparação saiu do trilho');
+  console.log('     e o resultado da rajada não significa nada.');
 }
 
 function relatorio(resultados, segundos) {
