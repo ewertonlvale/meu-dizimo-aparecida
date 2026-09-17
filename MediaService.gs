@@ -268,31 +268,47 @@ const MediaService = {
    * @param {string} cidade        - Cidade do recebedor (opcional)
    */
   enviarQrCode(to, chavePix, valor, recebedorNome, cidade) {
-    console.log(`💳 Gerando QR Code PIX para chave: ${chavePix}`);
+    // A chave pode ser um CPF — não vai para o log (mesmo critério do VisionService).
+    console.log('💳 Gerando QR Code PIX...');
 
+    let pixPayload;
     try {
-      // Gera o BR Code (payload EMV) — o texto "copia e cola" do PIX.
-      const pixPayload = this._gerarPayloadPix(chavePix, valor, recebedorNome, cidade);
+      // BR Code (payload EMV) — o texto "copia e cola" do PIX.
+      pixPayload = this._gerarPayloadPix(chavePix, valor, recebedorNome, cidade);
+    } catch (error) {
+      console.warn('⚠️ Não foi possível gerar o payload PIX:', error.message);
+      return;   // sem payload não há o que enviar
+    }
 
-      // Imagem do QR Code a partir do payload.
+    // 1. QR Code — depende de serviço externo sem SLA, então é o passo opcional.
+    //    Se falhar, o usuário ainda recebe o copia e cola, que é o que permite pagar.
+    const instrucao = '💳 *QR Code PIX*\n\nEscaneie pelo app do seu banco — ou use o ' +
+                      '*copia e cola* que vou enviar na próxima mensagem. 👇';
+    const semImagem = '💳 *PIX copia e cola*\n\nNão consegui gerar a imagem do QR Code, ' +
+                      'mas o código abaixo funciona igual: copie e cole no app do seu banco. 👇';
+    try {
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixPayload)}`;
       const response = Utils.fetchComRetry(qrUrl, { muteHttpExceptions: true },
         { idempotente: true, rotulo: 'QR Code' });
 
-      if (response.getResponseCode() !== 200) {
+      if (response.getResponseCode() === 200) {
+        this.enviarImagemBase64(to, Utilities.base64Encode(response.getContent()), instrucao);
+      } else {
         console.warn('⚠️ API QR Code falhou, status:', response.getResponseCode());
-        return;
+        Utils.enviarSimples(to, semImagem);
       }
-
-      const base64QR = Utilities.base64Encode(response.getContent());
-      // Enviamos também o "copia e cola" para quem não consegue escanear.
-      this.enviarImagemBase64(to, base64QR,
-        `💳 *QR Code PIX*\n\nOu use o *PIX copia e cola*:\n${pixPayload}`);
-
     } catch (error) {
       console.warn('⚠️ Não foi possível gerar QR Code:', error.message);
-      // Não lança erro – o fluxo continua sem QR Code
+      Utils.enviarSimples(to, semImagem);
     }
+
+    // 2. O payload vai SOZINHO numa mensagem: assim um toque longo → Copiar leva
+    //    exatamente o código, sem o usuário ter de selecionar o trecho à mão num
+    //    EMV longo (antes ele ficava no meio da legenda da imagem).
+    //    Sem negrito, crase ou qualquer marcador: eles entrariam na cópia e o
+    //    código seria recusado pelo app do banco.
+    Utilities.sleep(1000);   // ordem de chegada das duas mensagens
+    Utils.enviarSimples(to, pixPayload);
   },
 
   /**
