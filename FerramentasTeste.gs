@@ -25,6 +25,14 @@
 /** Marca de tudo que estas ferramentas criam. A limpeza depende dela. */
 const MASSA_PREFIXO = '[TESTE]';
 
+/**
+ * DDI/DDD dos números fictícios usados pelo driver de carga
+ * (`ferramentas/simula-carga.js`). Os registros que ele gera entram pelo fluxo
+ * real do bot, então nascem sem o prefixo acima — é este número que os
+ * identifica. Precisa casar com a constante DDD_TESTE do driver.
+ */
+const MASSA_DDD_TESTE = '5599';
+
 /** Margem do limite de 6 min por execução do Apps Script. */
 const MASSA_TEMPO_LIMITE_MS = 4.5 * 60 * 1000;
 
@@ -224,18 +232,69 @@ function _apagarPorPrefixo(model, rotulo) {
 }
 
 /**
+ * Remove os `x_contato_bot` criados pelo driver de carga.
+ *
+ * Existe separado porque o driver NÃO passa por `gerarMassaTeste`: ele entra
+ * pelo fluxo real do bot, então os registros nascem sem o prefixo `[TESTE]` e
+ * escapariam de `limparMassaTeste`. O que os identifica é o DDI/DDD fictício
+ * dos números simulados.
+ */
+function limparContatosTeste() {
+  if (!_exigirModoTeste()) return;
+
+  Logger.log('━━━━━━ [Massa] Limpando contatos do driver de carga ━━━━━━');
+
+  let removidos = 0;
+  const inicio  = Date.now();
+
+  while (true) {
+    if (Date.now() - inicio > MASSA_TEMPO_LIMITE_MS / 2) {
+      Logger.log(`⏱️ Parei no limite de tempo com ${removidos} removido(s).`);
+      break;
+    }
+
+    let registros;
+    try {
+      registros = OdooService.searchRead(
+        'x_contato_bot', ['id'], [['x_name', 'like', `${MASSA_DDD_TESTE}%`]],
+        { limit: MASSA_LOTE_EXCLUSAO }
+      );
+    } catch (e) {
+      Logger.log(`❌ Erro ao buscar contatos: ${e.message}`);
+      break;
+    }
+
+    if (!registros || registros.length === 0) break;
+
+    const ids = registros.map(r => r.id);
+    try {
+      OdooService.unlink('x_contato_bot', ids);
+      removidos += ids.length;
+      Logger.log(`   … ${removidos} contato(s)`);
+    } catch (e) {
+      Logger.log(`❌ Erro ao apagar lote: ${e.message}`);
+      break;
+    }
+  }
+
+  Logger.log(`🗑️ ${removidos} contato(s) de teste removido(s).`);
+}
+
+/**
  * Conta a massa de teste existente, sem alterar nada.
  * Seguro de rodar a qualquer momento — não exige MODO_TESTE.
  */
 function contarMassaTeste() {
   try {
-    const dizimistas = OdooService.count('x_dizimista', [['x_name', 'like', `${MASSA_PREFIXO}%`]]);
-    const devolucoes = OdooService.count('x_devolucao', [['x_name', 'like', `${MASSA_PREFIXO}%`]]);
+    const dizimistas = OdooService.count('x_dizimista',   [['x_name', 'like', `${MASSA_PREFIXO}%`]]);
+    const devolucoes = OdooService.count('x_devolucao',   [['x_name', 'like', `${MASSA_PREFIXO}%`]]);
+    const contatos   = OdooService.count('x_contato_bot', [['x_name', 'like', `${MASSA_DDD_TESTE}%`]]);
 
     Logger.log('');
     Logger.log('📊 Massa de teste no Odoo:');
-    Logger.log(`   ${dizimistas} dizimista(s)`);
-    Logger.log(`   ${devolucoes} devolução(ões)`);
+    Logger.log(`   ${dizimistas} dizimista(s)        (prefixo ${MASSA_PREFIXO})`);
+    Logger.log(`   ${devolucoes} devolução(ões)      (prefixo ${MASSA_PREFIXO})`);
+    Logger.log(`   ${contatos} contato(s) do driver  (números ${MASSA_DDD_TESTE}…)`);
     Logger.log('');
   } catch (e) {
     Logger.log(`❌ Erro ao contar: ${e.message}`);
