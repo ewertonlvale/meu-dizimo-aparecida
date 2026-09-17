@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências:** **BL-28** (aberto em 17/09, descoberto no teste de carga). **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
+**Pendências:** **BL-28** e **BL-29**, ambos abertos em 17/09 e descobertos no teste de carga. O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 **Escopo deste arquivo:** é um **registro de trabalho** — o que foi encontrado, decidido e por quê. Para *como o sistema funciona hoje* e as regras a respeitar ao mexer no código (armazenamento, chamadas externas, concorrência, publicação), veja **[ARQUITETURA.md](ARQUITETURA.md)**.
@@ -40,6 +40,7 @@
 | BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | ✅ Concluído |
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | ✅ Payload corrigido (tag 54 condicional, nome/cidade do titular, tag 62, copia-e-cola). QR externo mantido por decisão (chave não é secreta, baixo risco) |
 | BL-28 | Resposta interativa fora de contexto aborta o cadastro em silêncio | 🟠 | P | Aberto — **descoberto no teste de carga de 17/09** |
+| BL-29 | Mensagens processadas fora de ordem gravam a resposta no campo errado | 🟠 | G | Aberto — **comprovado no teste de carga de 17/09** |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | ✅ Concluído (objeto `ASSETS` declarado em Assets.gs) |
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | ✅ Resolvido — opção "Secretaria" virou "Contato Pastoral" (contato do responsável por comunidade; secretaria de `x_parametros` como fallback) |
 | BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
@@ -177,6 +178,32 @@ Observado ao vivo no teste de carga: uma seleção de comunidade chegou enquanto
 **Correção sugerida:** durante os `ESTADOS_CADASTRO`, não deixar uma seleção desconhecida cair no menu. Mínimo: responder algo como "não entendi essa opção — vamos continuar de onde paramos" e reenviar a pergunta do passo atual, preservando estado e dados. O mesmo vale para `button_reply`, que deve ser verificado junto.
 **Aceite:** tocar numa lista antiga da conversa durante o cadastro não faz o usuário perder o que já preencheu.
 
+### BL-29 — Mensagens fora de ordem gravam no campo errado 🟠 (G) — **comprovado no teste de carga de 17/09/2026**
+**Arquivos:** `Webhook.gs` · `Router.gs` · `StateManager.gs` — é do modelo de execução, não de um ponto específico
+**Problema:** o WhatsApp entrega cada mensagem como um POST separado, o Apps Script executa os POSTs **em paralelo**, e o fluxo de cadastro decide o que fazer lendo o estado atual. Quando duas mensagens do mesmo usuário se sobrepõem, **quem lê o estado primeiro ganha** — e a ordem em que o usuário digitou deixa de valer.
+
+Evidência direta do log, com as respostas enviadas em ordem e 400 ms de intervalo:
+```
+20:27:57.102  📊 Estado: AGUARDANDO_NOME
+20:27:57.361  📝 Estado → AGUARDANDO_NOME_USUAL      ← outra mensagem já gravou o "nome"
+20:27:57.633  📱 Mensagem (..._0_...)                 ← a PRIMEIRA mensagem chega só agora
+20:27:57.683  💬 "Joao da Silva Teste" | Estado: AGUARDANDO_NOME_USUAL
+```
+"Joao Teste" foi gravado como **nome completo** e "Joao da Silva Teste" como **apelido** — invertidos. Mais adiante, "50" (valor mensal) chegou em `AGUARDANDO_DATA_NASCIMENTO` e foi recusado como data inválida; o cadastro parou em `AGUARDANDO_VALOR_MENSAL` esperando um valor que já tinha sido consumido no passo errado.
+
+**Por que é mais grave que o lost update do BL-20.** Não houve **nenhum** `Lock não obtido` nesse teste: a proteção do BL-20 funcionou e nada foi sobrescrito. O dado não se perde — vai para o **campo errado**. Perda é visível (campo vazio); isto não é. O cadastro termina completo, plausível e incorreto.
+
+**Lock não resolve.** Serializar o processamento por usuário faria uma execução esperar a outra, mas **não impõe ordem**: continuaria valendo quem pegasse o lock primeiro. Preservar a ordem exigiria bufferizar as mensagens e ordená-las por `timestamp` antes de processar — o que recai no processamento assíncrono descartado no BL-21.
+
+**⚠️ Acoplamento com o BL-21 — a janela é proporcional à duração da execução.** Com execuções de ~2 s, só se atropelam mensagens enviadas com menos de 2 s de diferença. Nas medições reais deste teste as execuções levaram **10 a 24 s**, então mensagens separadas por *dezenas de segundos* ainda se sobrepõem. Reduzir o tempo de execução não é só questão de vazão: **estreita diretamente a janela deste bug**.
+
+**Caminhos possíveis, do mais barato ao mais estrutural:**
+1. **Detectar e avisar.** Guardar o `timestamp` da última mensagem processada por usuário; se chegar uma mais antiga, responder algo como "recebi suas mensagens fora de ordem, vamos confirmar" e reapresentar o passo. Não evita o atropelo, mas troca corrupção silenciosa por erro visível.
+2. **Confirmar o resumo antes de gravar.** O cadastro já mostra um resumo no fim; torná-lo um passo de confirmação obrigatório dá ao usuário a chance de pegar campos trocados.
+3. **Ordenar por `timestamp` antes de processar** — exige fila, ou seja, o BL-21.
+
+**Aceite:** duas respostas enviadas em sequência rápida não acabam gravadas em campos trocados sem que o usuário perceba.
+
 ---
 
 ## Itens baixos / manutenção
@@ -307,6 +334,8 @@ O teto de ~30 execuções simultâneas é consumido por *execuções em voo*, en
 | `MenuHandler.boasVindas` | 1 s | Esperava por uma chamada **comentada** (`//this.menuPrincipal`) — não guardava absolutamente nada |
 
 **O que foi deliberadamente mantido:** as ~11 esperas do tipo `envia → espera → envia`. Elas existem para garantir a ordem de chegada das mensagens no WhatsApp, que não é garantida em POSTs consecutivos rápidos. Removê-las embaralharia a conversa (ex.: a pergunta seguinte chegando antes do "✅ registrado"), e isso não é testável sem exercitar o bot de verdade. Também ficaram as esperas de propagação de mídia no `MediaService` (3 s/2 s entre upload e envio), que são funcionais, não cosméticas.
+
+**⚠️ Ganhou um segundo motivo (17/09, ver BL-29):** a duração da execução não afeta só a vazão — ela define a **janela em que mensagens do mesmo usuário se atropelam** e acabam gravadas no campo errado. Com execuções medidas em 10-24 s, mensagens separadas por dezenas de segundos ainda colidem. Encurtar a execução estreita esse bug diretamente.
 
 **Ganho real e honesto:** ~2 s a menos por comprovante e ~1-2 s nos demais fluxos citados. Isso **alivia**, não resolve: o gargalo dominante do fluxo de comprovante são as chamadas externas (download da mídia, OCR, e o `create` no Odoo com o anexo em base64), não as pausas. Sob um pico concentrado de verdade — o disparo mensal do BL-01 é o cenário — o teto continua existindo.
 
