@@ -54,7 +54,10 @@ const NotificacaoHandler = {
     };
     
     try {
-      const response = UrlFetchApp.fetch(
+      // BL-24/BL-25: o disparo em lote é onde o throttling da Meta aparece, e
+      // é o maior consumidor de cota do projeto. Não idempotente — só repete
+      // em 429, que é exatamente o caso em que o lembrete não foi entregue.
+      const response = Utils.fetchComRetry(
         getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
         {
           method: 'post',
@@ -64,7 +67,8 @@ const NotificacaoHandler = {
           },
           payload: JSON.stringify(payload),
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: false, rotulo: 'WhatsApp template' }
       );
       
       const statusCode = response.getResponseCode();
@@ -197,6 +201,10 @@ function executarNotificacoesDiarias() {
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
     console.error(`💥 [Notif] ERRO CRÍTICO após ${dt}s — a rotina foi abortada: ${erro.message}`);
     if (erro.stack) console.error(`💥 [Notif] Stack: ${erro.stack}`);
+  } finally {
+    // BL-25: o disparo mensal é, de longe, o maior consumidor de chamadas
+    // externas do projeto — é ele que pode encostar na cota diária.
+    Utils.registrarConsumoExterno();
   }
 }
 

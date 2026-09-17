@@ -45,10 +45,10 @@ function getAvatar() {
     // Funciona para PNG/JPEG compartilhados como "Qualquer pessoa com o link"
     const url = `https://drive.google.com/uc?export=download&id=${fileId}`;
 
-    const response = UrlFetchApp.fetch(url, {
+    const response = Utils.fetchComRetry(url, {
       muteHttpExceptions: true,
       followRedirects: true
-    });
+    }, { idempotente: true, rotulo: 'Drive (avatar)' });
 
     const code = response.getResponseCode();
 

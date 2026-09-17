@@ -86,6 +86,12 @@ function verificarSessoesAbandonadas() {
   } catch (e) {
     // Erro geral — loga mas NÃO relança para o GAS não contar como falha
     console.error('❌ [Trigger] Erro geral em verificarSessoesAbandonadas:', e.message);
+  } finally {
+    // BL-25: em `finally` porque o corpo tem um return antecipado quando não há
+    // sessão ativa. Esta trigger roda a cada 5 min de qualquer forma, então é o
+    // lugar natural para o acompanhamento da cota — sem agendamento próprio.
+    Utils.registrarConsumoExterno();
+    Utils.verificarCotaUrlFetch();
   }
 }
 

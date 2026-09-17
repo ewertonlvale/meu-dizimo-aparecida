@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências principais:** **BL-21** ficou parcial — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). Restam ainda o **BL-25** (instrumentar cota) e a metade aberta do **BL-17** (uid Odoo dedicado), ambos fora do código.
+**Pendências:** nenhum item aberto em código. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
@@ -50,7 +50,7 @@
 | BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟠 | M | ✅ Concluído — lista única virou uma propriedade por sessão; sem lock (17/09) |
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | ✅ Concluído (lock + dupla checagem no cache miss) |
 | BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | ✅ Concluído (`Utils.fetchComRetry`, com política por idempotência) |
-| BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | Aberto — monitorar |
+| BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | ✅ Concluído — contagem diária + alerta em 60%/80% (17/09) |
 
 ---
 
@@ -208,6 +208,15 @@ Usuário Odoo dedicado (não uid 2/admin) com acesso restrito aos modelos `x_*`;
 2. Colar a URL na Meta (Callback URL) — **antes** do passo 3.
 3. Republicar o deployment com o código novo.
 
+**Roteiro da metade 2 (fazer no Odoo, ~15 min).** A API key **não pode** ser criada via API — o Odoo exige que o próprio usuário a gere logado na interface —, então não há como automatizar este item por completo:
+1. **Criar o usuário.** Configurações → Usuários e Empresas → Usuários → Novo. Nome: `Bot Meu Dízimo`. Tipo de usuário: *Usuário interno*. Desmarque todos os grupos de aplicativos (Vendas, Contabilidade, etc.) — o bot não precisa de nenhum.
+2. **Dar acesso só aos modelos do bot.** Com o modo desenvolvedor ativo: Configurações → Técnico → Segurança → Regras de Acesso (`ir.model.access`). Criar uma regra por modelo — `x_dizimista`, `x_devolucao`, `x_comunidade`, `x_contato_bot`, `x_parametros`, `x_parametros_line`, `x_notificacao_log` — vinculada a um grupo novo (ex.: `Bot / Operação`) com leitura e escrita/criação onde o bot grava. Sem acesso a `res.users`, `res.partner` além do necessário, nem a modelos contábeis.
+3. **Gerar a API key.** Entrar no Odoo **como esse usuário** → Preferências → Segurança da Conta → Nova chave de API. Copiar o valor (só aparece uma vez).
+4. **Descobrir o uid.** Com o modo desenvolvedor, abrir o usuário e ler o `id` na URL, ou rodar no bot: `OdooService.searchRead('res.users', ['id','login'], [['login','=','<login do bot>']], {limit:1})`.
+5. **Atualizar as propriedades** `ODOO_UID` e `ODOO_API_KEY` e rodar **`testarConexaoOdoo()`**. Se a leitura de `x_comunidade` passar e o aviso de administrador sumir, está feito.
+
+⚠️ Teste antes de considerar pronto: uma ACL faltando só aparece quando o fluxo correspondente roda. Vale exercitar cadastro, devolução com comprovante e relatório do coordenador com o novo uid — de preferência na mesma rodada de testes de staging.
+
 **⚠️ Metade 2 — uid dedicado: NÃO resolvido em código.** Criar o usuário, restringir as permissões aos modelos `x_*` e gerar a API key é tarefa de administração dentro do Odoo — não dá para fazer pelo repositório, e mexer nisso em produção sem combinar seria arriscado. O que o código faz agora é **alertar**: `verificarProperties()` avisa quando `ODOO_UID = 2` e lista os quatro passos da migração. `Config.gs` mantém o fallback `|| 2` de propósito: removê-lo derrubaria as chamadas ao Odoo num ambiente onde a propriedade não esteja setada, sem fechar brecha alguma (o risco é *usar* admin, não o default).
 **Aceite restante:** `ODOO_UID` apontando para um usuário sem direitos administrativos, com `testarOdooService()` passando.
 
@@ -304,7 +313,7 @@ Tornar `ehPrimeiroContato`/`registrarContatoBot` idempotente (checar/gravar cach
 **✅ Corrigido em 17/09/2026.** `ehPrimeiroContato` passou a serializar o read-modify-write (buscar → criar → cachear) com `LockService`, com **dupla checagem do cache dentro do lock** — outra execução pode ter registrado o contato enquanto esperávamos. O lock só é disputado no *cache miss* (contato novo ou cache expirado em 6 h); o caminho normal, com cache hit, continua sem lock e sem chamada ao Odoo.
 **Impacto extra que o item não mencionava:** o registro duplicado não causava só duas boas-vindas. `atualizarContatoBot` faz buscar → write e escreve **no primeiro registro que encontra**, então, com duplicatas, o log de cadastro e a etapa de abandono passavam a cair num registro arbitrário dos dois.
 **Decisão de projeto:** se o lock não for obtido em 5 s, a função retorna `false` (pula a boas-vindas) em vez de seguir sem lock — duplicar o registro é pior que atrasar a saudação, e a próxima mensagem do usuário refaz a verificação. É o oposto da escolha feita no `_comLock` do BL-20, onde perder o dado do cadastro seria pior que gravar sem lock.
-**Custo:** é o mesmo lock global usado pelo `_comLock` do BL-20, e aqui ele é mantido durante chamadas de rede ao Odoo (~1-2 s no pior caso), não só durante escrita em cache. Só acontece em cache miss, mas é hoje — junto com o BL-20 — um dos dois usos restantes do lock global, e eliminá-los exige o BL-21.
+**Custo:** é o mesmo lock global usado pelo `_comLock` do BL-20, e aqui ele é mantido durante chamadas de rede ao Odoo (~1-2 s no pior caso), não só durante escrita em cache. **Interação com o BL-24:** desde que as chamadas ao Odoo ganharam retry, o pior caso cresceu — sob throttling, o lock pode ficar retido por mais ~3 s de backoff (1 s + 2 s). Continua sendo degradação e só no cache miss do primeiro contato, mas é um efeito que não existia quando este item foi escrito. Só acontece em cache miss, mas é hoje — junto com o BL-20 — um dos dois usos restantes do lock global, e eliminá-los exige o BL-21.
 
 ### BL-24 — Retry/backoff em chamadas externas 🟡 (M)
 Adicionar reenvio com backoff para 429/5xx em `Utils._post` (WhatsApp) e nas chamadas Odoo/Vision, com limite de tentativas. Aceite: um 429 transitório não perde a mensagem ao usuário.
@@ -329,7 +338,17 @@ No Odoo a política é derivada do próprio payload (`args[4] !== 'create'`), se
 ### BL-25 — Monitorar cota de UrlFetch 🟡 (P)
 Instrumentar contagem diária de chamadas externas e alertar ao aproximar da cota; documentar o teto conforme o tipo de conta. Aceite: visibilidade do consumo diário antes de estourar.
 
-**Acrescentar à instrumentação (auditoria 17/09/2026) — vazão do disparo de notificações.** O envio é sequencial com `sleep(2000)` entre mensagens e o teto de execução é 6 min → **~180 mensagens por rodada**, e a consulta de elegíveis usa `{ limit: false }` (`NotificacaoHandler.gs:222,505`), sem teto. A repescagem horária recupera o que sobrou, mas em paróquia grande isso significa várias rodadas de ~6 min por dia; com ~12 rodadas na janela útil (8h–20h) chega-se perto da cota de **~90 min/dia de trigger** em conta gratuita. Vale medir o nº de elegíveis e o tempo por rodada antes do próximo ciclo, e considerar paginar o disparo explicitamente em vez de depender do corte por timeout.
+**✅ Corrigido em 17/09/2026.** `Utils` passou a contar cada requisição real (tentativas de retry incluídas, pois consomem cota) num contador **da execução** — cada execução do Apps Script roda num contexto JS próprio, então ele zera sozinho. Ao fim de cada execução, `registrarConsumoExterno()` soma esse total ao dia corrente: **uma escrita em Properties por execução, não por chamada**, para não devolver ao custo de execução o que o BL-21 tirou. Ligado em três pontos: `doPost` (webhook), `executarNotificacoesDiarias` (o maior consumidor) e a trigger de sessões — nos dois últimos via `finally`, porque ambos têm `return` antecipado.
+
+`verificarCotaUrlFetch()` roda de carona na trigger de sessões, que já executa a cada 5 min: soma os shards do dia, alerta (`log` → `warn` em 60% → `error` em 80%) e poda contadores com mais de 7 dias. O teto fica em `Utils.URLFETCH_COTA_DIARIA` (20 mil, conta gratuita; ~100 mil em Workspace — confirmar no painel de cotas).
+
+**Precisão assumida:** o contador é distribuído em 5 shards escolhidos ao acaso para reduzir colisão, mas **não é exato** — sem compare-and-swap, duas execuções que leiam o mesmo shard ao mesmo tempo perdem um incremento. É uma subestimativa, por isso os alertas disparam em 60%/80%, com folga. Serve para dar ordem de grandeza, não para auditoria. Usar lock aqui reintroduziria exatamente a contenção removida no BL-22.
+
+**Efeito colateral positivo:** para a contagem ficar correta, os 5 pontos de `UrlFetchApp` que ainda estavam fora do `fetchComRetry` (uploads de mídia, envio de mídia, QR Code e info de mídia) passaram a usá-lo. Além de serem contados, ganharam o retry do BL-24 com a política de idempotência correta — GETs como idempotentes, uploads e envios apenas em 429.
+
+**Testado localmente** (11 asserções): contagem por execução, gravação no shard do dia, zeragem após registrar, execução sem chamadas não escrevendo, soma só do dia corrente, poda de dias antigos, configuração intacta e os três níveis de alerta.
+
+**Contexto de capacidade (auditoria 17/09/2026) — vazão do disparo de notificações.** O envio é sequencial com `sleep(2000)` entre mensagens e o teto de execução é 6 min → **~180 mensagens por rodada**, e a consulta de elegíveis usa `{ limit: false }` (`NotificacaoHandler.gs:222,505`), sem teto. A repescagem horária recupera o que sobrou, mas em paróquia grande isso significa várias rodadas de ~6 min por dia; com ~12 rodadas na janela útil (8h–20h) chega-se perto da cota de **~90 min/dia de trigger** em conta gratuita. Vale medir o nº de elegíveis e o tempo por rodada antes do próximo ciclo, e considerar paginar o disparo explicitamente em vez de depender do corte por timeout.
 
 ---
 
@@ -371,4 +390,18 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
    ~~**BL-27**~~ ✅ → ~~**reforço do BL-26**~~ ✅ (falta rodar `criarCampoConferenciaPix()` no Odoo) → ~~**BL-17**~~ ⚠️ metade feita (webhook fail-closed; falta o uid dedicado no Odoo) → ~~**BL-23**~~ ✅. **Sprint 4 encerrado em código.**
 5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → ~~**BL-22**~~ ✅ → **BL-21** ⚠️ parcial — tempo de execução reduzido; a fila assíncrona foi avaliada e descartada por não caber nos limites do Apps Script (ver análise no item). O teto de execuções simultâneas e os dois usos restantes do lock global (BL-20, BL-23) seguem de pé, e sair deles exigiria mudança de arquitetura, não mais um item de backlog.
-6. **Contínuo:** BL-12, BL-13, BL-15, BL-16 ✅ · BL-25 pendente (instrumentar a cota de UrlFetch, incluindo a vazão do disparo mensal).
+6. **Contínuo:** BL-12, BL-13, BL-15, BL-16, BL-25 ✅ — todos fechados.
+
+---
+
+## Checklist de publicação (17/09/2026)
+
+Nada do que foi corrigido vale no bot antes destes passos. Ordem sugerida, tudo em ambiente de teste primeiro:
+
+1. `clasp push` — o primeiro push **remove os arquivos de teste do editor online** (efeito esperado do BL-16).
+2. Republicar o deployment (Implantar → Gerenciar implantações → nova versão). Sem isto, a URL do webhook continua servindo o código antigo.
+3. No editor, rodar **`criarCampoConferenciaPix()`** — sem o campo, o BL-26 degrada para o comportamento anterior, sem o alerta ao coordenador. Leva até 5 min para passar a ser usado (cache da checagem de schema).
+4. Rodar **`verificarProperties()`** e **`testarConexaoOdoo()`**.
+5. `WEBHOOK_SECRET` já está configurado nesta instalação, então o fail-closed do BL-17 não muda nada na Meta. Para conferir a URL de callback: `configurarSegredoWebhook()` reimprime sem trocar o segredo.
+6. Testar pelo WhatsApp, com atenção ao **fluxo de comprovante**, que concentra BL-24, BL-26 e BL-27: imagem legível, imagem com chave divergente (deve cair em conferência e aparecer com ⚠️ na lista do coordenador) e um PDF ilegível (deve pedir reenvio e **não** registrar R$ 0,00).
+7. Opcional, quando quiser fechar o BL-17: seguir o roteiro do uid dedicado e repetir o passo 6 com as novas credenciais.

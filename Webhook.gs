@@ -97,6 +97,7 @@ function doPost(e) {
       console.log('ℹ️ POST sem mensagens de usuário (provável evento de status).');
     }
 
+    Utils.registrarConsumoExterno();   // BL-25: uma escrita por execução
     return ContentService.createTextOutput('OK');
 
   } catch (error) {
