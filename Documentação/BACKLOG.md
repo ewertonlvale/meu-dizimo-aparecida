@@ -4,7 +4,7 @@
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
-**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`; BL-09 e BL-11 também fechados. Pendências principais: **BL-27** (novo, 🔴), reforço do BL-26, BL-17 (segurança) e os itens de carga BL-21/BL-22/BL-23/BL-24 — estes últimos ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01). ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
+**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`; BL-09 e BL-11 também fechados. BL-27 (aberto e corrigido em 17/09). Pendências principais: reforço do BL-26 (campo estruturado), BL-17 (segurança) e os itens de carga BL-21/BL-22/BL-23/BL-24 — estes últimos ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01). ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
 ## Legenda
@@ -28,7 +28,7 @@
 | BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | ✅ Concluído (60 min; aviso em 50) |
 | BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | ✅ Concluído (paginação "Ver mais") |
 | BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ⚠️ Parcial — conferência implementada, mas a marca fica só em texto no `x_name`; sem campo estruturado (auditoria 17/09) |
-| BL-27 | Fallback de PDF aceita qualquer arquivo como comprovante (contorna o BL-26) | 🔴 | P | Aberto — **descoberto na auditoria de 17/09/2026** |
+| BL-27 | Fallback de PDF aceita qualquer arquivo como comprovante (contorna o BL-26) | 🔴 | P | ✅ Concluído — fallback removido; PDF ilegível pede reenvio e não registra nada |
 | BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | ✅ Fechado — `x_studio_comunidade` é related de `x_studio_dizimista.x_studio_comunidade` (stored/readonly); confirmado no schema e em produção |
 | BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | ✅ Concluído |
 | BL-07 | `AGUARDANDO_COMPROVANTE` setado mesmo sem dados de pagamento | 🟠 | P | ✅ Concluído |
@@ -94,6 +94,9 @@
 **Problema:** quando a Vision API não consegue extrair texto de um PDF (protegido, escaneado ruim, corrompido — ou simplesmente um PDF que não é comprovante), o código **força** o resultado como válido: `ehComprovante: true`, `valor: 0`, `chavePix: null`, `confianca: 50`, e segue para o registro no Odoo. Consequência: **qualquer PDF cria uma devolução de R$ 0,00** no Odoo. Como `chavePix` é `null`, a conferência do BL-26 devolve `ausente` e o registro é apenas marcado para conferência — ou seja, não é fraude silenciosa, mas é **exatamente o vetor que o BL-26 existe para fechar, alcançável trocando a imagem por um PDF**. Também polui a lista de pendentes com registros de valor zero.
 **Correção:** não tratar "OCR falhou" como "comprovante válido". Opções, em ordem de preferência: (a) pedir ao usuário que reenvie como **foto** ou um PDF legível, sem registrar nada; (b) se a paróquia quiser preservar o envio, registrar em um estado explicitamente distinto (ver campo estruturado do BL-26) com valor nulo e aviso honesto de que **nada foi confirmado**. Em nenhum caso enviar "✅ Comprovante recebido" para um arquivo do qual não se extraiu dado algum.
 **Aceite:** um PDF sem texto extraível não gera devolução de R$ 0,00 silenciosamente; o usuário recebe orientação clara para reenviar, ou o registro fica em estado distinguível de uma devolução normal.
+
+**✅ Corrigido em 17/09/2026 — opção (a).** O bloco de fallback saiu de `_processarArquivo`; quando `VisionService.analisarPDF` não devolve dados, o resultado é marcado com `pdfIlegivel` e **nada é registrado**. `_tratarResultado` responde com orientação para reenviar como foto ou PDF original do banco, **mantendo o estado `AGUARDANDO_COMPROVANTE`** para o reenvio não exigir refazer o fluxo. Removido também o ramo `isPdfFallback`, que ficou inalcançável (`dados.tipo` nunca mais vale `'PDF'`, pois `_extrairTipoTransacao` só retorna PIX/TED/DOC/Boleto/Desconhecido).
+**Limitação conhecida (→ BL-24):** `analisarPDF` retorna `null` tanto para "PDF sem texto" quanto para falha transitória da Vision API (429/5xx/exceção), então uma indisponibilidade cai na mesma mensagem. É seguro — nada é registrado em nenhum dos casos, contra o registro falso de R$ 0,00 de antes — mas a orientação "envie uma foto" não ajuda durante uma queda da API, já que o caminho de imagem usa o mesmo serviço. Distinguir os dois casos exige mudar o contrato de retorno do `VisionService` e pertence ao BL-24 (retry/backoff), não a este item.
 
 ---
 
@@ -262,6 +265,6 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 2. ~~**Sprint 2 (médios):** BL-05, BL-06, BL-07, BL-08, BL-20, BL-10.~~ ✅ concluído.
 3. **Sprint 3 (robustez/carga) — parcialmente feito:** BL-01, BL-09 e BL-11 concluídos. **Restam BL-21, BL-24 e BL-22** — e, como o BL-01 já está no ar, o BL-24 passou a ser o mais urgente do grupo.
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
-   **BL-27** (pequeno, fecha a brecha real) → **reforço do BL-26** (campo estruturado de conferência) → **BL-17** (segurança do webhook) → **BL-23** (quick win de concorrência).
+   ~~**BL-27**~~ ✅ → **reforço do BL-26** (campo estruturado de conferência) → **BL-17** (segurança do webhook) → **BL-23** (quick win de concorrência).
 5. **Sprint 5 (carga):** BL-24 **antes do próximo ciclo mensal de notificações** → BL-22 + BL-20 juntos (estão acoplados) → BL-21 (o item grande; resolve os dois anteriores de vez).
 6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.

@@ -71,6 +71,7 @@ const ComprovanteHandler = {
       dados: null,
       validacao: null,
       erro: null,
+      pdfIlegivel: false,
       tipo,
       arquivoOriginalBase64: null
     };
@@ -96,25 +97,14 @@ const ComprovanteHandler = {
         console.log('📄 Enviando PDF diretamente para Vision API...');
         analise = VisionService.analisarPDF(arquivoBaixado.base64);
 
-        // Fallback: Vision API não conseguiu extrair texto do PDF
-        // (protegido, escaneado com qualidade muito baixa, corrompido)
+        // BL-27: PDF sem texto extraível (protegido, escaneado ruim, corrompido
+        // — ou que simplesmente não é um comprovante). Aceitar aqui criaria uma
+        // devolução de R$ 0,00 sem chave para conferir, contornando a validação
+        // de destinatário do BL-26. Pede reenvio em vez de registrar.
         if (!analise) {
-          console.warn('⚠️ Vision API não extraiu dados do PDF — ativando fallback');
-          resultado.sucesso = true;
-          resultado.ehComprovante = true;
-          resultado.dados = {
-            valor: 0,
-            data: Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy'),
-            tipo: 'PDF',
-            banco: 'A confirmar',
-            chavePix: null,
-            textoCompleto: 'PDF recebido - análise manual necessária'
-          };
-          resultado.validacao = {
-            ehComprovante: true,
-            motivo: 'PDF aceito sem análise automática',
-            confianca: 50
-          };
+          console.warn('⚠️ Vision API não extraiu texto do PDF — pedindo reenvio');
+          resultado.pdfIlegivel = true;
+          resultado.erro = 'PDF sem texto extraível';
           return resultado;
         }
       }
@@ -275,6 +265,23 @@ const ComprovanteHandler = {
     
     if (!resultado.sucesso) {
       console.log('🎯 [_tratarResultado] FALHOU - Não teve sucesso');
+
+      // BL-27: PDF ilegível — mantém o estado AGUARDANDO_COMPROVANTE para o
+      // usuário reenviar, e deixa claro que nada foi registrado.
+      if (resultado.pdfIlegivel) {
+        Utils.enviarMenu(from,
+          '📄 *Não consegui ler este PDF*\n\n' +
+          'Recebi o arquivo, mas não consegui extrair os dados dele — por isso ' +
+          'sua devolução *ainda não foi registrada*.\n\n' +
+          'Por favor, envie:\n' +
+          '• Uma *foto* (ou print) do comprovante, ou\n' +
+          '• O PDF original do aplicativo do banco, sem senha\n\n' +
+          'Se o problema continuar, fale com a secretaria. 🙏',
+          [{ id: 'btn_menu', title: '🔙 Menu' }]
+        );
+        return;
+      }
+
       MenuHandler.erro(from,
         `Não consegui processar o comprovante.\n\n_Motivo: ${resultado.erro || 'Erro desconhecido'}_\n\n` +
         'Tente novamente ou entre em contato com a secretaria.'
@@ -292,57 +299,45 @@ const ComprovanteHandler = {
       return;
     }
 
-    // ===== VERIFICAR SE É PDF EM MODO FALLBACK =====
-    const isPdfFallback = resultado.dados.tipo === 'PDF' && resultado.dados.valor === 0;
     const dados = resultado.dados;
 
     // ===== EXIBIR DADOS EXTRAÍDOS =====
     console.log('🎯 [_tratarResultado] Comprovante VÁLIDO');
-    
-    if (isPdfFallback) {
-      Utils.enviarSimples(from,
-        '📄 *Comprovante PDF recebido!*\n\n' +
-        'Não consegui extrair os dados automaticamente deste PDF.\n\n' +
-        'Os dados serão confirmados manualmente pela secretaria.\n\n' +
-        '━━━━━━━━━━━━━━━━━━━━\n' +
-        '⏳ Registrando sua devolução...'
-      );
+
+    let mensagemDados = '✅ *Comprovante analisado com sucesso!*\n\n';
+    mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n';
+    mensagemDados += '📊 *DADOS IDENTIFICADOS*\n';
+    mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n\n';
+
+    if (dados.valor && dados.valor > 0) {
+      mensagemDados += `💰 *Valor:* R$ ${dados.valor.toFixed(2).replace('.', ',')}\n`;
     } else {
-      let mensagemDados = '✅ *Comprovante analisado com sucesso!*\n\n';
-      mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n';
-      mensagemDados += '📊 *DADOS IDENTIFICADOS*\n';
-      mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n\n';
-      
-      if (dados.valor && dados.valor > 0) {
-        mensagemDados += `💰 *Valor:* R$ ${dados.valor.toFixed(2).replace('.', ',')}\n`;
-      } else {
-        mensagemDados += `💰 *Valor:* Não identificado\n`;
-      }
-      
-      if (dados.data) {
-        mensagemDados += `📅 *Data:* ${dados.data}\n`;
-      } else {
-        mensagemDados += `📅 *Data:* Não identificada\n`;
-      }
-      
-      if (dados.tipo && dados.tipo !== 'Desconhecido') {
-        mensagemDados += `💳 *Tipo:* ${dados.tipo}\n`;
-      }
-      
-      if (dados.banco) {
-        mensagemDados += `🏦 *Banco:* ${dados.banco}\n`;
-      }
-      
-      if (dados.chavePix) {
-        mensagemDados += `🔑 *Chave PIX:* ${dados.chavePix}\n`;
-      }
-      
-      mensagemDados += '\n━━━━━━━━━━━━━━━━━━━━\n';
-      mensagemDados += `⏳ Registrando sua devolução...`;
-      
-      Utils.enviarSimples(from, mensagemDados);
+      mensagemDados += `💰 *Valor:* Não identificado\n`;
     }
-    
+
+    if (dados.data) {
+      mensagemDados += `📅 *Data:* ${dados.data}\n`;
+    } else {
+      mensagemDados += `📅 *Data:* Não identificada\n`;
+    }
+
+    if (dados.tipo && dados.tipo !== 'Desconhecido') {
+      mensagemDados += `💳 *Tipo:* ${dados.tipo}\n`;
+    }
+
+    if (dados.banco) {
+      mensagemDados += `🏦 *Banco:* ${dados.banco}\n`;
+    }
+
+    if (dados.chavePix) {
+      mensagemDados += `🔑 *Chave PIX:* ${dados.chavePix}\n`;
+    }
+
+    mensagemDados += '\n━━━━━━━━━━━━━━━━━━━━\n';
+    mensagemDados += `⏳ Registrando sua devolução...`;
+
+    Utils.enviarSimples(from, mensagemDados);
+
     Utilities.sleep(2000);
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
