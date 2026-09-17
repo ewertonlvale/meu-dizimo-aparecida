@@ -112,8 +112,8 @@ function setupProperties() {
   Logger.log('');
   Logger.log('📝 PRÓXIMOS PASSOS:');
   Logger.log('1. Execute verificarProperties() para confirmar');
-  Logger.log('2. Execute testarOdooService() para testar Odoo');
-  Logger.log('3. Execute testarMenuCompleto() para testar WhatsApp');
+  Logger.log('2. Execute testarConexaoOdoo() para testar o Odoo');
+  Logger.log('3. Execute configurarSegredoWebhook() e cole a URL na Meta');
   Logger.log('4. Delete ou comente este arquivo Setup.gs');
   Logger.log('');
 }
@@ -232,7 +232,7 @@ function verificarProperties() {
     Logger.log('   1. No Odoo, crie um usuário dedicado ao bot (ex.: "Bot Meu Dízimo").');
     Logger.log('   2. Dê acesso apenas aos modelos x_* que o bot usa.');
     Logger.log('   3. Gere uma API key para esse usuário.');
-    Logger.log('   4. Atualize ODOO_UID e ODOO_API_KEY e rode testarOdooService().');
+    Logger.log('   4. Atualize ODOO_UID e ODOO_API_KEY e rode testarConexaoOdoo().');
     Logger.log('');
   }
 
@@ -241,15 +241,49 @@ function verificarProperties() {
     Logger.log('');
     Logger.log('🎉 Você pode começar a usar o bot!');
     Logger.log('');
-    Logger.log('📝 Testes recomendados:');
-    Logger.log('   - testarOdooService()');
-    Logger.log('   - testarMenuCompleto()');
+    Logger.log('📝 Verificações recomendadas:');
+    Logger.log('   - testarConexaoOdoo()');
+    Logger.log('   - configurarSegredoWebhook()  (confere a URL de callback)');
+    Logger.log('   A suíte completa (Tests.gs) não vai no deploy — ver .claspignore.');
   } else {
     Logger.log('❌ Algumas propriedades estão faltando.');
     Logger.log('');
     Logger.log('Execute setupProperties() para configurar.');
   }
   
+  Logger.log('');
+}
+
+/**
+ * ============================================
+ * TESTAR CONEXÃO COM O ODOO
+ * ============================================
+ *
+ * Faz uma leitura mínima para validar URL, database, uid e API key.
+ * Vive aqui, e não em `Tests.gs`, porque a suíte de testes não vai no deploy
+ * (ver `.claspignore` — BL-16); esta verificação precisa estar disponível no
+ * projeto publicado, logo após a configuração.
+ */
+function testarConexaoOdoo() {
+  Logger.log('');
+  Logger.log('🔌 Testando conexão com o Odoo...');
+
+  try {
+    const comunidades = OdooService.searchRead(
+      'x_comunidade', ['id', 'x_name'], [], { limit: 1 }
+    );
+
+    Logger.log('✅ Conexão OK — o Odoo respondeu.');
+    Logger.log(`   Comunidades acessíveis: ${comunidades.length > 0 ? 'sim' : 'nenhuma encontrada'}`);
+
+    const uid = PropertiesService.getScriptProperties().getProperty('ODOO_UID');
+    Logger.log(`   Conectado com ODOO_UID = ${uid}${uid === '2' ? ' (administrador — ver BL-17)' : ''}`);
+
+  } catch (e) {
+    Logger.log(`❌ Falha na conexão: ${e.message}`);
+    Logger.log('   Confira ODOO_URL, ODOO_DATABASE, ODOO_UID e ODOO_API_KEY com verificarProperties().');
+  }
+
   Logger.log('');
 }
 

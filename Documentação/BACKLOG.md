@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências principais:** **BL-21** ficou parcial — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). Restam ainda BL-16 e BL-25, de manutenção, e a metade aberta do BL-17.
+**Pendências principais:** **BL-21** ficou parcial — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). Restam ainda o **BL-25** (instrumentar cota) e a metade aberta do **BL-17** (uid Odoo dedicado), ambos fora do código.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
@@ -42,7 +42,7 @@
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | ✅ Resolvido — opção "Secretaria" virou "Contato Pastoral" (contato do responsável por comunidade; secretaria de `x_parametros` como fallback) |
 | BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
 | BL-15 | Efeito colateral: busca de dizimista atualiza telefone no Odoo | 🟡 | P | ✅ Concluído (removida a escrita durante a leitura; `x_studio_partner_phone` é related+gravável e propagava p/ res.partner) |
-| BL-16 | Separar arquivos de teste do deploy de produção | 🟡 | M | Aberto |
+| BL-16 | Separar arquivos de teste do deploy de produção | 🟡 | M | ✅ Concluído — `.claspignore`; deploy caiu ~699 KB → ~281 KB (17/09) |
 | BL-17 | Segurança: uid Odoo dedicado + `WEBHOOK_SECRET` obrigatório | 🟠 | M | ⚠️ Parcial — webhook agora é fail-closed (17/09); uid dedicado é tarefa de administração no Odoo, o código só alerta |
 | **Concorrência / carga** | | | | |
 | BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | ✅ Concluído (mitigação) |
@@ -176,6 +176,27 @@ O que foi feito:
 
 ### BL-16 — Testes no deploy de produção 🟡 (M)
 `Tests.gs` (~175 KB), `TestesComprovantes.gs` (~93 KB, com base64), `TesteRelatorio.gs` (~34 KB) somam a maior parte do que o clasp envia. Mover para um projeto GAS separado ou excluir do push.
+
+**✅ Corrigido em 17/09/2026 via `.claspignore`.** Os arquivos seguem versionados no Git; apenas deixam de subir no `clasp push`.
+
+**Projeto GAS separado foi descartado:** os testes chamam os globais de produção (`OdooService`, `Utils`, `StateManager`…), então um projeto à parte exigiria duplicar o código do bot dentro dele — dois lugares para manter a mesma coisa. Excluir do push resolve sem essa duplicação.
+
+**Bloat extra encontrado, fora do escrito no item:** o `clasp` trata **qualquer `.html`** como arquivo do projeto, então as 5 páginas de `docs/` (~97 KB — política de privacidade, termo de uso, etc.) também estavam indo para o deploy. Elas são servidas pelo GitHub Pages (`docs/CNAME` → `meudizimo.pnscaparecida.com`) e não têm relação com o Apps Script: não há um único uso de `HtmlService` no projeto. Também excluídas.
+
+| | Antes | Depois |
+|---|---|---|
+| Código de produção | ~281 KB | ~281 KB |
+| Suíte de testes | ~320 KB | — |
+| Site `docs/` | ~97 KB | — |
+| **Total enviado** | **~699 KB** | **~281 KB** (−60%) |
+
+**Duas armadilhas documentadas no próprio arquivo:**
+1. A existência de um `.claspignore` **substitui** a lista padrão do clasp, então `.git/**` e `node_modules/**` precisaram ser repetidos.
+2. `clasp push` sincroniza: o primeiro push após a mudança **apaga** os arquivos de teste do editor online. É o efeito desejado, mas convém saber antes.
+
+**Para rodar a suíte:** comentar as quatro linhas da seção de testes no `.claspignore`, `clasp push`, executar no editor, descomentar e publicar de novo. O passo a passo está no cabeçalho do arquivo.
+
+**Correção de arrasto:** `Setup.gs` mandava executar `testarOdooService()` e `testarMenuCompleto()` — **funções que não existem em lugar nenhum do projeto**, um erro anterior a esta mudança e que ficaria pior com os testes fora do deploy. As referências foram corrigidas e foi criada a função `testarConexaoOdoo()`, que faz uma leitura mínima em `x_comunidade` para validar URL, database, uid e API key. Ela vive em `Setup.gs` justamente para continuar disponível no projeto publicado.
 
 ### BL-17 — Endurecer segurança 🟠 (M) — *elevado de 🟡 em 17/09/2026*
 Usuário Odoo dedicado (não uid 2/admin) com acesso restrito aos modelos `x_*`; tornar `WEBHOOK_SECRET` obrigatório após o setup (hoje o webhook aceita POST anônimo se o segredo não estiver configurado — `Webhook.gs:57-65`).
@@ -332,7 +353,7 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 4. **BL-22 subiu de 🟡 para 🟠** — a correção do BL-20 passou a usar o mesmo lock global, agravando o gargalo que o BL-22 descreve.
 
 ### Itens abertos cuja permanência foi confirmada no código
-*Situação no fim do dia 17/09: BL-23 corrigido; BL-17 com a metade do webhook fechada. BL-16 e BL-24 seguem abertos como descrito abaixo.*
+*Situação no fim do dia 17/09: BL-16, BL-23 e BL-24 corrigidos; BL-17 com a metade do webhook fechada, restando o uid dedicado no Odoo.*
 - **BL-16:** `Tests.gs` (175 KB), `TestesComprovantes.gs` (93 KB), `TesteRelatorio.gs` (33 KB) e `TesteNotificacao.gs` (19 KB) somam **~320 KB** ainda na raiz do projeto, indo junto no `clasp push`.
 - **BL-17:** sem `WEBHOOK_SECRET`, o POST anônimo continua aceito com apenas um `console.warn` (`Webhook.gs:62-65`). Combinado com `access: ANYONE_ANONYMOUS`, qualquer um que descubra a URL injeta mensagens no fluxo.
 - **BL-23:** a corrida está exatamente como descrita — `ehPrimeiroContato` faz cache miss → busca no Odoo → cria → e só **depois** grava o cache (`StateManager.gs:272-300`).
@@ -350,4 +371,4 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
    ~~**BL-27**~~ ✅ → ~~**reforço do BL-26**~~ ✅ (falta rodar `criarCampoConferenciaPix()` no Odoo) → ~~**BL-17**~~ ⚠️ metade feita (webhook fail-closed; falta o uid dedicado no Odoo) → ~~**BL-23**~~ ✅. **Sprint 4 encerrado em código.**
 5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → ~~**BL-22**~~ ✅ → **BL-21** ⚠️ parcial — tempo de execução reduzido; a fila assíncrona foi avaliada e descartada por não caber nos limites do Apps Script (ver análise no item). O teto de execuções simultâneas e os dois usos restantes do lock global (BL-20, BL-23) seguem de pé, e sair deles exigiria mudança de arquitetura, não mais um item de backlog.
-6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.
+6. **Contínuo:** BL-12, BL-13, BL-15, BL-16 ✅ · BL-25 pendente (instrumentar a cota de UrlFetch, incluindo a vazão do disparo mensal).
