@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências principais:** **BL-21** — o único item de carga que resta e o que fecha o resto (elimina os dois usos remanescentes do lock global e o teto de execuções simultâneas), ainda aberto **embora o BL-01 já esteja em produção** (ver nota no BL-01). Além dele, BL-16 e BL-25, de manutenção.
+**Pendências principais:** **BL-21** ficou parcial — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). Restam ainda BL-16 e BL-25, de manutenção, e a metade aberta do BL-17.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
@@ -46,7 +46,7 @@
 | BL-17 | Segurança: uid Odoo dedicado + `WEBHOOK_SECRET` obrigatório | 🟠 | M | ⚠️ Parcial — webhook agora é fail-closed (17/09); uid dedicado é tarefa de administração no Odoo, o código só alerta |
 | **Concorrência / carga** | | | | |
 | BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | ✅ Concluído (mitigação) |
-| BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | Aberto |
+| BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | ⚠️ Parcial — tempo de execução reduzido (17/09); a fila assíncrona foi **avaliada e descartada**, ver análise no item |
 | BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟠 | M | ✅ Concluído — lista única virou uma propriedade por sessão; sem lock (17/09) |
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | ✅ Concluído (lock + dupla checagem no cache miss) |
 | BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | ✅ Concluído (`Utils.fetchComRetry`, com política por idempotência) |
@@ -230,8 +230,35 @@ Proteger o read-modify-write de `dados_${from}`/`estado_${from}` com `LockServic
 
 **Auditoria 17/09/2026:** a cobertura está correta — os 25 pontos de escrita do código passam por `salvarCampoEMudarEstado`/`salvarMultiplosCampos`, e nenhum chama `setDadosTemporarios` direto. **Duas ressalvas:** (1) o `_comLock` é *best-effort* — se o lock não vier em 3s ele grava **sem** lock (`StateManager.gs:64-78`), então o lost update ainda é possível justamente sob a contenção que deveria proteger; (2) o Apps Script só oferece lock **global**. Com o BL-22 resolvido (17/09), a disputa diminuiu bastante — o índice de sessões saiu do lock —, mas este `_comLock` e o `ehPrimeiroContato` do BL-23 seguem serializando globalmente. Não há como torná-los por usuário: o `CacheService` não tem compare-and-swap e o `getUserLock()` é inútil aqui, já que o `executeAs` é único. A saída é o **BL-21**.
 
-### BL-21 — Mitigar teto de execuções simultâneas 🟠 (G)
+### BL-21 — Mitigar teto de execuções simultâneas 🟠 (G) — ⚠️ parcial
 Reduzir o tempo de cada execução (retirar/reduzir `Utilities.sleep`, adiar trabalho pesado). Avaliar responder 200 à Meta **imediatamente** e processar de forma assíncrona (fila via `CacheService`/planilha + trigger), desacoplando o ACK do webhook do processamento. Aceite: um pico de N mensagens não derruba o webhook; latência estável.
+
+#### A fila assíncrona foi avaliada e descartada (17/09/2026)
+
+A proposta esbarra em três limites do Apps Script que a tornam pior que o problema que resolve:
+
+1. **Trigger tem intervalo mínimo de 1 minuto.** Uma fila drenada por trigger agendada adicionaria **até 60 s de espera antes de qualquer resposta** do bot. Para uma conversa no WhatsApp isso não é latência, é a sensação de que o bot morreu.
+2. **Trigger pontual não escala.** `ScriptApp.newTrigger().timeBased().after(ms)` pareceria resolver, mas o Apps Script limita a **20 triggers por script**: uma trigger por mensagem estoura o teto num pico — exatamente o cenário que o item quer proteger.
+3. **A fila precisaria ser durável.** `CacheService` pode despejar entradas sob pressão, e perder uma entrada aqui significa **perder uma devolução já confirmada ao usuário**. Planilha é durável, mas lenta e com escrita concorrente que exigiria `LockService` — reintroduzindo a contenção global recém-eliminada no BL-22.
+
+Ou seja: a fila trocaria uma saturação rara (a própria análise de carga deste documento nota que "no uso cotidiano de uma paróquia a simultaneidade real raramente passa de um punhado") por uma penalidade de experiência constante e um risco novo de perda de dado financeiro. **Decisão: não implementar.**
+
+#### O que foi feito: redução do tempo de execução
+
+O teto de ~30 execuções simultâneas é consumido por *execuções em voo*, então encurtar cada execução aumenta a vazão efetiva na mesma proporção. Foram removidas **4 esperas que não ordenavam nada** (≈6 s no total):
+
+| Local | Espera | Por que era inócua |
+|---|---|---|
+| `ComprovanteHandler` | 2 s | Seguida das chamadas ao Odoo (buscar dizimista, buscar comunidade, criar devolução com base64), que já separam as mensagens de sobra — **no fluxo mais pesado do bot** |
+| `CadastroHandler.iniciar` | 2 s | Não havia mensagem anterior para ordenar; a busca no Odoo já é a pausa natural |
+| `DevolucaoHandler` (histórico vazio) | 1 s | A consulta ao Odoo já separa do "Buscando histórico..." |
+| `MenuHandler.boasVindas` | 1 s | Esperava por uma chamada **comentada** (`//this.menuPrincipal`) — não guardava absolutamente nada |
+
+**O que foi deliberadamente mantido:** as ~11 esperas do tipo `envia → espera → envia`. Elas existem para garantir a ordem de chegada das mensagens no WhatsApp, que não é garantida em POSTs consecutivos rápidos. Removê-las embaralharia a conversa (ex.: a pergunta seguinte chegando antes do "✅ registrado"), e isso não é testável sem exercitar o bot de verdade. Também ficaram as esperas de propagação de mídia no `MediaService` (3 s/2 s entre upload e envio), que são funcionais, não cosméticas.
+
+**Ganho real e honesto:** ~2 s a menos por comprovante e ~1-2 s nos demais fluxos citados. Isso **alivia**, não resolve: o gargalo dominante do fluxo de comprovante são as chamadas externas (download da mídia, OCR, e o `create` no Odoo com o anexo em base64), não as pausas. Sob um pico concentrado de verdade — o disparo mensal do BL-01 é o cenário — o teto continua existindo.
+
+**Se um dia o volume justificar**, o caminho não é a fila por trigger: é reduzir o trabalho por mensagem (ex.: não trafegar o comprovante em base64 dentro do `create`, ou adiar o anexo para uma segunda etapa) ou sair do Apps Script para um runtime sem teto de execuções simultâneas. Ambos são mudanças de arquitetura que merecem decisão própria, não um item de backlog.
 
 ### BL-22 — Reduzir contenção do lock global 🟠 (M) — *elevado de 🟡 em 17/09/2026*
 Repensar `sessoes_cadastro_ativas`: em vez de uma lista única sob lock global, usar chaves por usuário (`sessao_ativa_${from}`) e varrer por prefixo na trigger, ou aceitar perda eventual sem lock. Aceite: cadastros simultâneos não competem por um lock único.
@@ -322,5 +349,5 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 3. **Sprint 3 (robustez/carga) — parcialmente feito:** BL-01, BL-09 e BL-11 concluídos. **Restam BL-21, BL-24 e BL-22** — e, como o BL-01 já está no ar, o BL-24 passou a ser o mais urgente do grupo.
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
    ~~**BL-27**~~ ✅ → ~~**reforço do BL-26**~~ ✅ (falta rodar `criarCampoConferenciaPix()` no Odoo) → ~~**BL-17**~~ ⚠️ metade feita (webhook fail-closed; falta o uid dedicado no Odoo) → ~~**BL-23**~~ ✅. **Sprint 4 encerrado em código.**
-5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → ~~**BL-22**~~ ✅ → **BL-21**, agora o único caminho para fechar o que resta: é ele que elimina os dois usos remanescentes do lock global (BL-20 e BL-23) e o teto de execuções simultâneas.
+5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → ~~**BL-22**~~ ✅ → **BL-21** ⚠️ parcial — tempo de execução reduzido; a fila assíncrona foi avaliada e descartada por não caber nos limites do Apps Script (ver análise no item). O teto de execuções simultâneas e os dois usos restantes do lock global (BL-20, BL-23) seguem de pé, e sair deles exigiria mudança de arquitetura, não mais um item de backlog.
 6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.

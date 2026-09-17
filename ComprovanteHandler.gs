@@ -335,7 +335,10 @@ const ComprovanteHandler = {
 
     Utils.enviarSimples(from, mensagemDados);
 
-    Utilities.sleep(2000);
+    // BL-21: não há espera aqui. O próximo envio ao usuário só acontece depois
+    // das chamadas ao Odoo (buscar dizimista, buscar comunidade e criar a
+    // devolução com o comprovante em base64), que já separam as mensagens de
+    // sobra — a pausa só somava tempo de execução no fluxo mais pesado do bot.
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
     const lote = StateManager.getCampo(from, 'devolucaoLote');

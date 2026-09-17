@@ -36,7 +36,8 @@ const CadastroHandler = {
 
     if (dizimistaExistente) {
       const nome = dizimistaExistente.x_name || 'Dizimista';
-      Utilities.sleep(2000);
+      // BL-21: sem espera — não há mensagem anterior para ordenar; a busca no
+      // Odoo acima já é a pausa natural antes deste envio.
       Utils.enviarMenu(from,
         `👋 Olá, *${nome}*!\n\nVocê já está cadastrado(a) em nosso sistema!\n\n` +
         `Se deseja atualizar seus dados, entre em contato com a secretaria.`,
