@@ -2,8 +2,9 @@
 
 **Criado em:** 14/09/2026
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
+**Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
-**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`. Pendências principais: BL-01 (notificações) após mitigações de carga, BL-09, BL-11 e itens de robustez/manutenção. ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
+**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`; BL-09 e BL-11 também fechados. Pendências principais: **BL-27** (novo, 🔴), reforço do BL-26, BL-17 (segurança) e os itens de carga BL-21/BL-22/BL-23/BL-24 — estes últimos ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01). ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
 ## Legenda
@@ -22,11 +23,12 @@
 
 | ID | Título | Sev. | Esforço | Status |
 |----|--------|------|---------|--------|
-| BL-01 | Notificações mensais quebradas (`OdooService.executar` inexistente) | 🔴 | M | ✅ Concluído (+ fail-open, fix `date`, repescagem, botão do template) |
+| BL-01 | Notificações mensais quebradas (`OdooService.executar` inexistente) | 🔴 | M | ✅ Concluído (+ fail-open, fix `date`, repescagem, botão do template) — ⚠️ **em produção sem BL-21/BL-24**, contrariando a ordem do Sprint 3 |
 | BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | ✅ Concluído |
 | BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | ✅ Concluído (60 min; aviso em 50) |
 | BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | ✅ Concluído (paginação "Ver mais") |
-| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ✅ Concluído |
+| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ⚠️ Parcial — conferência implementada, mas a marca fica só em texto no `x_name`; sem campo estruturado (auditoria 17/09) |
+| BL-27 | Fallback de PDF aceita qualquer arquivo como comprovante (contorna o BL-26) | 🔴 | P | Aberto — **descoberto na auditoria de 17/09/2026** |
 | BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | ✅ Fechado — `x_studio_comunidade` é related de `x_studio_dizimista.x_studio_comunidade` (stored/readonly); confirmado no schema e em produção |
 | BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | ✅ Concluído |
 | BL-07 | `AGUARDANDO_COMPROVANTE` setado mesmo sem dados de pagamento | 🟠 | P | ✅ Concluído |
@@ -43,7 +45,7 @@
 | **Concorrência / carga** | | | | |
 | BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | ✅ Concluído (mitigação) |
 | BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | Aberto |
-| BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟡 | M | Aberto |
+| BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟠 | M | Aberto — **elevado de 🟡** na auditoria: a correção do BL-20 passou a usar o mesmo lock global em toda gravação de cadastro |
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | Aberto |
 | BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | Aberto |
 | BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | Aberto — monitorar |
@@ -57,6 +59,8 @@
 **Problema:** chama `OdooService.executar(...)`, método que não existe (o serviço só expõe `searchRead`, `create`, `write`, `_rpc`). `executarNotificacoesDiarias()` lança `TypeError`. Além disso: filtro por `x_studio_date` (linha 220) em vez de `x_studio_data_da_devolucao`; e `processarRespostaNotificacao` (259) chama `DevolucaoHandler.iniciar` (real: `iniciarDevolucao`) e `HistoricoHandler.mostrar` (inexistente).
 **Correção:** reescrever as chamadas usando `searchRead`/`create`; para `search_count`, adicionar um método `count(model, domain)` em `OdooService`. Corrigir o nome do campo de data. Remover ou corrigir `processarRespostaNotificacao`.
 **Aceite:** `executarNotificacoesDiarias()` roda sem erro; um dizimista elegível recebe o template; log gravado em `x_notificacao_log`; quem já devolveu no mês não é notificado.
+
+**⚠️ Nota de sequenciamento (auditoria 17/09/2026):** o Sprint 3 abaixo determina fazer **BL-21 e BL-24 antes** de reativar o BL-01 — mas o BL-01 está concluído e **já em produção** (trigger de hora em hora, `NotificacaoHandler.gs:356-358`), enquanto BL-21 e BL-24 seguem abertos. O envio em si é seguro: é sequencial com `Utilities.sleep(2000)` entre mensagens (`:179`), então não há rajada de *saída*. A exposição é a **onda de respostas** que chega nos minutos seguintes — o cenário 6 da análise de carga — batendo num webhook sem retry/backoff (BL-24) e sob o teto de ~30 execuções simultâneas (BL-21). **Recomendação:** priorizar BL-24 antes do próximo ciclo mensal de notificações, ou reduzir o alcance do disparo (lotes menores por hora) até que BL-21/BL-24 estejam fechados.
 
 ### BL-02 — Confirmação falsa de devolução 🔴 (P)
 **Arquivo:** `ComprovanteHandler.gs:225-262`
@@ -81,6 +85,15 @@
 **Problema:** o bot aceita qualquer comprovante que "pareça" um pagamento — nunca confere se ele foi feito para a chave PIX da comunidade. Na simulação (cadastro + devolução real), o bot instruiu pagar para **Inter / Daniel Fernandes Silva / `037.756.033-12`**, mas o comprovante enviado era para **Caixa / Marlize Ferreira Rodrigues De Sousa / `160.740.093-68`** — destinatário, banco e chave totalmente diferentes — e ainda assim foi registrado como "devolução recebida com sucesso". `validarComprovante` só soma pontos por *presença* de valor/data/tipo/palavras-chave; não há checagem de destino. Na prática, qualquer comprovante de terceiros, antigo ou de valor simbólico é aceito como dízimo (vetor de fraude/erro).
 **Correção:** ao validar, comparar a chave PIX (e, se possível, nome/instituição do recebedor) extraída do comprovante com a `x_studio_chave_pix`/titular da comunidade do dizimista. Se não bater: **não** confirmar automaticamente — marcar a devolução para revisão manual (status pendente + aviso claro ao usuário de que será conferida), em vez de dizer "registrada com sucesso". Depende de BL-14 (extração confiável da chave). Considerar também validar a data (recente) e alertar divergências grosseiras.
 **Aceite:** um comprovante cuja chave de destino ≠ chave da comunidade não é confirmado como sucesso; cai em revisão manual com mensagem honesta ao usuário.
+
+**Estado atual (auditoria 17/09/2026) — ⚠️ parcial, abaixo do próprio critério de aceite.** O que existe funciona: `ComprovanteHandler._conferirChave` (linha 156) compara a chave extraída com `x_studio_chave_pix` da comunidade, normalizando e-mail e dígitos, e a mensagem ao usuário deixa de prometer confirmação quando não confere (fala em "conferência da secretaria"). **O que falta:** `OdooService.registrarDevolucao` grava `x_studio_status: 'Pendente'` para **todas** as devoluções — conferidas ou não. O único marcador de divergência é um sufixo de texto concatenado ao `x_name` (`⚠️ CONFERIR: ...`). Como tudo já nasce "Pendente", o status não carrega sinal algum e o coordenador **não tem campo filtrável** para separar os comprovantes suspeitos; depende de alguém ler o nome do registro.
+**Correção pendente:** criar um campo estruturado em `x_devolucao` (ex.: `x_studio_conferencia_pix` = `ok` | `divergente` | `ausente`, ou um booleano `x_studio_requer_conferencia`) gravado por `registrarDevolucao`, e filtrar/destacar por ele na visão do coordenador. Manter o sufixo no `x_name` como redundância visual.
+
+### BL-27 — Fallback de PDF aceita qualquer arquivo 🔴 (P) — **descoberto na auditoria de 17/09/2026**
+**Arquivo:** `ComprovanteHandler.gs:99-119`
+**Problema:** quando a Vision API não consegue extrair texto de um PDF (protegido, escaneado ruim, corrompido — ou simplesmente um PDF que não é comprovante), o código **força** o resultado como válido: `ehComprovante: true`, `valor: 0`, `chavePix: null`, `confianca: 50`, e segue para o registro no Odoo. Consequência: **qualquer PDF cria uma devolução de R$ 0,00** no Odoo. Como `chavePix` é `null`, a conferência do BL-26 devolve `ausente` e o registro é apenas marcado para conferência — ou seja, não é fraude silenciosa, mas é **exatamente o vetor que o BL-26 existe para fechar, alcançável trocando a imagem por um PDF**. Também polui a lista de pendentes com registros de valor zero.
+**Correção:** não tratar "OCR falhou" como "comprovante válido". Opções, em ordem de preferência: (a) pedir ao usuário que reenvie como **foto** ou um PDF legível, sem registrar nada; (b) se a paróquia quiser preservar o envio, registrar em um estado explicitamente distinto (ver campo estruturado do BL-26) com valor nulo e aviso honesto de que **nada foi confirmado**. Em nenhum caso enviar "✅ Comprovante recebido" para um arquivo do qual não se extraiu dado algum.
+**Aceite:** um PDF sem texto extraível não gera devolução de R$ 0,00 silenciosamente; o usuário recebe orientação clara para reenviar, ou o registro fica em estado distinguível de uma devolução normal.
 
 ---
 
@@ -188,14 +201,18 @@ Usuário Odoo dedicado (não uid 2/admin) com acesso restrito aos modelos `x_*`;
 
 ### Itens de backlog derivados
 
-### BL-20 — Lock por usuário no estado/dados 🟠 (M)
+### BL-20 — Lock por usuário no estado/dados 🟠 (M) — ✅ concluído, com ressalva
 Proteger o read-modify-write de `dados_${from}`/`estado_${from}` com `LockService.getScriptLock()` chaveado logicamente por usuário (ou serializar por `from`), evitando lost update quando o mesmo usuário envia mensagens concorrentes. Alternativa: usar `getUserLock()` — mas como o execute-as é único, avaliar um lock curto por chave. Aceite: duas mensagens quase simultâneas do mesmo usuário não corrompem os dados do cadastro.
+
+**Auditoria 17/09/2026:** a cobertura está correta — os 25 pontos de escrita do código passam por `salvarCampoEMudarEstado`/`salvarMultiplosCampos`, e nenhum chama `setDadosTemporarios` direto. **Duas ressalvas:** (1) o `_comLock` é *best-effort* — se o lock não vier em 3s ele grava **sem** lock (`StateManager.gs:64-78`), então o lost update ainda é possível justamente sob a contenção que deveria proteger; (2) o Apps Script só oferece lock **global**, então esta correção passou a serializar toda gravação de cadastro na mesma chave disputada pelo BL-22 — ver acoplamento lá.
 
 ### BL-21 — Mitigar teto de execuções simultâneas 🟠 (G)
 Reduzir o tempo de cada execução (retirar/reduzir `Utilities.sleep`, adiar trabalho pesado). Avaliar responder 200 à Meta **imediatamente** e processar de forma assíncrona (fila via `CacheService`/planilha + trigger), desacoplando o ACK do webhook do processamento. Aceite: um pico de N mensagens não derruba o webhook; latência estável.
 
-### BL-22 — Reduzir contenção do lock global 🟡 (M)
+### BL-22 — Reduzir contenção do lock global 🟠 (M) — *elevado de 🟡 em 17/09/2026*
 Repensar `sessoes_cadastro_ativas`: em vez de uma lista única sob lock global, usar chaves por usuário (`sessao_ativa_${from}`) e varrer por prefixo na trigger, ou aceitar perda eventual sem lock. Aceite: cadastros simultâneos não competem por um lock único.
+
+**Por que subiu de severidade:** quando este item foi escrito, o lock global era disputado apenas por `registrarSessaoAtiva`/`removerSessaoAtiva` (`waitLock(5000)`). A correção do BL-20 passou a tomar **o mesmo lock global** (`waitLock(3000)`) em *toda* gravação de campo do cadastro — ou seja, fechar o BL-20 aumentou a contenção exatamente no gargalo descrito aqui. Os dois itens estão acoplados e devem ser tratados juntos: a saída real é eliminar a lista global (chaves por usuário) e/ou mover o processamento para fora do webhook (BL-21), o que também dispensaria o lock do BL-20.
 
 ### BL-23 — Idempotência do primeiro contato 🟡 (P)
 Tornar `ehPrimeiroContato`/`registrarContatoBot` idempotente (checar/gravar cache antes da chamada Odoo, ou usar unicidade em `x_name` no Odoo). Aceite: duas mensagens simultâneas de número novo criam **um** `x_contato_bot` e uma boas-vindas.
@@ -206,11 +223,45 @@ Adicionar reenvio com backoff para 429/5xx em `Utils._post` (WhatsApp) e nas cha
 ### BL-25 — Monitorar cota de UrlFetch 🟡 (P)
 Instrumentar contagem diária de chamadas externas e alertar ao aproximar da cota; documentar o teto conforme o tipo de conta. Aceite: visibilidade do consumo diário antes de estourar.
 
+**Acrescentar à instrumentação (auditoria 17/09/2026) — vazão do disparo de notificações.** O envio é sequencial com `sleep(2000)` entre mensagens e o teto de execução é 6 min → **~180 mensagens por rodada**, e a consulta de elegíveis usa `{ limit: false }` (`NotificacaoHandler.gs:222,505`), sem teto. A repescagem horária recupera o que sobrou, mas em paróquia grande isso significa várias rodadas de ~6 min por dia; com ~12 rodadas na janela útil (8h–20h) chega-se perto da cota de **~90 min/dia de trigger** em conta gratuita. Vale medir o nº de elegíveis e o tempo por rodada antes do próximo ciclo, e considerar paginar o disparo explicitamente em vez de depender do corte por timeout.
+
+---
+
+## Auditoria de 17/09/2026
+
+Revisão do código-fonte conferindo **cada item marcado como concluído** contra os arquivos `.gs`, em vez de confiar no status declarado.
+
+### Confirmados como realmente concluídos
+| Item | Evidência no código |
+|---|---|
+| BL-02 | `ComprovanteHandler._tratarResultado` trata três desfechos distintos; a confirmação de sucesso só sai com `devolucaoId` real |
+| BL-03 | Aviso em 50 min (`StateManager.gs:211`) e expiração em 60 — textos, TTLs e trigger alinhados |
+| BL-09 | Loop `entry[] → changes[] → messages[]` com idempotência gravada **antes** do processamento (`Webhook.gs:71-90,120-127`); falha de uma mensagem não derruba o lote |
+| BL-14 | Valor ancorado por rótulo com fallback para o maior valor ignorando saldo/tarifa; chave PIX pula linhas de "ID da transação" e usa fronteiras `(?<!\d)`. Runtime é **V8** (`appsscript.json`), então os lookbehinds são suportados |
+| BL-20 | Cobertura completa: os 25 pontos de escrita passam pelos helpers com lock (ver ressalvas no item) |
+
+### Divergências encontradas
+1. **BL-26 estava marcado ✅ mas cumpre o aceite só em parte** → reclassificado para ⚠️ Parcial. A conferência de chave existe e a mensagem ao usuário é honesta, mas não há campo estruturado: `x_studio_status` é `'Pendente'` para todos os casos e a marca de divergência vive num sufixo de texto do `x_name`.
+2. **BL-27 (novo, 🔴)** — o fallback de PDF força `ehComprovante: true` e registra devolução de R$ 0,00 para qualquer PDF ilegível, contornando na prática a proteção do BL-26.
+3. **BL-01 foi para produção fora da ordem planejada** — o Sprint 3 mandava fazer BL-21/BL-24 antes; o trigger está ativo e esses dois seguem abertos.
+4. **BL-22 subiu de 🟡 para 🟠** — a correção do BL-20 passou a usar o mesmo lock global, agravando o gargalo que o BL-22 descreve.
+
+### Itens abertos cuja permanência foi confirmada no código
+- **BL-16:** `Tests.gs` (175 KB), `TestesComprovantes.gs` (93 KB), `TesteRelatorio.gs` (33 KB) e `TesteNotificacao.gs` (19 KB) somam **~320 KB** ainda na raiz do projeto, indo junto no `clasp push`.
+- **BL-17:** sem `WEBHOOK_SECRET`, o POST anônimo continua aceito com apenas um `console.warn` (`Webhook.gs:62-65`). Combinado com `access: ANYONE_ANONYMOUS`, qualquer um que descubra a URL injeta mensagens no fluxo.
+- **BL-23:** a corrida está exatamente como descrita — `ehPrimeiroContato` faz cache miss → busca no Odoo → cria → e só **depois** grava o cache (`StateManager.gs:272-300`).
+- **BL-24:** nenhum dos ~15 pontos de `UrlFetchApp` (Utils, OdooService, VisionService, MediaService) tem retry ou backoff.
+
 ---
 
 ## Sugestão de ordem de execução
 
-1. **Sprint 1 (integridade da devolução):** BL-02 → **BL-14 → BL-26** (a validação do destinatário depende da extração confiável da chave) → BL-04 → BL-03.
-2. **Sprint 2 (médios):** BL-05 (verificar Odoo primeiro), BL-06, BL-07, BL-08, BL-20, BL-10.
-3. **Sprint 3 (notificações + robustez/carga):** BL-21 e BL-24 **antes** de reativar BL-01; depois BL-09, BL-11, BL-22.
-4. **Contínuo:** BL-12, BL-13, BL-15, BL-16, BL-17, BL-23, BL-25.
+*Revisada em 17/09/2026 — os Sprints 1 e 2 estão concluídos; a ordem abaixo reflete o que sobrou mais os achados da auditoria.*
+
+1. ~~**Sprint 1 (integridade da devolução):** BL-02 → BL-14 → BL-26 → BL-04 → BL-03.~~ ✅ concluído (BL-26 parcial, ver Sprint 4).
+2. ~~**Sprint 2 (médios):** BL-05, BL-06, BL-07, BL-08, BL-20, BL-10.~~ ✅ concluído.
+3. **Sprint 3 (robustez/carga) — parcialmente feito:** BL-01, BL-09 e BL-11 concluídos. **Restam BL-21, BL-24 e BL-22** — e, como o BL-01 já está no ar, o BL-24 passou a ser o mais urgente do grupo.
+4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
+   **BL-27** (pequeno, fecha a brecha real) → **reforço do BL-26** (campo estruturado de conferência) → **BL-17** (segurança do webhook) → **BL-23** (quick win de concorrência).
+5. **Sprint 5 (carga):** BL-24 **antes do próximo ciclo mensal de notificações** → BL-22 + BL-20 juntos (estão acoplados) → BL-21 (o item grande; resolve os dois anteriores de vez).
+6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.
