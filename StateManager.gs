@@ -273,11 +273,31 @@ const StateManager = {
     const cache = CacheService.getScriptCache();
     const cacheKey = `contato_${from}`;
 
-    // Cache hit → já conhecido, sem chamada HTTP ao Odoo.
+    // Cache hit → já conhecido, sem lock e sem chamada HTTP ao Odoo.
     // Reativado: evita um search_read no Odoo a CADA mensagem recebida.
     if (cache.get(cacheKey)) return false;
 
+    // BL-23: o read-modify-write abaixo (buscar → criar → cachear) não é
+    // atômico. Duas mensagens simultâneas de um número novo passavam as duas
+    // pela busca sem encontrar nada e criavam DOIS `x_contato_bot`, com duas
+    // boas-vindas. Pior: `atualizarContatoBot` escreve só no primeiro registro
+    // que encontra, então o log de cadastro passava a cair num registro
+    // arbitrário. O lock só é disputado no cache miss — contato novo ou cache
+    // expirado (6 h) — e não pesa no fluxo normal de mensagens.
+    const lock = LockService.getScriptLock();
     try {
+      lock.waitLock(5000);
+    } catch (e) {
+      // Sem serializar, preferimos pular a boas-vindas a arriscar duplicar o
+      // registro: a próxima mensagem do usuário refaz a verificação.
+      console.warn('⚠️ [ehPrimeiroContato] Lock não obtido, pulando verificação:', e.message);
+      return false;
+    }
+
+    try {
+      // Dupla checagem: outra execução pode ter registrado enquanto esperávamos.
+      if (cache.get(cacheKey)) return false;
+
       const contato = OdooService.buscarContatoBot(from);
 
       if (contato) {
@@ -296,6 +316,8 @@ const StateManager = {
       console.error('❌ Erro ao verificar primeiro contato no Odoo:', e.message);
       // Fallback: não bloqueia o fluxo em caso de erro
       return false;
+    } finally {
+      try { lock.releaseLock(); } catch (ignore) {}
     }
   },
 
