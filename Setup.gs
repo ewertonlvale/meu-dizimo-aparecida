@@ -89,20 +89,8 @@ function setupProperties() {
   
   // Listar (mascarando valores sensíveis)
   Object.keys(configuracoes).forEach(key => {
-    const valor = props.getProperty(key);
-    
-    // Mascarar tokens e keys
-    let valorExibido = valor;
-    if (key.includes('KEY') || key.includes('TOKEN') || key.includes('API')) {
-      if (valor.length > 20) {
-        valorExibido = valor.substring(0, 10) + '...' + valor.substring(valor.length - 5);
-      } else {
-        valorExibido = valor.substring(0, 10) + '...';
-      }
-    }
-    
     Logger.log(`✅ ${key}:`);
-    Logger.log(`   ${valorExibido}`);
+    Logger.log(`   ${_mascararValorProp(key, props.getProperty(key))}`);
     Logger.log('');
   });
   
@@ -209,12 +197,7 @@ function verificarProperties() {
       info = 'NÃO CONFIGURADA';
       todasConfiguradas = false;
     } else {
-      // Mascarar valores sensíveis
-      if (prop.includes('KEY') || prop.includes('TOKEN') || prop.includes('API')) {
-        info = valor.substring(0, 10) + '...';
-      } else {
-        info = valor;
-      }
+      info = _mascararValorProp(prop, valor);
     }
     
     Logger.log(`${status} ${prop}: ${info}`);
@@ -252,6 +235,41 @@ function verificarProperties() {
   }
   
   Logger.log('');
+}
+
+/**
+ * Propriedades cujo valor pode aparecer inteiro no log.
+ *
+ * É uma lista de PERMITIDOS, não de proibidos, de propósito: assim qualquer
+ * propriedade nova nasce mascarada. A regra anterior mascarava por substring do
+ * nome ('KEY', 'TOKEN', 'API') e, por isso, imprimia o `WEBHOOK_SECRET` inteiro
+ * no log — justamente o segredo que autentica o webhook. `WHATSAPP_PIN` tinha o
+ * mesmo problema.
+ */
+const PROPS_NAO_SENSIVEIS = [
+  'WHATSAPP_PHONE_ID',
+  'ODOO_URL',
+  'ODOO_DATABASE',
+  'ODOO_UID',
+  'NOTIFICACOES_ATIVAS'
+];
+
+/**
+ * Devolve o valor pronto para log: inteiro se for inócuo, senão um prefixo
+ * curto com o tamanho — o bastante para conferir qual valor está lá, sem
+ * expor o segredo.
+ * @private
+ */
+function _mascararValorProp(chave, valor) {
+  if (!valor) return valor;
+  if (PROPS_NAO_SENSIVEIS.indexOf(chave) >= 0) return valor;
+
+  const texto = String(valor);
+  // Valor curto (um PIN de 6 dígitos, por exemplo): qualquer prefixo já o
+  // entregaria por inteiro. Nestes casos só o tamanho vai para o log.
+  if (texto.length < 16) return `•••• (${texto.length} caracteres)`;
+
+  return `${texto.substring(0, 6)}… (${texto.length} caracteres)`;
 }
 
 /**
