@@ -42,14 +42,16 @@ const VisionService = {
     console.log('📤 [VisionService] Enviando requisição para Vision API...');
 
     try {
-      const response = UrlFetchApp.fetch(
+      // BL-24: OCR é análise pura, sem efeito colateral — seguro repetir.
+      const response = Utils.fetchComRetry(
         `${cfg.ENDPOINT}?key=${cfg.API_KEY}`,
         {
           method:      'post',
           contentType: 'application/json',
           payload:     JSON.stringify(payload),
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'Vision imagem' }
       );
 
       const statusCode = response.getResponseCode();
@@ -129,14 +131,16 @@ const VisionService = {
     console.log('📤 [VisionService] Enviando PDF para Vision API (files:annotate)...');
 
     try {
-      const response = UrlFetchApp.fetch(
+      // BL-24: OCR é análise pura, sem efeito colateral — seguro repetir.
+      const response = Utils.fetchComRetry(
         `${cfg.ENDPOINT_FILES}?key=${cfg.API_KEY}`,
         {
           method:      'post',
           contentType: 'application/json',
           payload:     JSON.stringify(payload),
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'Vision PDF' }
       );
 
       const statusCode = response.getResponseCode();

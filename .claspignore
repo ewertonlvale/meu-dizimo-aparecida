@@ -1,0 +1,47 @@
+# ============================================================================
+# .claspignore — o que NÃO vai para o projeto Apps Script (BL-16)
+# ============================================================================
+#
+# Os arquivos continuam versionados no Git; apenas deixam de ser enviados pelo
+# `clasp push`. Antes disto, a suíte de testes (~320 KB) e o site público
+# (~97 KB) eram a maior parte do que subia para produção.
+#
+# ⚠️ ATENÇÃO: a simples existência deste arquivo SUBSTITUI a lista padrão de
+# exclusões do clasp, por isso os padrões usuais (.git, node_modules) precisam
+# estar repetidos aqui embaixo.
+#
+# ⚠️ `clasp push` sincroniza: arquivos que deixam de ser enviados são REMOVIDOS
+# do projeto online no próximo push. É o efeito desejado aqui, mas saiba que a
+# primeira publicação após esta mudança apaga os arquivos de teste do editor.
+#
+# ▶️ PARA RODAR A SUÍTE DE TESTES: comente as quatro linhas da seção "Suíte de
+#    testes" abaixo, rode `clasp push`, execute os testes no editor e então
+#    descomente as linhas e rode `clasp push` de novo para limpar a produção.
+#    As funções se chamam `testarOdoo`, `testarConfig`, `testarMenuPrincipal`,
+#    `executarTodosOsTestes`, entre outras — veja `Tests.gs`.
+#    Para uma checagem rápida de configuração sem os testes, use as funções que
+#    ficam no deploy: `verificarProperties()` e `testarConexaoOdoo()` (Setup.gs).
+
+# ── Suíte de testes (~320 KB, inclui comprovantes em base64) ────────────────
+Tests.gs
+TestesComprovantes.gs
+TesteRelatorio.gs
+TesteNotificacao.gs
+
+# ── Site público servido pelo GitHub Pages (~97 KB) ─────────────────────────
+# O clasp trata QUALQUER .html como arquivo do projeto Apps Script, então sem
+# isto as páginas de política de privacidade e afins viravam parte do deploy.
+docs/**
+**/docs/**
+
+# ── Documentação do repositório ─────────────────────────────────────────────
+Documentação/**
+**/Documentação/**
+
+# ── Padrões que o clasp ignoraria por omissão (repetidos, ver aviso acima) ──
+.git/**
+**/.git/**
+node_modules/**
+**/node_modules/**
+.clasp.json
+.claspignore

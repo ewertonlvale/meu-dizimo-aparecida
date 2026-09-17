@@ -52,7 +52,7 @@ const MediaService = {
       
       console.log('imageUrl: ', imageUrl);
 
-      const response = UrlFetchApp.fetch(
+      const response = Utils.fetchComRetry(
         getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
         {
           method:      'post',
@@ -65,7 +65,8 @@ const MediaService = {
             image: { link: imageUrl, caption }
           }),
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: false, rotulo: 'WhatsApp imagem (link)' }
       );
 
       const code = response.getResponseCode();
@@ -93,14 +94,15 @@ const MediaService = {
       const imageBytes = Utilities.base64Decode(base64Data);
       const blob       = Utilities.newBlob(imageBytes, 'image/png', 'image.png');
 
-      const uploadResponse = UrlFetchApp.fetch(
+      const uploadResponse = Utils.fetchComRetry(
         getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/media`),
         {
           method:  'post',
           headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
           payload: { messaging_product: 'whatsapp', type: 'image/png', file: blob },
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: false, rotulo: 'WhatsApp upload (imagem)' }
       );
 
       const uploadResult = JSON.parse(uploadResponse.getContentText());
@@ -141,14 +143,15 @@ const MediaService = {
       const blob  = Utilities.newBlob(bytes, mimeType, filename);
 
       // 1. Upload do arquivo
-      const uploadResponse = UrlFetchApp.fetch(
+      const uploadResponse = Utils.fetchComRetry(
         getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/media`),
         {
           method:  'post',
           headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
           payload: { messaging_product: 'whatsapp', type: mimeType, file: blob },
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: false, rotulo: 'WhatsApp upload (documento)' }
       );
 
       const uploadResult = JSON.parse(uploadResponse.getContentText());
@@ -201,14 +204,17 @@ const MediaService = {
     console.log('📥 Baixando arquivo:', mediaId);
 
     try {
+      // BL-24: os dois GETs são idempotentes, e falhar aqui significa perder o
+      // comprovante que o usuário acabou de enviar — vale insistir.
       // 1. Obter URL da mídia
-      const urlInfoResponse = UrlFetchApp.fetch(
+      const urlInfoResponse = Utils.fetchComRetry(
         getWhatsAppUrl(mediaId),
         {
           method:  'get',
           headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'WhatsApp mídia (info)' }
       );
 
       const urlInfo = JSON.parse(urlInfoResponse.getContentText());
@@ -219,11 +225,15 @@ const MediaService = {
       }
 
       // 2. Baixar arquivo
-      const fileResponse = UrlFetchApp.fetch(urlInfo.url, {
-        method:  'get',
-        headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-        muteHttpExceptions: true
-      });
+      const fileResponse = Utils.fetchComRetry(
+        urlInfo.url,
+        {
+          method:  'get',
+          headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+          muteHttpExceptions: true
+        },
+        { idempotente: true, rotulo: 'WhatsApp mídia (download)' }
+      );
 
       if (fileResponse.getResponseCode() !== 200) {
         console.error('❌ Erro ao baixar arquivo, status:', fileResponse.getResponseCode());
@@ -266,7 +276,8 @@ const MediaService = {
 
       // Imagem do QR Code a partir do payload.
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixPayload)}`;
-      const response = UrlFetchApp.fetch(qrUrl, { muteHttpExceptions: true });
+      const response = Utils.fetchComRetry(qrUrl, { muteHttpExceptions: true },
+        { idempotente: true, rotulo: 'QR Code' });
 
       if (response.getResponseCode() !== 200) {
         console.warn('⚠️ API QR Code falhou, status:', response.getResponseCode());
@@ -363,13 +374,14 @@ const MediaService = {
   obterInfoMidia(mediaId) {
     const config = getConfig();
     try {
-      const response = UrlFetchApp.fetch(
+      const response = Utils.fetchComRetry(
         getWhatsAppUrl(mediaId),
         {
           method:  'get',
           headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'WhatsApp mídia (info)' }
       );
       return response.getResponseCode() === 200
         ? JSON.parse(response.getContentText())
@@ -385,7 +397,7 @@ const MediaService = {
   // ==========================================================================
 
   _enviarMensagemMidia(to, type, mediaPayload, config) {
-    const response = UrlFetchApp.fetch(
+    const response = Utils.fetchComRetry(
       getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
       {
         method:      'post',
@@ -398,7 +410,8 @@ const MediaService = {
           [type]: mediaPayload
         }),
         muteHttpExceptions: true
-      }
+      },
+      { idempotente: false, rotulo: 'WhatsApp mídia (envio)' }
     );
 
     if (response.getResponseCode() === 200) {

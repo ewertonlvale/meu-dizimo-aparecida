@@ -37,8 +37,9 @@ function setupProperties() {
     'WHATSAPP_PHONE_ID': 'COLE_SEU_PHONE_ID_AQUI',
     'VERIFY_TOKEN': 'meu_dizimo_2024',
 
-    // Segredo do webhook: string aleatória e secreta. Depois de salvar, configure
-    // a URL de callback na Meta como: https://.../exec?token=ESTE_VALOR
+    // Segredo do webhook: OBRIGATÓRIO (BL-17) — sem ele o webhook rejeita todo
+    // POST. Prefira rodar configurarSegredoWebhook(), que gera um valor forte e
+    // já imprime a URL de callback pronta para colar na Meta.
     // (Apps Script não expõe headers, então autenticamos pela query string.)
     'WEBHOOK_SECRET': 'COLE_UM_SEGREDO_ALEATORIO_AQUI',
     
@@ -111,9 +112,65 @@ function setupProperties() {
   Logger.log('');
   Logger.log('📝 PRÓXIMOS PASSOS:');
   Logger.log('1. Execute verificarProperties() para confirmar');
-  Logger.log('2. Execute testarOdooService() para testar Odoo');
-  Logger.log('3. Execute testarMenuCompleto() para testar WhatsApp');
+  Logger.log('2. Execute testarConexaoOdoo() para testar o Odoo');
+  Logger.log('3. Execute configurarSegredoWebhook() e cole a URL na Meta');
   Logger.log('4. Delete ou comente este arquivo Setup.gs');
+  Logger.log('');
+}
+
+/**
+ * ============================================
+ * BL-17 — SEGREDO DO WEBHOOK (OBRIGATÓRIO)
+ * ============================================
+ *
+ * Gera um WEBHOOK_SECRET aleatório, salva nas Script Properties e imprime a
+ * URL de callback completa para colar na Meta.
+ *
+ * ⚠️ ORDEM IMPORTA. O webhook rejeita todo POST sem o token correto, e o Apps
+ * Script sempre responde 200 — ou seja, a Meta NÃO reenvia o que for rejeitado
+ * e as mensagens são perdidas. Faça nesta ordem:
+ *   1. Execute esta função e copie a URL impressa no log.
+ *   2. Cole a URL na configuração do webhook na Meta (Callback URL).
+ *   3. Só então republique o deployment com o código novo.
+ *
+ * Se o segredo já existir, a função não o troca — apenas reimprime a URL.
+ */
+function configurarSegredoWebhook() {
+  const props = PropertiesService.getScriptProperties();
+
+  if (!props.getProperty('WEBHOOK_SECRET')) {
+    // UUID v4 do Apps Script é aleatório; dois deles dão 64 chars hex.
+    const segredo = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+    props.setProperty('WEBHOOK_SECRET', segredo);
+    Logger.log('✅ WEBHOOK_SECRET gerado e salvo.');
+  } else {
+    Logger.log('ℹ️ WEBHOOK_SECRET já existe — mantido.');
+    Logger.log('   Para trocá-lo, apague a propriedade e rode esta função de novo.');
+  }
+
+  const segredo = props.getProperty('WEBHOOK_SECRET');
+
+  let url = null;
+  try {
+    url = ScriptApp.getService().getUrl();
+  } catch (e) {
+    Logger.log(`⚠️ Não consegui obter a URL do deployment: ${e.message}`);
+  }
+
+  Logger.log('');
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  Logger.log('📋 URL DE CALLBACK PARA A META');
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  if (url) {
+    Logger.log(`${url}?token=${segredo}`);
+  } else {
+    Logger.log(`<URL DO SEU DEPLOYMENT>/exec?token=${segredo}`);
+    Logger.log('(pegue a URL em Implantar → Gerenciar implantações)');
+  }
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  Logger.log('');
+  Logger.log('🔒 Esta URL contém o segredo — trate como credencial.');
+  Logger.log('📝 Cole na Meta ANTES de republicar o deployment.');
   Logger.log('');
 }
 
@@ -166,20 +223,67 @@ function verificarProperties() {
   Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   Logger.log('');
   
+  // BL-17: uid 2 é o administrador do Odoo. O bot só precisa dos modelos x_*,
+  // então rodar como admin dá muito mais acesso do que a função exige — se as
+  // credenciais vazarem, o estrago é o ERP inteiro, não só os dados do bot.
+  if (props.getProperty('ODOO_UID') === '2') {
+    Logger.log('');
+    Logger.log('⚠️ ODOO_UID = 2 (administrador) — recomendado trocar:');
+    Logger.log('   1. No Odoo, crie um usuário dedicado ao bot (ex.: "Bot Meu Dízimo").');
+    Logger.log('   2. Dê acesso apenas aos modelos x_* que o bot usa.');
+    Logger.log('   3. Gere uma API key para esse usuário.');
+    Logger.log('   4. Atualize ODOO_UID e ODOO_API_KEY e rode testarConexaoOdoo().');
+    Logger.log('');
+  }
+
   if (todasConfiguradas) {
     Logger.log('✅ Todas as propriedades estão configuradas!');
     Logger.log('');
     Logger.log('🎉 Você pode começar a usar o bot!');
     Logger.log('');
-    Logger.log('📝 Testes recomendados:');
-    Logger.log('   - testarOdooService()');
-    Logger.log('   - testarMenuCompleto()');
+    Logger.log('📝 Verificações recomendadas:');
+    Logger.log('   - testarConexaoOdoo()');
+    Logger.log('   - configurarSegredoWebhook()  (confere a URL de callback)');
+    Logger.log('   A suíte completa (Tests.gs) não vai no deploy — ver .claspignore.');
   } else {
     Logger.log('❌ Algumas propriedades estão faltando.');
     Logger.log('');
     Logger.log('Execute setupProperties() para configurar.');
   }
   
+  Logger.log('');
+}
+
+/**
+ * ============================================
+ * TESTAR CONEXÃO COM O ODOO
+ * ============================================
+ *
+ * Faz uma leitura mínima para validar URL, database, uid e API key.
+ * Vive aqui, e não em `Tests.gs`, porque a suíte de testes não vai no deploy
+ * (ver `.claspignore` — BL-16); esta verificação precisa estar disponível no
+ * projeto publicado, logo após a configuração.
+ */
+function testarConexaoOdoo() {
+  Logger.log('');
+  Logger.log('🔌 Testando conexão com o Odoo...');
+
+  try {
+    const comunidades = OdooService.searchRead(
+      'x_comunidade', ['id', 'x_name'], [], { limit: 1 }
+    );
+
+    Logger.log('✅ Conexão OK — o Odoo respondeu.');
+    Logger.log(`   Comunidades acessíveis: ${comunidades.length > 0 ? 'sim' : 'nenhuma encontrada'}`);
+
+    const uid = PropertiesService.getScriptProperties().getProperty('ODOO_UID');
+    Logger.log(`   Conectado com ODOO_UID = ${uid}${uid === '2' ? ' (administrador — ver BL-17)' : ''}`);
+
+  } catch (e) {
+    Logger.log(`❌ Falha na conexão: ${e.message}`);
+    Logger.log('   Confira ODOO_URL, ODOO_DATABASE, ODOO_UID e ODOO_API_KEY com verificarProperties().');
+  }
+
   Logger.log('');
 }
 

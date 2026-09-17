@@ -163,7 +163,9 @@ function getConfig() {
 }
 
 /**
- * Retorna o segredo opcional do webhook usado para autenticar o POST da Meta.
+ * Retorna o segredo do webhook usado para autenticar o POST da Meta.
+ * BL-17: é obrigatório — sem ele `doPost` rejeita todas as requisições.
+ * Use `configurarSegredoWebhook()` (Setup.gs) para gerar e obter a URL pronta.
  *
  * IMPORTANTE: web apps do Apps Script NÃO expõem os headers da requisição em
  * doPost(e), portanto não é possível validar o header X-Hub-Signature-256

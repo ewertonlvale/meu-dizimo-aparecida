@@ -51,17 +51,21 @@ function doGet(e) {
 function doPost(e) {
   try {
     // ── Autenticação do webhook (segredo na URL) ────────────────────────────
-    // Headers não estão acessíveis no Apps Script, então usamos um segredo na
-    // query string (?token=...) que a Meta preserva. Só bloqueia se o segredo
-    // estiver configurado — assim não derruba o webhook antes do setup.
+    // Headers não são acessíveis no Apps Script, então autenticamos por um
+    // segredo na query string (?token=...), que a Meta preserva na callback.
+    //
+    // BL-17: fail-closed. Sem segredo configurado, REJEITA. O deployment é
+    // ANYONE_ANONYMOUS: aceitar POST não autenticado permitiria a qualquer um
+    // forjar mensagens do WhatsApp e injetar cadastros/devoluções no fluxo.
     const segredo = getWebhookSecret();
-    if (segredo && e.parameter.token !== segredo) {
-      console.warn('🚫 POST rejeitado: token de webhook inválido ou ausente');
+    if (!segredo) {
+      console.error('🚫 POST rejeitado: WEBHOOK_SECRET não configurado. ' +
+                    'Rode configurarSegredoWebhook() (Setup.gs) e atualize a URL na Meta.');
       return ContentService.createTextOutput('Forbidden');
     }
-    if (!segredo) {
-      console.warn('⚠️ WEBHOOK_SECRET não configurado — webhook sem autenticação. ' +
-                   'Configure em Setup.gs e adicione ?token=... na URL de callback.');
+    if (e.parameter.token !== segredo) {
+      console.warn('🚫 POST rejeitado: token de webhook inválido ou ausente');
+      return ContentService.createTextOutput('Forbidden');
     }
 
     const body = JSON.parse(e.postData.contents);
@@ -93,6 +97,7 @@ function doPost(e) {
       console.log('ℹ️ POST sem mensagens de usuário (provável evento de status).');
     }
 
+    Utils.registrarConsumoExterno();   // BL-25: uma escrita por execução
     return ContentService.createTextOutput('OK');
 
   } catch (error) {

@@ -434,7 +434,8 @@ const DevolucaoHandler = {
     const devolucoes = OdooService.buscarDevolucoesDizimista(dizimistaId, 10);
 
     if (!devolucoes || devolucoes.length === 0) {
-      Utilities.sleep(1000);
+      // BL-21: sem espera — a consulta ao Odoo acima já separa esta mensagem
+      // do "Buscando histórico..." enviado antes dela.
       Utils.enviarMenu(from,
         `📭 *${nome}* ainda não tem devoluções registradas.`,
         [

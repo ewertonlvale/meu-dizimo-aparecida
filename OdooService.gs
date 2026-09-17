@@ -124,14 +124,30 @@ const OdooService = {
    * @private
    */
   _rpc(baseUrl, payload) {
-    console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${payload.params.args[4]}`);
+    const metodo = payload.params.args[4];
+    console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${metodo}`);
 
-    const response = UrlFetchApp.fetch(`${baseUrl}/jsonrpc`, {
-      method:      'post',
-      contentType: 'application/json',
-      payload:     JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
+    // BL-24: `create` não é idempotente — repetir um 5xx poderia gravar a mesma
+    // devolução duas vezes, pior que a falha original. Leituras e `write`
+    // (que só fixa valores) podem ser repetidas com segurança.
+    const response = Utils.fetchComRetry(
+      `${baseUrl}/jsonrpc`,
+      {
+        method:      'post',
+        contentType: 'application/json',
+        payload:     JSON.stringify(payload),
+        muteHttpExceptions: true
+      },
+      { idempotente: metodo !== 'create', rotulo: `Odoo ${metodo}` }
+    );
+
+    // Antes o corpo era parseado direto: um 5xx devolve HTML e estourava um
+    // SyntaxError de JSON, escondendo a causa real.
+    const code = response.getResponseCode();
+    if (code !== 200) {
+      console.error(`❌ [Odoo] HTTP ${code} em ${metodo}:`, response.getContentText().slice(0, 300));
+      throw new Error(`Odoo respondeu HTTP ${code} em ${metodo}`);
+    }
 
     const result = JSON.parse(response.getContentText());
 
@@ -440,14 +456,57 @@ const OdooService = {
   // ==========================================================================
 
   /**
+   * BL-26: `x_studio_conferencia_pix` é criado por `criarCampoConferenciaPix()`
+   * (SetupCamposFamilia.gs). Enquanto ele não existir no Odoo, gravá-lo — ou
+   * pedi-lo num searchRead — faria a chamada inteira falhar, e uma devolução
+   * perdida é pior que um aviso ausente. Checa uma vez e cacheia o resultado.
+   * @returns {boolean} true se o campo existe no schema
+   * @private
+   */
+  _temCampoConferenciaPix() {
+    const cache    = CacheService.getScriptCache();
+    const cacheado = cache.get('campo_conferencia_pix');
+    if (cacheado) return cacheado === '1';
+
+    let existe = false;
+    try {
+      const campos = this.searchRead(
+        'ir.model.fields',
+        ['id'],
+        [['model', '=', 'x_devolucao'], ['name', '=', 'x_studio_conferencia_pix']],
+        { limit: 1 }
+      );
+      existe = !!(campos && campos.length);
+    } catch (e) {
+      console.warn('⚠️ [OdooService] Não consegui verificar x_studio_conferencia_pix:', e.message);
+    }
+
+    // TTL curto quando ausente, para o campo passar a ser usado logo após o setup.
+    cache.put('campo_conferencia_pix', existe ? '1' : '0', existe ? 21600 : 300);
+    return existe;
+  },
+
+  /**
+   * Texto de alerta correspondente a cada resultado de conferência (BL-26).
+   * Usado no nome do registro; a fonte filtrável é `x_studio_conferencia_pix`.
+   */
+  AVISO_CONFERENCIA: {
+    divergente:     '⚠️ CONFERIR: chave do comprovante diverge da comunidade',
+    ausente:        '⚠️ CONFERIR: chave não identificada no comprovante',
+    sem_referencia: '⚠️ CONFERIR: comunidade sem chave PIX cadastrada'
+  },
+
+  /**
    * Registra uma devolução no Odoo com comprovante (imagem ou PDF).
    * @param {number}      dizimistaId        - ID do dizimista
    * @param {Object}      dadosAnalise       - Dados extraídos pela Vision API
    * @param {string|null} comprovanteBase64  - Arquivo original em base64
    * @param {string}      tipoComprovante    - 'imagem' ou 'pdf'
+   * @param {string}      conferencia        - Resultado da conferência da chave
+   *        PIX (BL-26): 'ok' | 'divergente' | 'ausente' | 'sem_referencia'
    * @returns {number} ID da devolução criada
    */
-  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', observacao = '') {
+  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '') {
     const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
     let dataOdoo = hoje;
@@ -462,10 +521,12 @@ const OdooService = {
       }
     }
 
-    // observacao (BL-26): marca de conferência manual quando a chave do
-    // comprovante não confere/está ausente — fica visível no nome do registro.
+    // BL-26: o resultado da conferência da chave PIX vai num campo estruturado
+    // (filtrável pelo coordenador) e, como redundância visível, no nome do registro.
+    const aviso = this.AVISO_CONFERENCIA[conferencia] || '';
+
     let descricao = `Devolução de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
-    if (observacao) descricao += ` — ${observacao}`;
+    if (aviso) descricao += ` — ${aviso}`;
 
     const dados = {
       x_name:                        descricao,
@@ -475,6 +536,10 @@ const OdooService = {
       x_studio_status:               'Pendente',
       x_studio_tipo_comprovante:     tipoComprovante
     };
+
+    if (conferencia && this._temCampoConferenciaPix()) {
+      dados.x_studio_conferencia_pix = conferencia;
+    }
 
     // Forma de pagamento: mapear o tipo detectado pelo OCR para o campo
     // selection do Odoo (valores existentes: 'Pix' | 'Dinheiro'). Só definimos
@@ -563,16 +628,19 @@ const OdooService = {
    * @returns {Array}
    */
   buscarDevolucoesPendentes(comunidadeId, limite = 10) {
+    const campos = [
+      'id',
+      'x_name',
+      'x_studio_dizimista',
+      'x_studio_data_da_devolucao',
+      'x_studio_value',
+      'x_studio_status'
+    ];
+    if (this._temCampoConferenciaPix()) campos.push('x_studio_conferencia_pix');
+
     return this.searchRead(
       'x_devolucao',
-      [
-        'id',
-        'x_name',
-        'x_studio_dizimista',
-        'x_studio_data_da_devolucao',
-        'x_studio_value',
-        'x_studio_status'
-      ],
+      campos,
       [
         ['x_studio_comunidade', '=', comunidadeId],
         ['x_studio_status',     '=', 'Pendente']
@@ -587,22 +655,25 @@ const OdooService = {
    * @returns {Object|null}
    */
   buscarDevolucaoDetalhada(devolucaoId) {
+    const campos = [
+      'id',
+      'x_name',
+      'x_studio_dizimista',
+      'x_studio_comunidade',
+      'x_studio_data_da_devolucao',
+      'x_studio_value',
+      'x_studio_status',
+      'x_studio_comprovante',
+      'x_studio_tipo_comprovante',
+      'x_studio_nome_arquivo',
+      'x_studio_forma_de_pagamento',
+      'x_studio_competencia'
+    ];
+    if (this._temCampoConferenciaPix()) campos.push('x_studio_conferencia_pix');
+
     const registros = this.searchRead(
       'x_devolucao',
-      [
-        'id',
-        'x_name',
-        'x_studio_dizimista',
-        'x_studio_comunidade',
-        'x_studio_data_da_devolucao',
-        'x_studio_value',
-        'x_studio_status',
-        'x_studio_comprovante',
-        'x_studio_tipo_comprovante',
-        'x_studio_nome_arquivo',
-        'x_studio_forma_de_pagamento',
-        'x_studio_competencia'
-      ],
+      campos,
       [['id', '=', devolucaoId]],
       { limit: 1 }
     );

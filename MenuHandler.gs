@@ -240,8 +240,6 @@ const MenuHandler = {
       '🙏 *Bem-vindo(a) ao Meu Dízimo!*\n\n' +
       'Estou aqui para te ajudar com seu cadastro e devoluções!\n\n'
     );
-    Utilities.sleep(1000);
-    //this.menuPrincipal(from);
   }
 
 };
