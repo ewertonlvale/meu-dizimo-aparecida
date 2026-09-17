@@ -1,10 +1,10 @@
 # Análise Geral — Bot Meu Dízimo (meu-dizimo-aparecida)
 
 > ⚠️ **Documento histórico — não descreve o estado atual do código.**
-> É o retrato que originou o [BACKLOG.md](BACKLOG.md), e a maior parte dos problemas
+> É o retrato que originou o [BACKLOG.md](../BACKLOG.md), e a maior parte dos problemas
 > apontados aqui **já foi corrigida** (praticamente todas as seções 3 e 4). Consulte o
-> backlog para o status item a item, e a [ARQUITETURA.md](ARQUITETURA.md) para como o
-> sistema funciona hoje. Mantido por registrar o raciocínio e o ponto de partida.
+> backlog para o status item a item, e a [ARQUITETURA.md](../ARQUITETURA.md) para como o
+> sistema funciona hoje. Arquivado por registrar o raciocínio e o ponto de partida.
 
 **Data da análise:** 19/07/2026
 **Escopo:** Todo o código-fonte `.gs` do projeto (~7.850 linhas), configuração (`appsscript.json`, `.clasp.json`) e estrutura geral.

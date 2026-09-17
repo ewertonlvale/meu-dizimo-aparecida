@@ -1,8 +1,8 @@
 # Arquitetura e convenções — Bot Meu Dízimo
 
 **O que este documento é:** a referência de *como o sistema funciona hoje* e das regras
-que precisam ser respeitadas ao mexer nele. Diferente do [BACKLOG.md](BACKLOG.md) e da
-[ANALISE-GERAL.md](ANALISE-GERAL.md), que são registros históricos, este arquivo deve ser
+que precisam ser respeitadas ao mexer nele. Diferente do [BACKLOG.md](BACKLOG.md), que é
+registro de trabalho, e do que está em [historico/](historico/), este arquivo deve ser
 mantido atualizado junto com o código.
 
 **Atualizado em:** 17/09/2026

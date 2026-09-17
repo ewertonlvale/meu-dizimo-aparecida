@@ -14,8 +14,8 @@ Google Cloud Vision (OCR dos comprovantes).
 |---|---|
 | **[Arquitetura e convenções](Documenta%C3%A7%C3%A3o/ARQUITETURA.md)** | **Comece por aqui.** Modelo de armazenamento, chamadas externas, concorrência e publicação — as regras a respeitar ao mexer no código |
 | [Backlog](Documenta%C3%A7%C3%A3o/BACKLOG.md) | Itens de trabalho, o que já foi corrigido e por quê. Registro histórico |
-| [Análise geral](Documenta%C3%A7%C3%A3o/ANALISE-GERAL.md) | Auditoria de 19/07/2026. Retrato de época — a maior parte já foi corrigida |
 | [Funcionalidade Família](Documenta%C3%A7%C3%A3o/FUNCIONALIDADE-FAMILIA.md) | Cadastro de membros e devolução em lote |
+| [historico/](Documenta%C3%A7%C3%A3o/historico/) | Documentos arquivados, mantidos só como registro — não descrevem o estado atual |
 
 ## Estrutura
 
