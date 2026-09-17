@@ -37,8 +37,9 @@ function setupProperties() {
     'WHATSAPP_PHONE_ID': 'COLE_SEU_PHONE_ID_AQUI',
     'VERIFY_TOKEN': 'meu_dizimo_2024',
 
-    // Segredo do webhook: string aleatória e secreta. Depois de salvar, configure
-    // a URL de callback na Meta como: https://.../exec?token=ESTE_VALOR
+    // Segredo do webhook: OBRIGATÓRIO (BL-17) — sem ele o webhook rejeita todo
+    // POST. Prefira rodar configurarSegredoWebhook(), que gera um valor forte e
+    // já imprime a URL de callback pronta para colar na Meta.
     // (Apps Script não expõe headers, então autenticamos pela query string.)
     'WEBHOOK_SECRET': 'COLE_UM_SEGREDO_ALEATORIO_AQUI',
     
@@ -119,6 +120,62 @@ function setupProperties() {
 
 /**
  * ============================================
+ * BL-17 — SEGREDO DO WEBHOOK (OBRIGATÓRIO)
+ * ============================================
+ *
+ * Gera um WEBHOOK_SECRET aleatório, salva nas Script Properties e imprime a
+ * URL de callback completa para colar na Meta.
+ *
+ * ⚠️ ORDEM IMPORTA. O webhook rejeita todo POST sem o token correto, e o Apps
+ * Script sempre responde 200 — ou seja, a Meta NÃO reenvia o que for rejeitado
+ * e as mensagens são perdidas. Faça nesta ordem:
+ *   1. Execute esta função e copie a URL impressa no log.
+ *   2. Cole a URL na configuração do webhook na Meta (Callback URL).
+ *   3. Só então republique o deployment com o código novo.
+ *
+ * Se o segredo já existir, a função não o troca — apenas reimprime a URL.
+ */
+function configurarSegredoWebhook() {
+  const props = PropertiesService.getScriptProperties();
+
+  if (!props.getProperty('WEBHOOK_SECRET')) {
+    // UUID v4 do Apps Script é aleatório; dois deles dão 64 chars hex.
+    const segredo = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+    props.setProperty('WEBHOOK_SECRET', segredo);
+    Logger.log('✅ WEBHOOK_SECRET gerado e salvo.');
+  } else {
+    Logger.log('ℹ️ WEBHOOK_SECRET já existe — mantido.');
+    Logger.log('   Para trocá-lo, apague a propriedade e rode esta função de novo.');
+  }
+
+  const segredo = props.getProperty('WEBHOOK_SECRET');
+
+  let url = null;
+  try {
+    url = ScriptApp.getService().getUrl();
+  } catch (e) {
+    Logger.log(`⚠️ Não consegui obter a URL do deployment: ${e.message}`);
+  }
+
+  Logger.log('');
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  Logger.log('📋 URL DE CALLBACK PARA A META');
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  if (url) {
+    Logger.log(`${url}?token=${segredo}`);
+  } else {
+    Logger.log(`<URL DO SEU DEPLOYMENT>/exec?token=${segredo}`);
+    Logger.log('(pegue a URL em Implantar → Gerenciar implantações)');
+  }
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  Logger.log('');
+  Logger.log('🔒 Esta URL contém o segredo — trate como credencial.');
+  Logger.log('📝 Cole na Meta ANTES de republicar o deployment.');
+  Logger.log('');
+}
+
+/**
+ * ============================================
  * VERIFICAR SE AS PROPRIEDADES ESTÃO OK
  * ============================================
  */
@@ -166,6 +223,19 @@ function verificarProperties() {
   Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   Logger.log('');
   
+  // BL-17: uid 2 é o administrador do Odoo. O bot só precisa dos modelos x_*,
+  // então rodar como admin dá muito mais acesso do que a função exige — se as
+  // credenciais vazarem, o estrago é o ERP inteiro, não só os dados do bot.
+  if (props.getProperty('ODOO_UID') === '2') {
+    Logger.log('');
+    Logger.log('⚠️ ODOO_UID = 2 (administrador) — recomendado trocar:');
+    Logger.log('   1. No Odoo, crie um usuário dedicado ao bot (ex.: "Bot Meu Dízimo").');
+    Logger.log('   2. Dê acesso apenas aos modelos x_* que o bot usa.');
+    Logger.log('   3. Gere uma API key para esse usuário.');
+    Logger.log('   4. Atualize ODOO_UID e ODOO_API_KEY e rode testarOdooService().');
+    Logger.log('');
+  }
+
   if (todasConfiguradas) {
     Logger.log('✅ Todas as propriedades estão configuradas!');
     Logger.log('');

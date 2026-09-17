@@ -41,7 +41,7 @@
 | BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
 | BL-15 | Efeito colateral: busca de dizimista atualiza telefone no Odoo | 🟡 | P | ✅ Concluído (removida a escrita durante a leitura; `x_studio_partner_phone` é related+gravável e propagava p/ res.partner) |
 | BL-16 | Separar arquivos de teste do deploy de produção | 🟡 | M | Aberto |
-| BL-17 | Segurança: uid Odoo dedicado + `WEBHOOK_SECRET` obrigatório | 🟡 | M | Aberto |
+| BL-17 | Segurança: uid Odoo dedicado + `WEBHOOK_SECRET` obrigatório | 🟠 | M | ⚠️ Parcial — webhook agora é fail-closed (17/09); uid dedicado é tarefa de administração no Odoo, o código só alerta |
 | **Concorrência / carga** | | | | |
 | BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | ✅ Concluído (mitigação) |
 | BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | Aberto |
@@ -175,8 +175,18 @@ O que foi feito:
 ### BL-16 — Testes no deploy de produção 🟡 (M)
 `Tests.gs` (~175 KB), `TestesComprovantes.gs` (~93 KB, com base64), `TesteRelatorio.gs` (~34 KB) somam a maior parte do que o clasp envia. Mover para um projeto GAS separado ou excluir do push.
 
-### BL-17 — Endurecer segurança 🟡 (M)
+### BL-17 — Endurecer segurança 🟠 (M) — *elevado de 🟡 em 17/09/2026*
 Usuário Odoo dedicado (não uid 2/admin) com acesso restrito aos modelos `x_*`; tornar `WEBHOOK_SECRET` obrigatório após o setup (hoje o webhook aceita POST anônimo se o segredo não estiver configurado — `Webhook.gs:57-65`).
+
+**✅ Metade 1 — `WEBHOOK_SECRET` obrigatório (17/09/2026).** `doPost` virou *fail-closed*: sem segredo configurado, rejeita. Antes, a ausência do segredo apenas logava um warning e o POST seguia — e como o deployment é `ANYONE_ANONYMOUS`, qualquer um que descobrisse a URL podia forjar payloads do WhatsApp e injetar cadastros e devoluções.
+
+⚠️ **A troca exige ordem de operação, senão o bot fica mudo.** O Apps Script sempre responde 200 (não dá para devolver 403), então a Meta **não reenvia** o que for rejeitado: mensagens recebidas com o token errado são perdidas, não enfileiradas. Por isso foi criada **`configurarSegredoWebhook()`** (Setup.gs), que gera o segredo e imprime a URL de callback pronta. Sequência correta:
+1. Rodar `configurarSegredoWebhook()` e copiar a URL do log.
+2. Colar a URL na Meta (Callback URL) — **antes** do passo 3.
+3. Republicar o deployment com o código novo.
+
+**⚠️ Metade 2 — uid dedicado: NÃO resolvido em código.** Criar o usuário, restringir as permissões aos modelos `x_*` e gerar a API key é tarefa de administração dentro do Odoo — não dá para fazer pelo repositório, e mexer nisso em produção sem combinar seria arriscado. O que o código faz agora é **alertar**: `verificarProperties()` avisa quando `ODOO_UID = 2` e lista os quatro passos da migração. `Config.gs` mantém o fallback `|| 2` de propósito: removê-lo derrubaria as chamadas ao Odoo num ambiente onde a propriedade não esteja setada, sem fechar brecha alguma (o risco é *usar* admin, não o default).
+**Aceite restante:** `ODOO_UID` apontando para um usuário sem direitos administrativos, com `testarOdooService()` passando.
 
 ---
 
