@@ -281,6 +281,63 @@ function limparContatosTeste() {
 }
 
 /**
+ * Zera o ambiente para começar um teste do início: massa no Odoo, contatos do
+ * driver e — o que faltava — o ESTADO EM CACHE dos números fictícios.
+ *
+ * Sem limpar o cache, um segundo teste começa sujo: `contato_<numero>` ainda
+ * diz que o número é conhecido (TTL de 6 h), então não há primeiro contato, e
+ * `estado_`/`dados_` retomam o cadastro no meio em vez de começar do zero.
+ *
+ * @param {number} [usuariosTeto] - Quantos números do modo teto limpar (padrão 100)
+ */
+function resetarAmbienteTeste(usuariosTeto) {
+  if (!_exigirModoTeste()) return;
+
+  Logger.log('━━━━━━ [Massa] RESET do ambiente de teste ━━━━━━');
+
+  _limparCacheNumerosTeste(usuariosTeto || 100);
+  limparMassaTeste();
+  limparContatosTeste();
+
+  Logger.log('');
+  Logger.log('✅ Ambiente zerado. Rode contarMassaTeste() para confirmar.');
+}
+
+/**
+ * Remove do cache (e das propriedades) o rastro dos números fictícios.
+ * O CacheService não lista chaves, mas aqui sabemos exatamente quais números o
+ * driver usa, então montamos as chaves em vez de varrer.
+ * @private
+ */
+function _limparCacheNumerosTeste(usuariosTeto) {
+  const cache = CacheService.getScriptCache();
+  const props = PropertiesService.getScriptProperties();
+
+  // Precisa espelhar o driver: corrida usa 900000001, teto usa 900000100 + i.
+  const numeros = [`${MASSA_DDD_TESTE}900000001`];
+  for (let i = 0; i < usuariosTeto; i++) {
+    numeros.push(`${MASSA_DDD_TESTE}${900000100 + i}`);
+  }
+
+  const prefixos = [
+    'estado_', 'dados_', 'contato_', 'log_cadastro_',
+    'sessao_inicio_', 'aviso_sessao_',
+    'tentativas_relatorio_', 'bloqueio_relatorio_'
+  ];
+
+  const chaves = [];
+  numeros.forEach(n => prefixos.forEach(p => chaves.push(p + n)));
+
+  try {
+    cache.removeAll(chaves);
+    numeros.forEach(n => props.deleteProperty(`${StateManager.PREFIXO_SESSAO}${n}`));
+    Logger.log(`🧹 Cache limpo para ${numeros.length} número(s) de teste.`);
+  } catch (e) {
+    Logger.log(`⚠️ Erro ao limpar cache: ${e.message}`);
+  }
+}
+
+/**
  * Conta a massa de teste existente, sem alterar nada.
  * Seguro de rodar a qualquer momento — não exige MODO_TESTE.
  */
