@@ -120,6 +120,35 @@ const OdooService = {
   },
 
   /**
+   * Apaga registros. Exige a lista explícita de IDs e não aceita domínio, de
+   * propósito: assim não há como varrer um modelo inteiro por engano.
+   * @param {string}   model - Nome do modelo
+   * @param {number[]} ids   - IDs a apagar
+   * @returns {boolean} true se o Odoo confirmou
+   */
+  unlink(model, ids) {
+    if (!Array.isArray(ids) || ids.length === 0) return false;
+
+    const cfg = getOdooConfig();
+    const payload = {
+      jsonrpc: '2.0',
+      method:  'call',
+      params: {
+        service: 'object',
+        method:  'execute_kw',
+        args: [cfg.database, cfg.uid, cfg.apiKey, model, 'unlink', [ids]]
+      }
+    };
+
+    return this._rpc(cfg.url, payload);
+  },
+
+  // BL-24: métodos que NÃO podem ser repetidos após 5xx. `create` duplicaria o
+  // registro; `unlink` falharia na segunda tentativa ("registro não existe"),
+  // transformando uma exclusão bem-sucedida em erro no log.
+  METODOS_NAO_IDEMPOTENTES: ['create', 'unlink'],
+
+  /**
    * Faz a chamada HTTP e retorna result ou lança erro.
    * @private
    */
@@ -127,9 +156,8 @@ const OdooService = {
     const metodo = payload.params.args[4];
     console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${metodo}`);
 
-    // BL-24: `create` não é idempotente — repetir um 5xx poderia gravar a mesma
-    // devolução duas vezes, pior que a falha original. Leituras e `write`
-    // (que só fixa valores) podem ser repetidas com segurança.
+    // BL-24: leituras e `write` (que só fixa valores) podem ser repetidas com
+    // segurança; `create` e `unlink` não — ver METODOS_NAO_IDEMPOTENTES.
     const response = Utils.fetchComRetry(
       `${baseUrl}/jsonrpc`,
       {
@@ -138,7 +166,10 @@ const OdooService = {
         payload:     JSON.stringify(payload),
         muteHttpExceptions: true
       },
-      { idempotente: metodo !== 'create', rotulo: `Odoo ${metodo}` }
+      {
+        idempotente: this.METODOS_NAO_IDEMPOTENTES.indexOf(metodo) < 0,
+        rotulo:      `Odoo ${metodo}`
+      }
     );
 
     // Antes o corpo era parseado direto: um 5xx devolve HTML e estourava um
