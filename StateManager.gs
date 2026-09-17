@@ -325,62 +325,60 @@ const StateManager = {
   // SESSÕES ATIVAS (usado pela trigger de limpeza)
   // ==========================================================================
 
+  // BL-22: antes isto era UMA chave de cache (`sessoes_cadastro_ativas`) com um
+  // array JSON, lido-modificado-gravado sob lock GLOBAL. Todo cadastro
+  // simultâneo disputava o mesmo lock e, sob contenção, alguns estouravam os
+  // 5 s e não registravam/removiam a sessão.
+  //
+  // Agora cada sessão é uma propriedade própria: cada execução escreve só a SUA
+  // chave, então não existe mais read-modify-write compartilhado e nenhum lock
+  // é necessário.
+  //
+  // Por que PropertiesService e não CacheService: a trigger precisa *enumerar*
+  // as sessões, e o CacheService não lista chaves — só lê por chave conhecida.
+  // `getProperties()` devolve tudo, o que torna a varredura por prefixo viável.
+  PREFIXO_SESSAO: 'sessao_ativa_',
+
   /**
-   * Registra o número na lista de sessões ativas de cadastro.
+   * Marca o número como tendo uma sessão de cadastro em andamento.
    * Usada pela trigger para identificar sessões que podem ter sido abandonadas.
-   * Armazenada no CacheService com TTL de 70 min (margem sobre a sessão de 60 min).
+   * O valor é o timestamp de início (útil para inspeção manual das propriedades).
    */
   registrarSessaoAtiva(from) {
-    // Lock: 'sessoes_cadastro_ativas' é uma chave global compartilhada por todos
-    // os usuários. Sem lock, cadastros simultâneos podem sobrescrever a lista
-    // um do outro (read-modify-write não atômico).
-    const lock = LockService.getScriptLock();
     try {
-      lock.waitLock(5000);
-      const cache = CacheService.getScriptCache();
-      const lista = JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
-
-      if (!lista.includes(from)) {
-        lista.push(from);
-        cache.put('sessoes_cadastro_ativas', JSON.stringify(lista), 4200); // 70 min
-      }
+      PropertiesService.getScriptProperties()
+        .setProperty(this.PREFIXO_SESSAO + from, Date.now().toString());
     } catch (e) {
-      console.warn('⚠️ Lock não obtido em registrarSessaoAtiva:', e.message);
-    } finally {
-      try { lock.releaseLock(); } catch (ignore) {}
+      console.warn('⚠️ Erro ao registrar sessão ativa:', e.message);
     }
   },
 
   /**
-   * Remove um número da lista de sessões ativas.
+   * Remove a marca de sessão ativa do número.
    */
   removerSessaoAtiva(from) {
-    const lock = LockService.getScriptLock();
     try {
-      lock.waitLock(5000);
-      const cache = CacheService.getScriptCache();
-      const lista = JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
-      const novaLista = lista.filter(n => n !== from);
-
-      if (novaLista.length > 0) {
-        cache.put('sessoes_cadastro_ativas', JSON.stringify(novaLista), 4200);
-      } else {
-        cache.remove('sessoes_cadastro_ativas');
-      }
+      PropertiesService.getScriptProperties()
+        .deleteProperty(this.PREFIXO_SESSAO + from);
     } catch (e) {
-      console.warn('⚠️ Lock não obtido em removerSessaoAtiva:', e.message);
-    } finally {
-      try { lock.releaseLock(); } catch (ignore) {}
+      console.warn('⚠️ Erro ao remover sessão ativa:', e.message);
     }
   },
 
   /**
-   * Retorna a lista de sessões ativas de cadastro.
+   * Retorna os números com sessão de cadastro ativa.
    * @returns {string[]} Números com sessão ativa
    */
   getSessoesAtivas() {
-    const cache = CacheService.getScriptCache();
-    return JSON.parse(cache.get('sessoes_cadastro_ativas') || '[]');
+    try {
+      const todas = PropertiesService.getScriptProperties().getProperties();
+      return Object.keys(todas)
+        .filter(chave => chave.startsWith(this.PREFIXO_SESSAO))
+        .map(chave => chave.slice(this.PREFIXO_SESSAO.length));
+    } catch (e) {
+      console.warn('⚠️ Erro ao listar sessões ativas:', e.message);
+      return [];
+    }
   }
 
 };

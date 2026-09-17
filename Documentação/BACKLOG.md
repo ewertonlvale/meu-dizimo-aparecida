@@ -4,8 +4,8 @@
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
-**Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências principais:** os itens de carga **BL-21 e BL-22**, ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01) — o BL-24 amenizou o risco, mas não o eliminou. Além deles, BL-16 e BL-25.
+**Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
+**Pendências principais:** **BL-21** — o único item de carga que resta e o que fecha o resto (elimina os dois usos remanescentes do lock global e o teto de execuções simultâneas), ainda aberto **embora o BL-01 já esteja em produção** (ver nota no BL-01). Além dele, BL-16 e BL-25, de manutenção.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
@@ -47,7 +47,7 @@
 | **Concorrência / carga** | | | | |
 | BL-20 | Race condition por usuário em `dados_`/`estado_` (sem lock) | 🟠 | M | ✅ Concluído (mitigação) |
 | BL-21 | Teto de ~30 execuções simultâneas compartilhado por todos os usuários | 🟠 | G | Aberto |
-| BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟠 | M | Aberto — **elevado de 🟡** na auditoria: a correção do BL-20 passou a usar o mesmo lock global em toda gravação de cadastro |
+| BL-22 | Lock global de `sessoes_cadastro_ativas` é gargalo sob contenção | 🟠 | M | ✅ Concluído — lista única virou uma propriedade por sessão; sem lock (17/09) |
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | ✅ Concluído (lock + dupla checagem no cache miss) |
 | BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | ✅ Concluído (`Utils.fetchComRetry`, com política por idempotência) |
 | BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | Aberto — monitorar |
@@ -228,7 +228,7 @@ Usuário Odoo dedicado (não uid 2/admin) com acesso restrito aos modelos `x_*`;
 ### BL-20 — Lock por usuário no estado/dados 🟠 (M) — ✅ concluído, com ressalva
 Proteger o read-modify-write de `dados_${from}`/`estado_${from}` com `LockService.getScriptLock()` chaveado logicamente por usuário (ou serializar por `from`), evitando lost update quando o mesmo usuário envia mensagens concorrentes. Alternativa: usar `getUserLock()` — mas como o execute-as é único, avaliar um lock curto por chave. Aceite: duas mensagens quase simultâneas do mesmo usuário não corrompem os dados do cadastro.
 
-**Auditoria 17/09/2026:** a cobertura está correta — os 25 pontos de escrita do código passam por `salvarCampoEMudarEstado`/`salvarMultiplosCampos`, e nenhum chama `setDadosTemporarios` direto. **Duas ressalvas:** (1) o `_comLock` é *best-effort* — se o lock não vier em 3s ele grava **sem** lock (`StateManager.gs:64-78`), então o lost update ainda é possível justamente sob a contenção que deveria proteger; (2) o Apps Script só oferece lock **global**, então esta correção passou a serializar toda gravação de cadastro na mesma chave disputada pelo BL-22 — ver acoplamento lá.
+**Auditoria 17/09/2026:** a cobertura está correta — os 25 pontos de escrita do código passam por `salvarCampoEMudarEstado`/`salvarMultiplosCampos`, e nenhum chama `setDadosTemporarios` direto. **Duas ressalvas:** (1) o `_comLock` é *best-effort* — se o lock não vier em 3s ele grava **sem** lock (`StateManager.gs:64-78`), então o lost update ainda é possível justamente sob a contenção que deveria proteger; (2) o Apps Script só oferece lock **global**. Com o BL-22 resolvido (17/09), a disputa diminuiu bastante — o índice de sessões saiu do lock —, mas este `_comLock` e o `ehPrimeiroContato` do BL-23 seguem serializando globalmente. Não há como torná-los por usuário: o `CacheService` não tem compare-and-swap e o `getUserLock()` é inútil aqui, já que o `executeAs` é único. A saída é o **BL-21**.
 
 ### BL-21 — Mitigar teto de execuções simultâneas 🟠 (G)
 Reduzir o tempo de cada execução (retirar/reduzir `Utilities.sleep`, adiar trabalho pesado). Avaliar responder 200 à Meta **imediatamente** e processar de forma assíncrona (fila via `CacheService`/planilha + trigger), desacoplando o ACK do webhook do processamento. Aceite: um pico de N mensagens não derruba o webhook; latência estável.
@@ -236,7 +236,19 @@ Reduzir o tempo de cada execução (retirar/reduzir `Utilities.sleep`, adiar tra
 ### BL-22 — Reduzir contenção do lock global 🟠 (M) — *elevado de 🟡 em 17/09/2026*
 Repensar `sessoes_cadastro_ativas`: em vez de uma lista única sob lock global, usar chaves por usuário (`sessao_ativa_${from}`) e varrer por prefixo na trigger, ou aceitar perda eventual sem lock. Aceite: cadastros simultâneos não competem por um lock único.
 
-**Por que subiu de severidade:** quando este item foi escrito, o lock global era disputado apenas por `registrarSessaoAtiva`/`removerSessaoAtiva` (`waitLock(5000)`). A correção do BL-20 passou a tomar **o mesmo lock global** (`waitLock(3000)`) em *toda* gravação de campo do cadastro — ou seja, fechar o BL-20 aumentou a contenção exatamente no gargalo descrito aqui. A correção do BL-23 (17/09) somou um terceiro consumidor, e o único que segura o lock durante **chamadas de rede** ao Odoo, não só durante escrita em cache — embora apenas no cache miss do primeiro contato. Os dois itens estão acoplados e devem ser tratados juntos: a saída real é eliminar a lista global (chaves por usuário) e/ou mover o processamento para fora do webhook (BL-21), o que também dispensaria o lock do BL-20.
+**Por que subiu de severidade:** quando este item foi escrito, o lock global era disputado apenas por `registrarSessaoAtiva`/`removerSessaoAtiva` (`waitLock(5000)`). A correção do BL-20 passou a tomar **o mesmo lock global** (`waitLock(3000)`) em *toda* gravação de campo do cadastro — ou seja, fechar o BL-20 aumentou a contenção exatamente no gargalo descrito aqui. A correção do BL-23 (17/09) somou um terceiro consumidor.
+
+**✅ Corrigido em 17/09/2026 — o índice de sessões não usa mais lock nenhum.** Cada sessão virou uma propriedade própria (`sessao_ativa_<numero>`, valor = timestamp de início) em vez de um array JSON numa chave única. Como cada execução escreve apenas a **sua** chave, o read-modify-write compartilhado deixou de existir e o lock ficou desnecessário — não é o lock que foi afrouxado, é a disputa que sumiu.
+
+**Por que PropertiesService e não CacheService:** a sugestão original deste item era "usar chaves por usuário e varrer por prefixo na trigger" — mas isso **não é possível no CacheService**, que não lista chaves (só lê por chave conhecida, via `get`/`getAll`). A trigger precisa enumerar as sessões, e só `PropertiesService.getProperties()` devolve tudo. As propriedades de sessão convivem com as de configuração no mesmo store, separadas pelo prefixo; `setupProperties()` usa `setProperties(obj)` de um argumento só, que mescla em vez de apagar as demais, então não há conflito.
+
+**Custo aceito:** propriedades não têm TTL, ao contrário do cache. A limpeza vem da própria trigger — toda entrada do índice ou tem sessão viva (tratada pelas regras de tempo e removida aos 60 min) ou não tem cache (persistida e limpa na hora), então nada sobrevive mais que uma rodada de 5 min. Se a trigger for desinstalada, aí sim as entradas acumulam; são ~40 bytes cada, longe da cota de 500 KB, e uma trigger parada já é um problema maior por si só.
+
+**Transitório no deploy:** as sessões que estiverem na lista antiga do cache no momento da publicação ficam órfãs — no máximo alguns usuários em cadastro perdem o aviso de 50 min e o registro da etapa de abandono. Os dados deles expiram normalmente pelo TTL. Não escrevi migração para um estado transitório de uma rodada.
+
+**Testado localmente** (8 asserções, com `PropertiesService` stubado): listagem devolve só os números e nunca as chaves de configuração; número recuperado íntegro (o `slice` do prefixo não corta dígito); valor gravado é timestamp; remoção afeta só a sessão pedida; configuração intacta depois de registrar/remover; remover número inexistente não quebra; registrar o mesmo número duas vezes mantém uma entrada.
+
+**O lock global continua existindo para outros dois usos**, que não são deste item: o `_comLock` do BL-20 (gravação de campo do cadastro) e o `ehPrimeiroContato` do BL-23. Ambos protegem read-modify-write em `CacheService`, que não tem compare-and-swap, e `LockService.getUserLock()` não ajuda porque o `executeAs` é único — todas as execuções são o mesmo usuário. Eliminá-los de vez exige o **BL-21** (tirar o processamento do webhook). Os dois itens estão acoplados e devem ser tratados juntos: a saída real é eliminar a lista global (chaves por usuário) e/ou mover o processamento para fora do webhook (BL-21), o que também dispensaria o lock do BL-20.
 
 ### BL-23 — Idempotência do primeiro contato 🟡 (P)
 Tornar `ehPrimeiroContato`/`registrarContatoBot` idempotente (checar/gravar cache antes da chamada Odoo, ou usar unicidade em `x_name` no Odoo). Aceite: duas mensagens simultâneas de número novo criam **um** `x_contato_bot` e uma boas-vindas.
@@ -244,7 +256,7 @@ Tornar `ehPrimeiroContato`/`registrarContatoBot` idempotente (checar/gravar cach
 **✅ Corrigido em 17/09/2026.** `ehPrimeiroContato` passou a serializar o read-modify-write (buscar → criar → cachear) com `LockService`, com **dupla checagem do cache dentro do lock** — outra execução pode ter registrado o contato enquanto esperávamos. O lock só é disputado no *cache miss* (contato novo ou cache expirado em 6 h); o caminho normal, com cache hit, continua sem lock e sem chamada ao Odoo.
 **Impacto extra que o item não mencionava:** o registro duplicado não causava só duas boas-vindas. `atualizarContatoBot` faz buscar → write e escreve **no primeiro registro que encontra**, então, com duplicatas, o log de cadastro e a etapa de abandono passavam a cair num registro arbitrário dos dois.
 **Decisão de projeto:** se o lock não for obtido em 5 s, a função retorna `false` (pula a boas-vindas) em vez de seguir sem lock — duplicar o registro é pior que atrasar a saudação, e a próxima mensagem do usuário refaz a verificação. É o oposto da escolha feita no `_comLock` do BL-20, onde perder o dado do cadastro seria pior que gravar sem lock.
-**Custo:** este lock é o mesmo lock global do BL-22 e agora é mantido durante chamadas de rede ao Odoo (~1-2 s no pior caso). Só acontece em cache miss, mas reforça que a saída estrutural é o BL-21/BL-22.
+**Custo:** é o mesmo lock global usado pelo `_comLock` do BL-20, e aqui ele é mantido durante chamadas de rede ao Odoo (~1-2 s no pior caso), não só durante escrita em cache. Só acontece em cache miss, mas é hoje — junto com o BL-20 — um dos dois usos restantes do lock global, e eliminá-los exige o BL-21.
 
 ### BL-24 — Retry/backoff em chamadas externas 🟡 (M)
 Adicionar reenvio com backoff para 429/5xx em `Utils._post` (WhatsApp) e nas chamadas Odoo/Vision, com limite de tentativas. Aceite: um 429 transitório não perde a mensagem ao usuário.
@@ -310,5 +322,5 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 3. **Sprint 3 (robustez/carga) — parcialmente feito:** BL-01, BL-09 e BL-11 concluídos. **Restam BL-21, BL-24 e BL-22** — e, como o BL-01 já está no ar, o BL-24 passou a ser o mais urgente do grupo.
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
    ~~**BL-27**~~ ✅ → ~~**reforço do BL-26**~~ ✅ (falta rodar `criarCampoConferenciaPix()` no Odoo) → ~~**BL-17**~~ ⚠️ metade feita (webhook fail-closed; falta o uid dedicado no Odoo) → ~~**BL-23**~~ ✅. **Sprint 4 encerrado em código.**
-5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → **BL-22 + BL-20 juntos** (estão acoplados) → **BL-21** (o item grande; resolve os dois anteriores de vez).
+5. **Sprint 5 (carga):** ~~BL-24~~ ✅ → ~~**BL-22**~~ ✅ → **BL-21**, agora o único caminho para fechar o que resta: é ele que elimina os dois usos remanescentes do lock global (BL-20 e BL-23) e o teto de execuções simultâneas.
 6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.
