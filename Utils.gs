@@ -25,6 +25,16 @@ const Utils = {
   RETRY_MAX_TENTATIVAS: 3,
   RETRY_BASE_MS:        1000,
 
+  // Orçamento TOTAL da chamada, somando tentativas e esperas.
+  //
+  // Limitar só o número de tentativas não basta: uma requisição que *trava* —
+  // em vez de falhar rápido — vira três travadas. Foi o que aconteceu num teste
+  // real: uma consulta ao Odoo pendurou e a execução levou 162s, porque cada
+  // repetição pendurou de novo. Sob lentidão do serviço, que é justamente
+  // quando o retry deveria ajudar, ele triplicava a duração da execução e
+  // consumia o teto de 6 min e o pool de execuções simultâneas mais rápido.
+  RETRY_ORCAMENTO_MS: 30000,
+
   // ── BL-25: consumo da cota diária de UrlFetch ───────────────────────────
   // Ordem de grandeza do teto: ~20 mil chamadas/dia em conta gratuita e
   // ~100 mil em Workspace. Confirme no painel de cotas do projeto e ajuste.
@@ -61,6 +71,7 @@ const Utils = {
     const idempotente = cfg.idempotente === true;
     const rotulo      = cfg.rotulo || 'HTTP';
 
+    const inicio = Date.now();
     let resposta = null;
     let excecao  = null;
 
@@ -79,6 +90,15 @@ const Utils = {
       const repetir = code === 429 || ((excecao || code >= 500) && idempotente);
 
       if (!repetir) break;
+
+      // Falha rápido em vez de insistir numa chamada que já consumiu o
+      // orçamento — ver o comentário em RETRY_ORCAMENTO_MS.
+      const decorrido = Date.now() - inicio;
+      if (decorrido >= this.RETRY_ORCAMENTO_MS) {
+        console.warn(`⏱️ [${rotulo}] Orçamento de ${this.RETRY_ORCAMENTO_MS}ms esgotado ` +
+                     `(${decorrido}ms na tentativa ${tentativa}) — desisto sem repetir.`);
+        break;
+      }
 
       if (tentativa < this.RETRY_MAX_TENTATIVAS) {
         const espera = this.RETRY_BASE_MS * Math.pow(2, tentativa - 1);

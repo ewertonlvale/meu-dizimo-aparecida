@@ -86,9 +86,42 @@ const MediaService = {
     }
   },
 
-  enviarImagemBase64(to, base64Data, caption = '') {
+  /**
+   * Quanto tempo reaproveitamos um media ID já enviado ao WhatsApp. Conservador
+   * de propósito: se o ID expirar antes, o envio falha e caímos no reenvio —
+   * mas é melhor reaproveitar de menos que ficar com um ID morto em cache.
+   */
+  MEDIA_ID_VALIDADE_MS: 7 * 24 * 60 * 60 * 1000,
+
+  /**
+   * Envia uma imagem base64 ao WhatsApp.
+   *
+   * @param {string} to
+   * @param {string} base64Data
+   * @param {string} [caption]
+   * @param {string} [chaveCache] - Quando informado, o media ID do upload é
+   *        guardado e reaproveitado nos próximos envios da MESMA imagem. Use só
+   *        para imagens fixas (o avatar); jamais para conteúdo que muda a cada
+   *        envio, como o QR Code do PIX.
+   */
+  enviarImagemBase64(to, base64Data, caption = '', chaveCache = null) {
     console.log('🖼️ Enviando imagem (base64) para:', to);
     const config = getConfig();
+
+    // Caminho rápido: mesma imagem já enviada antes → pula upload e espera.
+    // O upload do avatar custava ~2s e a espera pós-upload outros 3s, repetidos
+    // a CADA primeiro contato, sempre para a mesma imagem.
+    if (chaveCache) {
+      const id = this._mediaIdEmCache(chaveCache, base64Data);
+      if (id) {
+        console.log('♻️ Reaproveitando media ID em cache');
+        const enviado = this._enviarMensagemMidia(to, 'image', { id, caption }, config);
+        if (enviado) return enviado;
+        // ID expirado ou inválido: descarta e segue para o upload normal.
+        console.warn('⚠️ Envio com media ID em cache falhou — refazendo o upload.');
+        this._descartarMediaId(chaveCache);
+      }
+    }
 
     try {
       const imageBytes = Utilities.base64Decode(base64Data);
@@ -113,16 +146,73 @@ const MediaService = {
       }
 
       console.log(`✅ Upload concluído. Media ID: ${uploadResult.id}`);
+
+      // A espera fica só no caminho de upload novo, que com o cache passa a ser
+      // raro. Mantida em 3s de propósito: é margem para o WhatsApp registrar a
+      // mídia recém-enviada, e encurtá-la sem evidência arriscaria o envio —
+      // o ganho real veio de não passar mais por aqui a cada primeiro contato.
       Utilities.sleep(3000);
 
       const resultado = this._enviarMensagemMidia(to, 'image', { id: uploadResult.id, caption }, config);
       console.log('📤 Resposta envio imagem:', resultado ? resultado.getContentText() : 'null');
+
+      if (chaveCache && resultado) this._guardarMediaId(chaveCache, base64Data, uploadResult.id);
       return resultado;
 
     } catch (error) {
       console.error('❌ Exceção ao enviar imagem:', error.message);
       return null;
     }
+  },
+
+  /**
+   * Media ID guardado para esta imagem, ou null se não houver, se a imagem
+   * mudou, ou se já passou da validade.
+   * @private
+   */
+  _mediaIdEmCache(chaveCache, base64Data) {
+    try {
+      const bruto = PropertiesService.getScriptProperties().getProperty(`media_id_${chaveCache}`);
+      if (!bruto) return null;
+
+      const guardado = JSON.parse(bruto);
+      if (guardado.digital !== this._digitalImagem(base64Data)) return null;   // imagem trocada no Odoo
+      if (Date.now() - guardado.em > this.MEDIA_ID_VALIDADE_MS) return null;
+
+      return guardado.id;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  /** @private */
+  _guardarMediaId(chaveCache, base64Data, id) {
+    try {
+      PropertiesService.getScriptProperties().setProperty(
+        `media_id_${chaveCache}`,
+        JSON.stringify({ id, digital: this._digitalImagem(base64Data), em: Date.now() })
+      );
+    } catch (e) {
+      console.warn('⚠️ Não consegui guardar o media ID:', e.message);
+    }
+  },
+
+  /** @private */
+  _descartarMediaId(chaveCache) {
+    try {
+      PropertiesService.getScriptProperties().deleteProperty(`media_id_${chaveCache}`);
+    } catch (e) { /* nada a fazer */ }
+  },
+
+  /**
+   * Impressão digital barata da imagem: tamanho + um trecho do início. Serve só
+   * para detectar que a imagem mudou — calcular hash de um base64 grande
+   * custaria mais do que o upload que estamos tentando evitar.
+   * @private
+   */
+  _digitalImagem(base64Data) {
+    const texto = String(base64Data);
+    return `${texto.length}:${texto.substring(0, 32)}`;
   },
 
   /**

@@ -224,10 +224,13 @@ const MenuHandler = {
       if (parametros && parametros.x_studio_avatar) {
         // Avatar encontrado no Odoo
         console.log('🖼️ Enviando avatar do Odoo');
+        // 'avatar': o media ID é reaproveitado entre primeiros contatos, em vez
+        // de subir a mesma imagem de novo a cada pessoa nova (ver BL-21).
         MediaService.enviarImagemBase64(
-          from, 
+          from,
           parametros.x_studio_avatar,
-          '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛'
+          '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛',
+          'avatar'
         );
     }
 
