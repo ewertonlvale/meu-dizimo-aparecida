@@ -4,7 +4,7 @@
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](ANALISE-GERAL.md)) + análise de concorrência/carga.
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
-**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`; BL-09 e BL-11 também fechados. BL-27 (aberto e corrigido em 17/09). Pendências principais: reforço do BL-26 (campo estruturado), BL-17 (segurança) e os itens de carga BL-21/BL-22/BL-23/BL-24 — estes últimos ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01). ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
+**Progresso:** Sprint 1 (BL-02, BL-14, BL-26) e Sprint 2 (BL-05, BL-06, BL-07, BL-08, BL-10, BL-20) concluídas na `main`; BL-09 e BL-11 também fechados. BL-26 e BL-27 fechados em 17/09 (o BL-26 exige rodar `criarCampoConferenciaPix()` no Odoo). Pendências principais: BL-17 (segurança) e os itens de carga BL-21/BL-22/BL-23/BL-24 — estes últimos ainda abertos **embora o BL-01 já esteja em produção** (ver nota no BL-01). ⚠️ As correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 
 ## Legenda
@@ -27,7 +27,7 @@
 | BL-02 | Confirmação falsa de devolução quando registro no Odoo falha | 🔴 | P | ✅ Concluído |
 | BL-03 | Sessão promete 60 min mas expira em 15 (valores de teste) | 🔴 | P | ✅ Concluído (60 min; aviso em 50) |
 | BL-04 | Lista de comunidades estoura limite de 10 rows do WhatsApp | 🔴 | P | ✅ Concluído (paginação "Ver mais") |
-| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ⚠️ Parcial — conferência implementada, mas a marca fica só em texto no `x_name`; sem campo estruturado (auditoria 17/09) |
+| BL-26 | Comprovante não é validado contra a chave PIX/destinatário da comunidade | 🔴 | M | ✅ Concluído — campo estruturado `x_studio_conferencia_pix` + alerta visível ao coordenador (17/09). ⚠️ Requer rodar `criarCampoConferenciaPix()` no Odoo |
 | BL-27 | Fallback de PDF aceita qualquer arquivo como comprovante (contorna o BL-26) | 🔴 | P | ✅ Concluído — fallback removido; PDF ilegível pede reenvio e não registra nada |
 | BL-05 | Devoluções do bot podem não aparecer em "Pendentes" (comunidade não gravada) | 🟠 | P | ✅ Fechado — `x_studio_comunidade` é related de `x_studio_dizimista.x_studio_comunidade` (stored/readonly); confirmado no schema e em produção |
 | BL-06 | Parse de valor mensal quebra com separador de milhar | 🟠 | P | ✅ Concluído |
@@ -87,7 +87,16 @@
 **Aceite:** um comprovante cuja chave de destino ≠ chave da comunidade não é confirmado como sucesso; cai em revisão manual com mensagem honesta ao usuário.
 
 **Estado atual (auditoria 17/09/2026) — ⚠️ parcial, abaixo do próprio critério de aceite.** O que existe funciona: `ComprovanteHandler._conferirChave` (linha 156) compara a chave extraída com `x_studio_chave_pix` da comunidade, normalizando e-mail e dígitos, e a mensagem ao usuário deixa de prometer confirmação quando não confere (fala em "conferência da secretaria"). **O que falta:** `OdooService.registrarDevolucao` grava `x_studio_status: 'Pendente'` para **todas** as devoluções — conferidas ou não. O único marcador de divergência é um sufixo de texto concatenado ao `x_name` (`⚠️ CONFERIR: ...`). Como tudo já nasce "Pendente", o status não carrega sinal algum e o coordenador **não tem campo filtrável** para separar os comprovantes suspeitos; depende de alguém ler o nome do registro.
-**Correção pendente:** criar um campo estruturado em `x_devolucao` (ex.: `x_studio_conferencia_pix` = `ok` | `divergente` | `ausente`, ou um booleano `x_studio_requer_conferencia`) gravado por `registrarDevolucao`, e filtrar/destacar por ele na visão do coordenador. Manter o sufixo no `x_name` como redundância visual.
+**✅ Corrigido em 17/09/2026.** Ao investigar, o problema era **pior que o descrito**: o marcador não era só difícil de filtrar, era **invisível no próprio fluxo do bot**. `_listarPendentes` monta as linhas só com nome, valor e data — nunca com o `x_name` — e a tela de detalhe busca `x_name` mas não o exibe. Ou seja, o coordenador apertava "✅ Confirmar" sem nenhum sinal de que a chave não conferia; a marca só existia para quem abrisse o Odoo.
+
+O que foi feito:
+1. **Campo estruturado** `x_devolucao.x_studio_conferencia_pix` (char), com os valores `ok` | `divergente` | `ausente` | `sem_referencia`, gravado por `registrarDevolucao`. Criado pela função idempotente **`criarCampoConferenciaPix()`** em `SetupCamposFamilia.gs`, seguindo o padrão `ir.model.fields` já usado pela funcionalidade de família. **É preciso rodá-la uma vez no editor do Apps Script.**
+2. **Degradação segura:** `OdooService._temCampoConferenciaPix()` checa o schema uma vez (cache de 6 h; 5 min enquanto ausente) e só grava/consulta o campo se ele existir. Sem isso, um deploy feito antes do setup faria **toda** devolução falhar — uma devolução perdida é pior que um aviso ausente.
+3. **Visibilidade para o coordenador:** a lista de pendentes prefixa `⚠️` no nome e `CONFERIR •` na descrição; a tela de detalhe mostra o motivo por extenso (`⚠️ Confira antes de confirmar: ...`) logo acima dos botões de baixa.
+4. **Correção de precisão:** `sem_referencia` (comunidade sem chave PIX cadastrada) antes era rotulado como "chave não identificada no comprovante", culpando o arquivo do dizimista por uma falha de cadastro da comunidade. Agora tem texto próprio.
+5. O sufixo no `x_name` foi mantido como redundância visível no backend.
+
+**Observação:** devoluções criadas antes desta mudança ficam sem valor no campo e não exibem alerta — não há como saber retroativamente se a chave conferia, e marcá-las como `ok` seria mentira.
 
 ### BL-27 — Fallback de PDF aceita qualquer arquivo 🔴 (P) — **descoberto na auditoria de 17/09/2026**
 **Arquivo:** `ComprovanteHandler.gs:99-119`
@@ -265,6 +274,6 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 2. ~~**Sprint 2 (médios):** BL-05, BL-06, BL-07, BL-08, BL-20, BL-10.~~ ✅ concluído.
 3. **Sprint 3 (robustez/carga) — parcialmente feito:** BL-01, BL-09 e BL-11 concluídos. **Restam BL-21, BL-24 e BL-22** — e, como o BL-01 já está no ar, o BL-24 passou a ser o mais urgente do grupo.
 4. **Sprint 4 (fechar a integridade do comprovante — prioridade atual):**
-   ~~**BL-27**~~ ✅ → **reforço do BL-26** (campo estruturado de conferência) → **BL-17** (segurança do webhook) → **BL-23** (quick win de concorrência).
+   ~~**BL-27**~~ ✅ → ~~**reforço do BL-26**~~ ✅ (falta rodar `criarCampoConferenciaPix()` no Odoo) → **BL-17** (segurança do webhook) → **BL-23** (quick win de concorrência).
 5. **Sprint 5 (carga):** BL-24 **antes do próximo ciclo mensal de notificações** → BL-22 + BL-20 juntos (estão acoplados) → BL-21 (o item grande; resolve os dois anteriores de vez).
 6. **Contínuo:** BL-12, BL-13, BL-15 ✅ · BL-16, BL-25 pendentes.

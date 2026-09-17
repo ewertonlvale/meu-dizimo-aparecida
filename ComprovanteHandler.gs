@@ -191,8 +191,8 @@ const ComprovanteHandler = {
     }
 
     // Conferência de chave (uma vez, contra a comunidade do responsável).
-    let conferido = false;
-    let observacao = '';
+    let conferido   = false;
+    let conferencia = '';
     if (responsavel) {
       let chaveEsperada = null;
       try {
@@ -201,12 +201,9 @@ const ComprovanteHandler = {
       } catch (e) {
         console.warn('⚠️ [Família] Não obtive a chave da comunidade:', e.message);
       }
-      const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
-      conferido = conf.conferido;
-      observacao = conferido ? '' :
-        (conf.motivo === 'divergente'
-          ? '⚠️ CONFERIR: chave do comprovante diverge da comunidade'
-          : '⚠️ CONFERIR: chave não identificada no comprovante');
+      const conf  = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+      conferido   = conf.conferido;
+      conferencia = conf.motivo;
     }
 
     // Cria uma devolução por membro (valor = valor do membro).
@@ -221,7 +218,7 @@ const ComprovanteHandler = {
             tipo:  resultado.dados && resultado.dados.tipo
           };
           const devId = OdooService.registrarDevolucao(
-            m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, observacao
+            m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, conferencia
           );
           if (devId) registrados.push(m.nome);
         } catch (e) {
@@ -386,17 +383,12 @@ const ComprovanteHandler = {
         conferido = conf.conferido;
         console.log(`🎯 [_tratarResultado] Conferência de chave: ${conferido ? 'OK' : 'PENDENTE'} (${conf.motivo})`);
 
-        const observacao = conferido ? '' :
-          (conf.motivo === 'divergente'
-            ? '⚠️ CONFERIR: chave do comprovante diverge da comunidade'
-            : '⚠️ CONFERIR: chave não identificada no comprovante');
-
         devolucaoId = OdooService.registrarDevolucao(
           dizimista.id,
           resultado.dados,
           resultado.arquivoOriginalBase64,
           tipoComprovante,
-          observacao
+          conf.motivo
         );
         console.log('🎯 [_tratarResultado] ✅ Devolução registrada! ID:', devolucaoId);
       } catch (e) {
