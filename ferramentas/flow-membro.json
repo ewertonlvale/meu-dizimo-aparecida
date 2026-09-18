@@ -15,8 +15,8 @@
           "__example__": "Rua das Flores, 123, Centro"
         },
         "dia_padrao": {
-          "type": "string",
-          "__example__": "10"
+          "type": "number",
+          "__example__": 10
         }
       },
       "layout": {
