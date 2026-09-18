@@ -245,22 +245,30 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
-### BL-32 — Nono dígito: mensagem aceita e nunca entregue 🔴 (M) — **descoberto testando o Flow em 18/09/2026** — ⚠️ parcial
-**Arquivos:** `Utils.gs` (aviso) · `NotificacaoHandler.gs` e dados do Odoo (exposição real)
+### BL-32 — Nono dígito: mensagem aceita e nunca entregue 🔴 (M) — **descoberto testando o Flow em 18/09/2026** — ⚠️ parcial, por limite da API
+**Arquivos:** `Utils.gs` · `Webhook.gs` · `AuditoriaNumeros.gs` (novo)
 
 **O que aconteceu.** O envio para `5586988521231` voltou **HTTP 200** e a mensagem nunca chegou. O WhatsApp daquele aparelho é `558688521231` — **sem o 9** depois do DDD. Trocado o número, o formulário chegou na hora.
 
-**Por que é grave.** A Meta aceita os dois formatos e devolve 200 nos dois. Não há erro, não há exceção, o contador de mensagens conta como enviada. Só o `wa_id` da resposta (e o callback de entrega do BL-31) revelam a diferença. É a pior forma de falha: silenciosa e com todos os sinais de sucesso.
+**Por que é grave.** A Meta aceita os dois formatos e devolve 200 nos dois. Não há erro, não há exceção, e o contador conta como enviada. É a pior forma de falha: silenciosa e com todos os sinais de sucesso.
+
+**A regra, e o limite dela.** Nos DDDs **11–19, 21, 22, 24, 27 e 28** o `wa_id` mantém o 9 — são as regiões que receberam o nono dígito antes de o WhatsApp chegar. Nos demais, contas antigas ficaram registradas com os 8 dígitos de então. Mas **é heurística**: uma conta criada depois da mudança mantém o 9 em qualquer DDD.
+
+**Não há atalho.** A Cloud API **não tem endpoint para validar um número**; o `contacts` do On-Premises foi descontinuado e, mesmo lá, respondia "válido" para qualquer entrada. A única fonte exata do `wa_id` é uma mensagem **recebida** daquele número.
 
 **Onde há risco e onde não há.**
-- **Não há** no cadastro pelo bot: o número vem do `from` do webhook, que já é o `wa_id` canônico. Quem se cadastrou conversando está correto no Odoo.
-- **Há** em todo número **digitado**: `NUMERO_TESTE`, contato preenchido à mão no Odoo pela secretaria, e — o que importa de verdade — o **lembrete mensal** para esses contatos. Um lembrete que nunca chega hoje não deixa rastro nenhum.
+- **Não há** no cadastro pelo bot: o número vem do `from` do webhook, que já é canônico.
+- **Há** em todo número **digitado** — e o envio exposto é o **lembrete mensal**, justamente o que ninguém acompanha.
 
-**Feito:** `Utils._conferirDestinatario` avisa quando o `wa_id` da resposta difere do número enviado. Vale para todos os envios do bot, não só o teste.
+**Feito:**
+- `Utils.variantesNumeroBR` devolve as duas formas e o palpite por DDD.
+- Na falha de entrega (BL-31), o log já sugere a outra forma — este é o **único sinal confiável**, porque o envio devolve 200 e o número como veio.
+- `auditarNumerosWhatsApp()` lê o Odoo e separa os números a conferir, marcando quem recebe lembrete. **Só lê.**
+- `Utils._conferirDestinatario` avisa quando a Meta normaliza o número. **Sinal secundário:** quando ela normaliza, a mensagem chega — no caso que originou este item, nada foi avisado ali.
 
-**Não feito, e de propósito:** não há normalização automática. Se o 9 sobra ou falta depende do número, e remover o 9 por regra quebraria justamente os casos em que ele está certo. Corrigir exige olhar os números reais do Odoo.
+**Não feito, e de propósito: não há correção automática.** Trocar por regra estragaria os números em que o 9 está certo, e o estrago seria do mesmo tipo do problema — silencioso. A confirmação é humana, ou vem de um "oi" ao bot.
 
-**Próximo passo sugerido:** varrer `x_studio_whatsapp` no Odoo, enviar (ou consultar) cada número e comparar com o `wa_id` devolvido, gravando o canônico. Fora do escopo deste ciclo.
+**O que fecharia o item:** um campo próprio no `x_dizimista` para o `wa_id` (separado do telefone, que deve continuar sendo o número real), preenchido com o `from` toda vez que a pessoa escreve ao bot, e preferido nos envios. Exige criar o campo no Odoo — mesmo padrão do `criarCampoConferenciaPix`.
 
 **Aceite:** nenhum lembrete mensal falha em silêncio por causa do formato do número.
 

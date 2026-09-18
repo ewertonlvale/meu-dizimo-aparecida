@@ -319,17 +319,19 @@ const Utils = {
    * Avisa quando a Meta resolve o número para um `wa_id` diferente do enviado.
    *
    * BL-32 — O NONO DÍGITO. No Brasil, o WhatsApp de muitos celulares é o número
-   * SEM o 9 depois do DDD, mesmo que o número de telefone o tenha. A Meta
-   * aceita os dois formatos no envio e devolve HTTP 200 nos dois: só o
-   * `wa_id` da resposta diz qual conta realmente recebeu. Enviar para o
-   * formato errado é aceito e nunca chega — sem erro nenhum.
+   * SEM o 9 depois do DDD, mesmo que o telefone o tenha. A Meta aceita os dois
+   * formatos e devolve HTTP 200 nos dois; só um chega.
+   *
+   * ⚠️ ESTA CONFERÊNCIA NÃO BASTA. Ela só dispara quando a Meta normaliza o
+   * número e informa isso no `wa_id` — e quando ela normaliza, a mensagem
+   * chega. No caso que originou o BL-32 a Meta devolveu o número como veio e
+   * a mensagem sumiu, então nada foi avisado aqui. O detector confiável da
+   * não-entrega é o callback de status (BL-31), que chega depois e traz o
+   * motivo. Isto aqui é um segundo sinal, não o principal.
    *
    * Números que chegam pelo webhook já vêm canônicos, então o cadastro pelo
    * bot é seguro. O risco está em número DIGITADO: propriedade de teste,
    * contato preenchido à mão no Odoo, lembrete mensal para esse contato.
-   *
-   * Só registra — não corrige. Descobrir se o 9 sobra ou falta exige os dados
-   * reais, e adivinhar aqui quebraria os números em que o 9 está certo.
    *
    * @private
    */
@@ -347,6 +349,52 @@ const Utils = {
     } catch (e) {
       // Resposta sem JSON esperado não é motivo para falhar um envio bem-sucedido.
     }
+  },
+
+  /**
+   * DDDs em que o `wa_id` MANTÉM o nono dígito.
+   *
+   * São as regiões que receberam o 9 primeiro (São Paulo, Rio, Espírito
+   * Santo): quando o WhatsApp nasceu ali, os números já tinham 9 dígitos. Nos
+   * demais DDDs, contas antigas ficaram registradas com os 8 dígitos de então,
+   * e é esse o `wa_id` até hoje.
+   */
+  DDD_MANTEM_NONO: [11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28],
+
+  /**
+   * Devolve as duas formas possíveis de um celular brasileiro e um palpite.
+   *
+   * ⚠️ `provavel` é HEURÍSTICA, não regra: uma conta criada depois da mudança
+   * mantém o 9 mesmo num DDD fora da lista acima. Serve para priorizar uma
+   * revisão manual, nunca para corrigir sozinho — trocar por regra quebraria
+   * os números em que o 9 está certo.
+   *
+   * A única fonte exata do `wa_id` é uma mensagem RECEBIDA daquele número: o
+   * `from` do webhook é canônico por definição.
+   *
+   * @param {string} numero - Só dígitos, com 55 na frente
+   * @returns {{comNove: string, semNove: string, provavel: string, ddd: number}|null}
+   */
+  variantesNumeroBR(numero) {
+    const so = String(numero || '').replace(/\D/g, '');
+    if (so.indexOf('55') !== 0 || so.length < 12 || so.length > 13) return null;
+
+    const ddd   = parseInt(so.substring(2, 4), 10);
+    const resto = so.substring(4);
+
+    let comNove, semNove;
+    if (resto.length === 9 && resto.charAt(0) === '9') {
+      comNove = so;
+      semNove = `55${so.substring(2, 4)}${resto.substring(1)}`;
+    } else if (resto.length === 8) {
+      comNove = `55${so.substring(2, 4)}9${resto}`;
+      semNove = so;
+    } else {
+      return null;   // Não é celular no formato esperado (fixo, por exemplo).
+    }
+
+    const mantem = this.DDD_MANTEM_NONO.indexOf(ddd) >= 0;
+    return { comNove, semNove, ddd, provavel: mantem ? comNove : semNove };
   },
 
   /**
