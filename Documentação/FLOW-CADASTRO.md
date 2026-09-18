@@ -168,6 +168,12 @@ escondido no `details`. Quem sabe o estado do Flow é a Meta, e ele muda lá sem
 avisar ninguém aqui, então `enviarFlowCadastro` repete o envio uma vez no outro
 modo em vez de falhar. Não é preciso saber em que estado o Flow está.
 
+⚠️ **Ler o log com isso em mente.** Quando a troca de modo acontece, o log traz
+um `❌ [WhatsApp] Envio falhou (HTTP 400)` da primeira tentativa **seguido de**
+um `ℹ️ [Flow] A Meta recusou o modo…` e do envio bem-sucedido. O ❌ sozinho é
+que indica problema de verdade — e aí o motivo está no `details` dele, não na
+mensagem genérica de cima.
+
 Duas restrições que costumam ser confundidas com bug:
 
 - **Enquanto** o Flow está em rascunho, ele **só abre para números com papel na
