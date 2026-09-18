@@ -155,8 +155,35 @@ function _registrarStatusEntrega(statuses) {
       // `message` costumam ser genéricos.
       const detalhe = (e.error_data && e.error_data.details) || e.message || '';
       console.error(`❌ [Entrega] ${st.id} FALHOU — código ${e.code}: ${e.title || ''} ${detalhe}`.trim());
+
+      // BL-32: este é o ponto em que o nono dígito se revela, e é o único
+      // sinal confiável — a resposta do envio devolve 200 e o número como
+      // veio. Sugerir aqui a outra forma poupa a investigação inteira.
+      _sugerirOutroNumero(st.recipient_id);
     });
   });
+}
+
+/**
+ * Numa falha de entrega, aponta a outra forma possível do número (BL-32).
+ *
+ * Silencioso quando não há alternativa plausível: um número estrangeiro ou um
+ * fixo não têm variante de nono dígito, e sugerir qualquer coisa ali só
+ * atrapalharia quem está lendo o log atrás da causa real.
+ *
+ * @private
+ */
+function _sugerirOutroNumero(destinatario) {
+  if (!destinatario) return;
+
+  const v = Utils.variantesNumeroBR(destinatario);
+  if (!v) return;
+
+  const enviado = String(destinatario).replace(/\D/g, '');
+  const outro   = enviado === v.comNove ? v.semNove : v.comNove;
+
+  console.error(`   ↳ [BL-32] Tente ${outro} (a mesma linha sem/com o nono dígito). ` +
+                `No DDD ${v.ddd}, o wa_id costuma ser ${v.provavel}.`);
 }
 
 function _processarMensagemWebhook(message) {
