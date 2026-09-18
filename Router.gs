@@ -140,8 +140,35 @@ const Router = {
         }
       }
 
-      MenuHandler.menuPrincipal(from);
+      // BL-28: cair aqui significa que a seleção não valia para o estado atual
+      // — quase sempre um toque numa lista ANTIGA, que o WhatsApp mantém
+      // clicável. Mandar para o menu apagaria um cadastro em andamento sem
+      // uma palavra. Se há cadastro, avisamos e repetimos a pergunta.
+      this._interativoForaDeContexto(from, `lista "${itemId}"`);
     }
+  },
+
+  /**
+   * Trata uma resposta interativa que não valia para o estado atual.
+   *
+   * Com cadastro em andamento, o cadastro VENCE: o toque é descartado e o
+   * passo atual é repetido. Sem cadastro, é o menu de sempre.
+   *
+   * @private
+   */
+  _interativoForaDeContexto(from, oQue) {
+    const estado = StateManager.getEstado(from);
+
+    if (ESTADOS_CADASTRO.includes(estado)) {
+      console.log(`↩️ [BL-28] ${oQue} fora de contexto em ${estado} — cadastro preservado`);
+      Utils.enviarSimples(from,
+        'Essa opção era de uma etapa anterior. 😊\n\n' +
+        'Seu cadastro continua de onde parou — é só responder à pergunta abaixo.'
+      );
+      if (CadastroHandler.reapresentarPasso(from)) return;
+    }
+
+    MenuHandler.menuPrincipal(from);
   },
 
   _rotearBotao(from, buttonId) {
@@ -193,6 +220,7 @@ const Router = {
       case 'btn_dia_mesmo':          CadastroHandler.usarDiaDoResponsavel(from);      break;
       case 'btn_dia_outro':          CadastroHandler.solicitarDiaDigitado(from);      break;
       case 'btn_foto_pular_membro':  CadastroHandler.pularFotoMembro(from);           break;
+      case 'btn_foto_pular':         CadastroHandler.pularFoto(from);                 break;
 
       // --- Devolução ---
       case 'btn_ja_sou_dizimista':   DevolucaoHandler.verificarDizimista(from); break;
@@ -233,8 +261,10 @@ const Router = {
       case 'btn_voltar_pendentes':  RelatorioHandler.voltarPendentes(from);  break;
 
       default:
+        // BL-28: mesmo raciocínio do list_reply. Um botão desconhecido quase
+        // sempre é um botão ANTIGO, de uma etapa que já passou.
         console.log(`⚠️ Botão desconhecido: ${buttonId}`);
-        MenuHandler.menuPrincipal(from);
+        this._interativoForaDeContexto(from, `botão "${buttonId}"`);
     }
   },
 
@@ -291,6 +321,19 @@ const Router = {
     if (emCadastro) {
       StateManager.verificarExpiracaoSessao(from, estado);
       StateManager.appendLog(from, texto);
+    }
+
+    // BL-33: quem recebeu o formulário e escreveu em vez de preencher. Pode
+    // ter desistido, pode estar num aparelho que não o renderiza, pode não ter
+    // visto o botão. Não é caso de menu: a pessoa pediu para se cadastrar e
+    // continua querendo — só não pelo formulário. Segue por conversa.
+    if (estado === ESTADOS.AGUARDANDO_FLOW_CADASTRO) {
+      console.log(`↩️ [Flow] ${from} escreveu em vez de preencher — caindo para a conversa`);
+      Utils.enviarSimples(from,
+        'Sem problema, podemos fazer o cadastro por aqui mesmo, passo a passo. 💛'
+      );
+      CadastroHandler.confirmarNumero(from);
+      return;
     }
 
     switch (estado) {

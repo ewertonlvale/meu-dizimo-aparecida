@@ -75,9 +75,19 @@ O Flow **troca a coleta, não a gravação**: o resumo e o botão "✅ Confirmar
 são os mesmos de hoje, e quem grava no Odoo continua sendo
 `CadastroHandler.finalizar`.
 
-**Foto de perfil fica fora do formulário.** Quem vier pelo Flow cai direto no
-resumo, sem foto. É deliberado: foto por Flow exigiria tratar upload de mídia,
-e o ganho do Flow está em cortar as mensagens de texto.
+**A foto fica fora do formulário, e vem logo depois.** Por conversa, com opção
+de **pular** — ao contrário do cadastro conversacional, onde ela é obrigatória.
+A diferença é proposital: ali a foto é uma pergunta entre outras, e quem chegou
+até ela já respondeu oito; aqui é a única coisa entre a pessoa e um cadastro
+que ela já preencheu inteiro. Travar nesse ponto seria perder o cadastro pelo
+passo mais dispensável.
+
+**O cadastro de MEMBRO da família continua na conversa.** Ele diverge do
+cadastro normal em cinco pontos (endereço herdado, notificações puladas, dia
+perguntado de outro jeito, foto opcional, `criarMembro` em vez de
+`criarDizimista`), então exigiria um segundo Flow publicado. O ganho do Flow é
+proporcional à frequência, e membro é mais raro que cadastro — que já é uma vez
+por pessoa.
 
 ---
 
@@ -200,11 +210,10 @@ celular de teste → `enviarFlowDeTeste()`.
 2. **Guardar o id** na propriedade `FLOW_ID_CADASTRO`. Sem ela,
    `enviarFlowCadastro` devolve `false` e o bot segue pelo cadastro por
    conversa — é o que permite publicar este código antes de existir Flow algum.
-3. **Chamar `FlowHandler.enviarFlowCadastro(from)` no `CadastroHandler.iniciar`**,
-   caindo no fluxo atual quando devolver `false`. *Ainda não foi feito* — está
-   pedido e detalhado no **BL-33**, junto com o interruptor em Properties, o
-   passo de foto após a submissão e a questão em aberto do cadastro de membro
-   da família.
+3. **Ligar o interruptor:** `ativarFlowCadastro()` no editor do Apps Script.
+   A partir daí `CadastroHandler.iniciar` manda o formulário. Para voltar
+   atrás, `desativarFlowCadastro()` — em segundos, sem apagar o id. Feito no
+   BL-33.
 4. **Testar num aparelho** com `enviarFlowDeTeste()` (seção 4b). O simulador
    cobre o lado do servidor por completo; ele não cobre a renderização do
    formulário nem o comportamento do `DatePicker` no aparelho.
