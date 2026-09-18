@@ -292,6 +292,11 @@ function _processarMensagemWebhook(message) {
 
   console.log(`📱 Mensagem de ${from} (id: ${messageId})`);
 
+  // Freio de gasto. Vem ANTES de tudo — inclusive das boas-vindas e do
+  // primeiro contato — porque cada coisa daqui para baixo pode gerar resposta,
+  // e resposta é o que custa. Mensagem recebida é grátis; a nossa, não.
+  if (Utils.excedeuTaxa(from)) return;
+
   // BL-29: mensagem que chega DEPOIS de outra mais nova, em execuções
   // separadas. Ver `_mensagemForaDeOrdem`.
   if (_mensagemForaDeOrdem(from, message)) return;
