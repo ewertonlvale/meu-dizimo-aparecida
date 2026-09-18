@@ -128,6 +128,22 @@ dois mostra como o formulário se comporta num aparelho — rolagem, teclado
 numérico, o `DatePicker`, o aviso de campo obrigatório. Para isso há três
 caminhos, do mais barato ao mais fiel:
 
+### Limites que o validador do Flow Builder cobra
+
+O JSON só é aceito depois que o validador passa, e ele tem limites que não estão
+escritos no arquivo:
+
+| Onde | Limite |
+|---|---|
+| `label` de qualquer componente | **20 caracteres** — "para evitar truncamento em telas diferentes" |
+| `helper-text` | 80 caracteres |
+| `title` da tela | 30 caracteres |
+
+O limite de 20 é o que pega: um rótulo natural em português como
+"Quer receber lembrete mensal?" estoura. A saída é encurtar o `label` e mandar o
+detalhe para o `helper-text`, que tem quatro vezes mais espaço — foi o que
+`flow-cadastro.json` faz com o formato da data e a faixa de 1 a 28.
+
 **1. Preview do Flow Builder.** No WhatsApp Manager → Flows, o botão *Preview*
 abre o formulário num telefone simulado, com troca de iOS/Android e claro/escuro.
 Não envolve o bot: serve para conferir layout e validações declaradas.

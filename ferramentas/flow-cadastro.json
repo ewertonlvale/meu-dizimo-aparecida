@@ -51,21 +51,22 @@
               {
                 "type": "TextInput",
                 "name": "nome_usual",
-                "label": "Como quer ser chamado(a)",
+                "label": "Como chamar você",
                 "input-type": "text",
                 "required": true,
                 "min-chars": 2,
-                "max-chars": 40
+                "max-chars": 40,
+                "helper-text": "Apelido ou nome de preferência"
               },
               {
                 "type": "TextInput",
                 "name": "data_nascimento",
-                "label": "Nascimento (DD/MM/AAAA)",
+                "label": "Nascimento",
                 "input-type": "text",
                 "required": true,
                 "min-chars": 8,
                 "max-chars": 10,
-                "helper-text": "Exemplo: 15/03/1990"
+                "helper-text": "Formato DD/MM/AAAA. Exemplo: 15/03/1990"
               },
               {
                 "type": "TextArea",
@@ -86,7 +87,7 @@
               {
                 "type": "RadioButtonsGroup",
                 "name": "notificacao",
-                "label": "Quer receber lembrete mensal?",
+                "label": "Receber lembrete?",
                 "required": true,
                 "data-source": [
                   { "id": "sim", "title": "Sim" },
@@ -96,10 +97,10 @@
               {
                 "type": "TextInput",
                 "name": "dia_preferido",
-                "label": "Dia do lembrete (1 a 28)",
+                "label": "Dia do lembrete",
                 "input-type": "number",
                 "required": false,
-                "helper-text": "Preencha só se escolheu Sim acima."
+                "helper-text": "De 1 a 28. Preencha só se escolheu Sim acima."
               },
               {
                 "type": "Footer",
