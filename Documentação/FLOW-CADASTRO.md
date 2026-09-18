@@ -181,6 +181,10 @@ Duas restrições que costumam ser confundidas com bug:
   botão aparece mas não abre. Depois de publicado, abre para qualquer um.
 - Vale a **janela de 24 h**: o número precisa ter mandado alguma mensagem ao bot
   nas últimas 24 horas, senão a Meta recusa o envio.
+- **O número precisa ser o `wa_id`, não o telefone.** No Brasil, o WhatsApp de
+  muitos celulares é o número **sem o 9** depois do DDD. A Meta aceita os dois
+  e devolve 200 nos dois; só um deles chega. Foi exatamente isso que segurou o
+  primeiro teste deste Flow — ver BL-32.
 
 Ordem prática: criar e **salvar** o Flow no WhatsApp Manager (sem publicar) →
 `adicionarPropriedade('FLOW_ID_CADASTRO', '<id>')` → mandar "oi" ao bot pelo

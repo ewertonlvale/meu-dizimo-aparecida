@@ -245,6 +245,27 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
+### BL-32 — Nono dígito: mensagem aceita e nunca entregue 🔴 (M) — **descoberto testando o Flow em 18/09/2026** — ⚠️ parcial
+**Arquivos:** `Utils.gs` (aviso) · `NotificacaoHandler.gs` e dados do Odoo (exposição real)
+
+**O que aconteceu.** O envio para `5586988521231` voltou **HTTP 200** e a mensagem nunca chegou. O WhatsApp daquele aparelho é `558688521231` — **sem o 9** depois do DDD. Trocado o número, o formulário chegou na hora.
+
+**Por que é grave.** A Meta aceita os dois formatos e devolve 200 nos dois. Não há erro, não há exceção, o contador de mensagens conta como enviada. Só o `wa_id` da resposta (e o callback de entrega do BL-31) revelam a diferença. É a pior forma de falha: silenciosa e com todos os sinais de sucesso.
+
+**Onde há risco e onde não há.**
+- **Não há** no cadastro pelo bot: o número vem do `from` do webhook, que já é o `wa_id` canônico. Quem se cadastrou conversando está correto no Odoo.
+- **Há** em todo número **digitado**: `NUMERO_TESTE`, contato preenchido à mão no Odoo pela secretaria, e — o que importa de verdade — o **lembrete mensal** para esses contatos. Um lembrete que nunca chega hoje não deixa rastro nenhum.
+
+**Feito:** `Utils._conferirDestinatario` avisa quando o `wa_id` da resposta difere do número enviado. Vale para todos os envios do bot, não só o teste.
+
+**Não feito, e de propósito:** não há normalização automática. Se o 9 sobra ou falta depende do número, e remover o 9 por regra quebraria justamente os casos em que ele está certo. Corrigir exige olhar os números reais do Odoo.
+
+**Próximo passo sugerido:** varrer `x_studio_whatsapp` no Odoo, enviar (ou consultar) cada número e comparar com o `wa_id` devolvido, gravando o canônico. Fora do escopo deste ciclo.
+
+**Aceite:** nenhum lembrete mensal falha em silêncio por causa do formato do número.
+
+---
+
 ## Itens baixos / manutenção
 
 ### BL-12 — `ASSETS` não declarado 🟡 (P)
