@@ -5,7 +5,8 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Pendências:** **BL-28** e **BL-29**, ambos abertos em 17/09 e descobertos no teste de carga. O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
+**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude).
+**Pendências:** **BL-28**, **BL-29** e **BL-33**. Os dois primeiros abertos em 17/09 e descobertos no teste de carga; o BL-33 é pedido de 18/09, não iniciado. O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 **Escopo deste arquivo:** é um **registro de trabalho** — o que foi encontrado, decidido e por quê. Para *como o sistema funciona hoje* e as regras a respeitar ao mexer no código (armazenamento, chamadas externas, concorrência, publicação), veja **[ARQUITETURA.md](ARQUITETURA.md)**.
@@ -54,6 +55,11 @@
 | BL-23 | Duplicação de `x_contato_bot` em primeiro contato simultâneo | 🟡 | P | ✅ Concluído (lock + dupla checagem no cache miss) |
 | BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | ✅ Concluído (`Utils.fetchComRetry`, com política por idempotência) |
 | BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | ✅ Concluído — contagem diária + alerta em 60%/80% (17/09) |
+| **WhatsApp Flow (18/09)** | | | | |
+| BL-30 | Cadastro por WhatsApp Flow — 1 execução de coleta no lugar de 9 | 🟠 | M | ⚠️ Parcial — Flow publicado e testado em aparelho real; a ENTRADA não está ligada (ver BL-33) |
+| BL-31 | Webhook descartava os callbacks de entrega da Meta | 🟠 | P | ✅ Concluído — `_registrarStatusEntrega`; sem isso, "não chegou" ficava sem diagnóstico |
+| BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
+| BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | 📋 Pedido em 18/09 — não iniciado |
 
 ---
 
