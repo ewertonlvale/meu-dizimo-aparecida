@@ -16,6 +16,7 @@ Google Cloud Vision (OCR dos comprovantes).
 | [Backlog](Documenta%C3%A7%C3%A3o/BACKLOG.md) | Itens de trabalho, o que já foi corrigido e por quê. Registro histórico |
 | [Funcionalidade Família](Documenta%C3%A7%C3%A3o/FUNCIONALIDADE-FAMILIA.md) | Cadastro de membros e devolução em lote |
 | [Cadastro por WhatsApp Flow](Documenta%C3%A7%C3%A3o/FLOW-CADASTRO.md) | Formulário nativo: viabilidade, simulação e o que falta para ligar |
+| [Fluxos e custo](Documenta%C3%A7%C3%A3o/FLUXOS.md) | Cada fluxo do bot, quantas mensagens custa e onde estão os cortes |
 | [historico/](Documenta%C3%A7%C3%A3o/historico/) | Documentos arquivados, mantidos só como registro — não descrevem o estado atual |
 
 ## Estrutura

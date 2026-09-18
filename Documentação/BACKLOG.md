@@ -63,6 +63,7 @@
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
 | BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
+| BL-37 | Fundir as 4 mensagens dispensáveis da devolução (8 → 4) | 🟠 | P | 📋 A fazer — corta 57% da conta mensal |
 
 ---
 
@@ -418,6 +419,26 @@ Sinais possíveis, do mais para o menos confiável:
 **Recomendação para quando for feito:** começar com **sugestão, não bloqueio automático**. O sistema marca o número como suspeito e registra; a inclusão na lista é humana. Só depois de ver os candidatos reais por um tempo é que dá para saber se algum critério é seguro o bastante para agir sozinho — e esse dado não existe hoje.
 
 **Aceite:** um número na lista não gera resposta nenhuma; nenhum dizimista ativo entra na lista sem decisão humana.
+
+---
+
+### BL-37 — Fundir as quatro mensagens dispensáveis da devolução 🟠 (P) — 📋 **a fazer**
+**Arquivos:** `DevolucaoHandler.gs` (`_enviarDadosPagamento`) · `MediaService.gs` (`enviarQrCode`) · `ComprovanteHandler.gs`
+**Base:** `Documentação/FLUXOS.md`, levantado em 18/09 contando os envios no código.
+
+A devolução custa **8 mensagens** e é o **único fluxo que se repete todo mês** — 500 por mês, contra um cadastro único por pessoa. Cortar uma mensagem aqui vale 500/mês; no cadastro, vale 500 uma vez na vida da paróquia.
+
+**Os quatro cortes, nenhum com perda de informação:**
+1. "Vou te passar os dados" → fundir com a mensagem dos dados. É anúncio do que vem a seguir.
+2. **Imagem do QR Code** → quem paga pelo celular usa o copia-e-cola; o QR serve para ler de outra tela. É o único que tem perda, e pequena.
+3. "⏳ Analisando comprovante..." → feedback de progresso. Sem ela a pessoa espera alguns segundos sem retorno.
+4. Dados extraídos pelo OCR → fundir com a confirmação, que já os repete.
+
+**8 → 4 mensagens.** No cenário de 500 devoluções/mês: de R$ 122,50 para **R$ 52,50/mês** — queda de 57%.
+
+**Ressalva ao corte 3:** é o único que a pessoa *sente*. O OCR leva alguns segundos e o silêncio pode parecer travamento. Vale medir o tempo real antes de tirar — se passar de ~4 s, talvez compense manter.
+
+**Aceite:** uma devolução completa gera 4 mensagens do bot, e nenhuma informação que estava na tela deixou de estar.
 
 ---
 
