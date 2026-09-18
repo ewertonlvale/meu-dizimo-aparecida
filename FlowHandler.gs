@@ -104,10 +104,14 @@ const FlowHandler = {
    * Valida e converte os campos do Flow para o formato de `dados_<from>`.
    *
    * As regras são as MESMAS do CadastroHandler (nome ≥ 3, apelido ≥ 2, data
-   * real e não futura, endereço ≥ 5, valor > 0, dia entre 1 e 28). Elas estão
-   * repetidas aqui, e não reaproveitadas, porque lá cada validação já envia a
-   * mensagem de erro e muda o estado — comportamento que não serve para um
-   * formulário que chega inteiro.
+   * real e não futura, endereço ≥ 5, valor > 0, dia entre 1 e 28). As duas que
+   * já tiveram bug com número de backlog — valor com milhar (BL-06) e data
+   * real (BL-08) — moram em `Utils.parseValorBR` e `Utils.validarDataBR`, e os
+   * dois caminhos chamam as mesmas.
+   *
+   * O que NÃO dá para reaproveitar é o `processarX` do CadastroHandler: lá cada
+   * validação já envia a mensagem de erro e muda o estado, e um formulário que
+   * chega inteiro precisa acumular erros em vez de responder ao primeiro.
    *
    * @returns {{dados: Object, erros: string[]}}
    * @private
@@ -121,9 +125,11 @@ const FlowHandler = {
     if (!comunidadeId) {
       erros.push('Comunidade não informada.');
     } else {
-      dados.comunidadeId   = comunidadeId;
-      dados.comunidadeNome = String(r.comunidade_nome || '').trim() ||
-                             this._nomeDaComunidade(comunidadeId);
+      dados.comunidadeId = comunidadeId;
+      // O Flow devolve só o id — `flow-cadastro.json` não tem como mandar o
+      // rótulo do Dropdown junto. O `||` que havia aqui sugeria um atalho que
+      // nunca acontecia.
+      dados.comunidadeNome = this._nomeDaComunidade(comunidadeId);
     }
 
     // ── Nome e apelido ─────────────────────────────────────────────────────
@@ -146,7 +152,7 @@ const FlowHandler = {
     else dados.endereco = endereco;
 
     // ── Valor mensal ───────────────────────────────────────────────────────
-    const valor = this._valor(r.valor_mensal);
+    const valor = Utils.parseValorBR(r.valor_mensal);
     if (valor === null) erros.push('Valor mensal inválido.');
     else dados.valorMensal = valor;
 
@@ -207,31 +213,10 @@ const FlowHandler = {
       ano = so.substring(4, 8);
     }
 
-    const nDia = parseInt(dia, 10);
-    const nMes = parseInt(mes, 10);
-    const nAno = parseInt(ano, 10);
-    const d    = new Date(nAno, nMes - 1, nDia);
-
-    const existe = d.getFullYear() === nAno && d.getMonth() === nMes - 1 && d.getDate() === nDia;
-    if (!existe || nAno < 1900 || d > new Date()) return null;
+    // Mesma regra do cadastro por conversa (BL-08), num lugar só.
+    if (!Utils.validarDataBR(dia, mes, ano)) return null;
 
     return `${dia}/${mes}/${ano}`;
-  },
-
-  /**
-   * Mesma regra de milhar do `processarValorMensal` (BL-06).
-   * @returns {number|null}
-   * @private
-   */
-  _valor(entrada) {
-    let t = String(entrada || '').replace(/[^\d.,]/g, '');
-    if (t.indexOf(',') >= 0) {
-      t = t.replace(/\./g, '').replace(',', '.');
-    } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
-      t = t.replace(/\./g, '');
-    }
-    const valor = parseFloat(t);
-    return (isNaN(valor) || valor <= 0) ? null : valor;
   },
 
   /**
@@ -241,8 +226,9 @@ const FlowHandler = {
    */
   _nomeDaComunidade(id) {
     try {
-      const achada = (OdooService.listarComunidades() || [])
-        .filter(c => c.id === id)[0];
+      const achada = OdooService.searchRead(
+        'x_comunidade', ['x_name'], [['id', '=', id]], { limit: 1 }
+      )[0];
       return achada ? achada.x_name : `Comunidade ${id}`;
     } catch (e) {
       console.warn('⚠️ [Flow] Não consegui buscar o nome da comunidade:', e.message);
@@ -261,16 +247,18 @@ const FlowHandler = {
    * Sem ela devolve `false` e quem chamou segue pelo cadastro conversacional —
    * é o que permite publicar este código antes de existir Flow nenhum.
    *
-   * @param {string}  from
-   * @param {boolean} [rascunho] - PREFERÊNCIA de modo, não ordem: true tenta a
-   *   versão em rascunho (`mode: 'draft'`), que permite abrir o formulário num
-   *   aparelho antes de publicar o Flow. Se a Meta recusar por causa do estado
-   *   do Flow, o envio se repete no outro modo — ver `_recusouPorModo`.
-   *   Enquanto o Flow está em rascunho, só números com papel na conta da Meta
-   *   (admin, desenvolvedor ou testador) conseguem abrir o formulário.
+   * O modo (`draft`/`published`) não é escolhido por quem chama: quem sabe o
+   * estado do Flow é a Meta. Começamos pelo último modo que funcionou, guardado
+   * em `FLOW_MODO_CADASTRO`, e trocamos quando ela recusar. Assim a requisição
+   * extra custa uma vez por mudança de estado do Flow, não uma por envio.
+   *
+   * Enquanto o Flow está em rascunho, só números com papel na conta da Meta
+   * (admin, desenvolvedor ou testador) conseguem abrir o formulário.
+   *
+   * @param {string} from
    * @returns {boolean} true se o Flow foi enviado.
    */
-  enviarFlowCadastro(from, rascunho) {
+  enviarFlowCadastro(from) {
     const flowId = PropertiesService.getScriptProperties().getProperty('FLOW_ID_CADASTRO');
     if (!flowId) {
       console.log('ℹ️ [Flow] FLOW_ID_CADASTRO não configurado — seguindo pelo cadastro por conversa');
@@ -289,19 +277,19 @@ const FlowHandler = {
     }
     if (!comunidades.length) return false;
 
-    let modo = rascunho ? 'draft' : 'published';
+    const props = PropertiesService.getScriptProperties();
+    let modo = props.getProperty('FLOW_MODO_CADASTRO') || 'published';
     let resposta = this._postarFlow(from, flowId, comunidades, modo);
 
-    // Quem sabe se o Flow está publicado ou em rascunho é a Meta, não este
-    // código: o estado muda lá, sem avisar ninguém aqui. Em vez de exigir que
-    // quem chama acerte o modo — e receba um 131009 quando errar — repetimos
-    // uma vez no outro modo. Vale nos dois sentidos, porque publicar o Flow e
-    // voltá-lo a rascunho são igualmente comuns durante os testes.
+    // O estado do Flow muda na Meta, sem avisar nada aqui. Em vez de exigir que
+    // quem chama acerte o modo — e receba um 131009 quando errar — trocamos e
+    // GUARDAMOS o que funcionou. Antes o palpite errado era refeito do zero a
+    // cada envio, custando duas chamadas à Meta toda vez; agora custa uma vez
+    // por mudança de estado do Flow.
     if (this._recusouPorModo(resposta)) {
-      const outro = modo === 'draft' ? 'published' : 'draft';
-      console.log(`ℹ️ [Flow] A Meta recusou o modo '${modo}' — o Flow está como ` +
-                  `'${outro}'. Reenviando.`);
-      modo = outro;
+      modo = modo === 'draft' ? 'published' : 'draft';
+      console.log(`ℹ️ [Flow] A Meta recusou o modo anterior — o Flow está como ` +
+                  `'${modo}'. Reenviando e guardando.`);
       resposta = this._postarFlow(from, flowId, comunidades, modo);
     }
 
@@ -310,8 +298,10 @@ const FlowHandler = {
                 `(modo ${modo}, ${comunidades.length} comunidades): ` +
                 `${enviou ? 'ok' : 'falhou'}`);
     if (enviou) {
+      props.setProperty('FLOW_MODO_CADASTRO', modo);
       StateManager.setEstado(from, ESTADOS.AGUARDANDO_FLOW_CADASTRO);
-      StateManager.salvarMultiplosCampos(from, { whatsapp: from });
+      // Sem gravar `whatsapp` aqui: `_normalizar` já o põe em `dados` quando a
+      // resposta chega, e esta escrita pagava o lock global à toa.
     }
     return enviou;
   },

@@ -45,29 +45,22 @@ const MediaService = {
    */
   enviarImagemDrive(to, driveFileId, caption = '') {
     console.log('🖼️ Enviando imagem do Drive para:', to);
-    const config = getConfig();
 
     try {
       const imageUrl = `https://drive.google.com/uc?export=download&id=${driveFileId}`;
       
       console.log('imageUrl: ', imageUrl);
 
-      const response = Utils.fetchComRetry(
-        getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
-        {
-          method:      'post',
-          contentType: 'application/json',
-          headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-          payload:     JSON.stringify({
-            messaging_product: 'whatsapp',
-            to,
-            type: 'image',
-            image: { link: imageUrl, caption }
-          }),
-          muteHttpExceptions: true
-        },
-        { idempotente: false, rotulo: 'WhatsApp imagem (link)', mensagem: 'servico' }
-      );
+      const response = Utils._post({
+        messaging_product: 'whatsapp',
+        recipient_type:    'individual',
+        to,
+        type:  'image',
+        image: { link: imageUrl, caption }
+      }, { rotulo: 'WhatsApp imagem (link)' });
+
+      // _post devolve null quando a chamada nem chegou a acontecer.
+      if (!response) return false;
 
       const code = response.getResponseCode();
       const body = response.getContentText();
@@ -115,7 +108,7 @@ const MediaService = {
       const id = this._mediaIdEmCache(chaveCache, base64Data);
       if (id) {
         console.log('♻️ Reaproveitando media ID em cache');
-        const enviado = this._enviarMensagemMidia(to, 'image', { id, caption }, config);
+        const enviado = this._enviarMensagemMidia(to, 'image', { id, caption });
         if (enviado) return enviado;
         // ID expirado ou inválido: descarta e segue para o upload normal.
         console.warn('⚠️ Envio com media ID em cache falhou — refazendo o upload.');
@@ -153,7 +146,7 @@ const MediaService = {
       // o ganho real veio de não passar mais por aqui a cada primeiro contato.
       Utilities.sleep(3000);
 
-      const resultado = this._enviarMensagemMidia(to, 'image', { id: uploadResult.id, caption }, config);
+      const resultado = this._enviarMensagemMidia(to, 'image', { id: uploadResult.id, caption });
       console.log('📤 Resposta envio imagem:', resultado ? resultado.getContentText() : 'null');
 
       if (chaveCache && resultado) this._guardarMediaId(chaveCache, base64Data, uploadResult.id);
@@ -259,7 +252,7 @@ const MediaService = {
         id:       uploadResult.id,
         caption:  caption,
         filename: filename
-      }, config);
+      });
 
       console.log('📤 Resposta envio documento:', resultado ? resultado.getContentText() : 'null');
       return resultado;
@@ -397,7 +390,10 @@ const MediaService = {
     //    EMV longo (antes ele ficava no meio da legenda da imagem).
     //    Sem negrito, crase ou qualquer marcador: eles entrariam na cópia e o
     //    código seria recusado pelo app do banco.
-    Utilities.sleep(1000);   // ordem de chegada das duas mensagens
+    //    Não há espera aqui: quando esta linha executa, o POST da imagem já
+    //    retornou, e dois POSTs sequenciais chegam na ordem em que a Meta os
+    //    recebeu. Era a mesma espera que o BL-21 removeu de outros quatro
+    //    pontos neste ciclo — mantê-la só aqui deixaria a regra ambígua.
     Utils.enviarSimples(to, pixPayload);
   },
 
@@ -502,31 +498,25 @@ const MediaService = {
   // PRIMITIVO DE ENVIO (privado)
   // ==========================================================================
 
-  _enviarMensagemMidia(to, type, mediaPayload, config) {
-    const response = Utils.fetchComRetry(
-      getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
-      {
-        method:      'post',
-        contentType: 'application/json',
-        headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-        payload:     JSON.stringify({
-          messaging_product: 'whatsapp',
-          to,
-          type,
-          [type]: mediaPayload
-        }),
-        muteHttpExceptions: true
-      },
-      { idempotente: false, rotulo: 'WhatsApp mídia (envio)', mensagem: 'servico' }
-    );
+  _enviarMensagemMidia(to, type, mediaPayload) {
+    // Passa por Utils._post em vez de montar o POST aqui: é o que faz a
+    // conferência de destinatário do BL-32 valer também para avatar, QR Code
+    // e PDF de relatório. O parâmetro `config` continua na assinatura porque
+    // os chamadores já o têm em mãos, mas quem usa agora é o _post.
+    const response = Utils._post({
+      messaging_product: 'whatsapp',
+      recipient_type:    'individual',
+      to,
+      type,
+      [type]: mediaPayload
+    }, { rotulo: 'WhatsApp mídia (envio)' });
 
-    if (response.getResponseCode() === 200) {
+    if (response && response.getResponseCode() === 200) {
       console.log('✅ Mídia enviada com sucesso');
       return response;
     }
 
-    console.error('❌ Erro ao enviar mídia:', response.getContentText()); // response.getContentText());
-    return null;
+    return null;   // O _post já registrou o erro.
   }
 
 };

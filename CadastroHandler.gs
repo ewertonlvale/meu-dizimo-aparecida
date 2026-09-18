@@ -223,15 +223,9 @@ const CadastroHandler = {
     const mes = data.substring(2, 4);
     const ano = data.substring(4, 8);
 
-    // BL-08: validar data real (rejeita 31/02), não futura e ano plausível.
-    const nDia = parseInt(dia, 10);
-    const nMes = parseInt(mes, 10);
-    const nAno = parseInt(ano, 10);
-    const d = new Date(nAno, nMes - 1, nDia);
-    const dataReal =
-      d.getFullYear() === nAno && d.getMonth() === nMes - 1 && d.getDate() === nDia;
-
-    if (!dataReal || nAno < 1900 || d > new Date()) {
+    // BL-08: a regra mora em Utils.validarDataBR, porque o Flow precisa dela sem
+    // o envio de mensagem que vem logo abaixo.
+    if (!Utils.validarDataBR(dia, mes, ano)) {
       MenuHandler.campoInvalido(from, 'Data', 'informe uma data de nascimento válida e não futura. Exemplo: 15/03/1990');
       return;
     }
@@ -300,18 +294,10 @@ const CadastroHandler = {
   // ==========================================================================
 
   processarValorMensal(from, texto) {
-    // BL-06: tratar separador de milhar. "1.000,50" → 1000.5 (antes virava 1).
-    // Regra: vírgula presente → ponto é milhar; sem vírgula, ponto+3 dígitos
-    // também é milhar (ex.: "1.000"); ponto isolado (ex.: "50.00") é decimal.
-    let t = String(texto).replace(/[^\d.,]/g, '');
-    if (t.indexOf(',') >= 0) {
-      t = t.replace(/\./g, '').replace(',', '.');
-    } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
-      t = t.replace(/\./g, '');
-    }
-    const valor = parseFloat(t);
+    // BL-06: a regra de milhar mora em Utils.parseValorBR — o Flow usa a mesma.
+    const valor = Utils.parseValorBR(texto);
 
-    if (isNaN(valor) || valor <= 0) {
+    if (valor === null) {
       MenuHandler.campoInvalido(from, 'Valor', 'informe um número válido. Escreva somente o valor. Por exemplo: 50 ou 50,00');
       return;
     }

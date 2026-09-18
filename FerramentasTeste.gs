@@ -134,6 +134,11 @@ function gerarMassaTeste(qtdDizimistas, devolucoesPorDizimista) {
   }
   Logger.log('');
   Logger.log('Para remover tudo depois: limparMassaTeste()');
+
+  // Descarrega o contador: gerar massa queima milhares de chamadas ao Odoo, e
+  // sem isto elas ficavam invisíveis na cota do BL-25 — que é a mesma cota
+  // diária que o bot de verdade usa.
+  Utils.registrarConsumoExterno();
 }
 
 /**
@@ -192,9 +197,13 @@ function limparMassaTeste() {
 
 /**
  * Apaga, em lotes, os registros de um modelo cujo `x_name` começa com o prefixo.
+ * @param {string} model  - Modelo do Odoo
+ * @param {string} rotulo - Palavra usada no log ("dizimista(s)", "contato(s)")
+ * @param {string} [padrao] - Padrão `like` do x_name. Omitido, usa MASSA_PREFIXO.
  * @private
  */
-function _apagarPorPrefixo(model, rotulo) {
+function _apagarPorPrefixo(model, rotulo, padrao) {
+  const like    = padrao || `${MASSA_PREFIXO}%`;
   let removidos = 0;
   const inicio  = Date.now();
 
@@ -207,7 +216,7 @@ function _apagarPorPrefixo(model, rotulo) {
     let registros;
     try {
       registros = OdooService.searchRead(
-        model, ['id'], [['x_name', 'like', `${MASSA_PREFIXO}%`]],
+        model, ['id'], [['x_name', 'like', like]],
         { limit: MASSA_LOTE_EXCLUSAO }
       );
     } catch (e) {
@@ -244,38 +253,12 @@ function limparContatosTeste() {
 
   Logger.log('━━━━━━ [Massa] Limpando contatos do driver de carga ━━━━━━');
 
-  let removidos = 0;
-  const inicio  = Date.now();
-
-  while (true) {
-    if (Date.now() - inicio > MASSA_TEMPO_LIMITE_MS / 2) {
-      Logger.log(`⏱️ Parei no limite de tempo com ${removidos} removido(s).`);
-      break;
-    }
-
-    let registros;
-    try {
-      registros = OdooService.searchRead(
-        'x_contato_bot', ['id'], [['x_name', 'like', `${MASSA_DDD_TESTE}%`]],
-        { limit: MASSA_LOTE_EXCLUSAO }
-      );
-    } catch (e) {
-      Logger.log(`❌ Erro ao buscar contatos: ${e.message}`);
-      break;
-    }
-
-    if (!registros || registros.length === 0) break;
-
-    const ids = registros.map(r => r.id);
-    try {
-      OdooService.unlink('x_contato_bot', ids);
-      removidos += ids.length;
-      Logger.log(`   … ${removidos} contato(s)`);
-    } catch (e) {
-      Logger.log(`❌ Erro ao apagar lote: ${e.message}`);
-      break;
-    }
-  }
+  // O que muda em relação à massa é só o modelo e o padrão de busca. A
+  // paginação por lote e o corte de tempo — a parte sutil, que existe por causa
+  // do teto de 6 min do Apps Script — ficam num lugar só: duas cópias de um
+  // laço que APAGA registros no Odoo é onde um ajuste feito pela metade custa
+  // caro.
+  const removidos = _apagarPorPrefixo('x_contato_bot', 'contato(s)', `${MASSA_DDD_TESTE}%`);
 
   Logger.log(`🗑️ ${removidos} contato(s) de teste removido(s).`);
 }
@@ -382,7 +365,7 @@ function _exigirModoTeste() {
 
 /** Número fictício em faixa que não corresponde a linha real. @private */
 function _telefoneFicticio(i) {
-  return `5599${String(100000000 + i).slice(0, 9)}`;
+  return `${MASSA_DDD_TESTE}${100000000 + i}`;
 }
 
 /** @private */

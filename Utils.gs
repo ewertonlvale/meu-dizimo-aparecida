@@ -166,10 +166,23 @@ const Utils = {
       const shard = Math.floor(Math.random() * this.URLFETCH_SHARDS);
       const mes   = this._mesAtual();
 
-      if (chamadas) this._somar(props, `${this.URLFETCH_PREFIXO}${this._hoje()}_${shard}`, chamadas);
+      // Uma leitura e uma escrita, não uma de cada POR CHAVE. Isto roda no
+      // caminho quente — toda mensagem recebida — e o fluxo típico grava duas
+      // chaves, o disparo em lote grava três: eram 4 a 6 idas ao Properties
+      // onde 2 resolvem. `setProperties(obj)` faz merge; o `true` que apaga
+      // tudo NÃO é usado aqui (ver ARQUITETURA.md, seção 1).
+      const atuais = props.getProperties();
+      const lote   = {};
+      const somar  = (chave, quanto) => {
+        lote[chave] = String((parseInt(atuais[chave], 10) || 0) + quanto);
+      };
+
+      if (chamadas) somar(`${this.URLFETCH_PREFIXO}${this._hoje()}_${shard}`, chamadas);
       // Mensagens são agregadas por MÊS, não por dia: a franquia da Meta é mensal.
-      if (servico)  this._somar(props, `${this.MSG_PREFIXO}${mes}_servico_${shard}`,  servico);
-      if (template) this._somar(props, `${this.MSG_PREFIXO}${mes}_template_${shard}`, template);
+      if (servico)  somar(`${this.MSG_PREFIXO}${mes}_servico_${shard}`,  servico);
+      if (template) somar(`${this.MSG_PREFIXO}${mes}_template_${shard}`, template);
+
+      props.setProperties(lote);
 
       console.log(`📊 [Cota] ${chamadas} chamada(s) externa(s)` +
                   (servico || template
@@ -181,47 +194,108 @@ const Utils = {
     }
   },
 
-  /** Soma `quanto` ao contador da chave. @private */
-  _somar(props, chave, quanto) {
-    const atual = parseInt(props.getProperty(chave), 10) || 0;
-    props.setProperty(chave, String(atual + quanto));
+  /**
+   * Percorre os shards de um contador e devolve o total do período corrente,
+   * podando os períodos vencidos no mesmo passeio.
+   *
+   * Os dois contadores do projeto (chamadas externas por dia, mensagens por
+   * mês) são o mesmo mecanismo com granularidade diferente. Estavam escritos
+   * duas vezes, e as cópias já divergiam — uma usava `startsWith`, a outra
+   * `indexOf(...) !== 0`. Pior: cada uma tinha um `slice` com o tamanho do
+   * período embutido como literal, dependendo do formato montado em
+   * `registrarConsumoExterno`; errar esse número devolve total ZERO, sem erro.
+   *
+   * @param {Object} cfg - { prefixo, tamanho, atual, corte, todas, props }
+   * @param {Function} [classificar] - Recebe (chave, valor) para somas separadas
+   * @returns {number} Total do período corrente
+   * @private
+   */
+  _somarShards(cfg, classificar) {
+    let total = 0;
+    const vencidas = [];
+
+    Object.keys(cfg.todas).forEach(chave => {
+      if (chave.indexOf(cfg.prefixo) !== 0) return;
+
+      const periodo = chave.slice(cfg.prefixo.length, cfg.prefixo.length + cfg.tamanho);
+      if (periodo < cfg.corte) { vencidas.push(chave); return; }   // ISO ordena como texto
+      if (periodo !== cfg.atual) return;
+
+      const valor = parseInt(cfg.todas[chave], 10) || 0;
+      total += valor;
+      if (classificar) classificar(chave, valor);
+    });
+
+    vencidas.forEach(chave => cfg.props.deleteProperty(chave));
+    return total;
+  },
+
+  /**
+   * Escolhe a severidade do log pelo percentual de uso.
+   * @private
+   */
+  _alertar(rotulo, pct, msg, limiteAlto, limiteMedio, explicacao) {
+    if (pct >= limiteAlto)       console.error(`🚨 [${rotulo}] ${msg} — ${explicacao}`);
+    else if (pct >= limiteMedio) console.warn(`⚠️ [${rotulo}] ${msg}`);
+    else                         console.log(`📊 [${rotulo}] ${msg}`);
+  },
+
+  /**
+   * Soma as mensagens do mês corrente, sem log e sem podar.
+   *
+   * Separado de `verificarCotaMensagens` porque uma consulta não deve APAGAR
+   * nada: `verificarConsumoMensagens` (Setup.gs) é um relatório manual e
+   * chamava a versão que remove os meses vencidos.
+   *
+   * @returns {{servico: number, template: number, mes: string}}
+   */
+  somarMensagensDoMes() {
+    const todas = PropertiesService.getScriptProperties().getProperties();
+    const mes   = this._mesAtual();
+    let servico = 0, template = 0;
+
+    Object.keys(todas).forEach(chave => {
+      if (chave.indexOf(this.MSG_PREFIXO) !== 0) return;
+      if (chave.slice(this.MSG_PREFIXO.length, this.MSG_PREFIXO.length + 7) !== mes) return;
+
+      const valor = parseInt(todas[chave], 10) || 0;
+      if (chave.indexOf('_template_') >= 0) template += valor;
+      else                                  servico  += valor;
+    });
+
+    return { servico, template, mes };
   },
 
   /**
    * Soma as mensagens do mês corrente e alerta ao se aproximar da franquia.
    * Roda de carona na trigger de sessões, junto com `verificarCotaUrlFetch`.
-   * Também descarta os contadores de meses antigos.
+   * Também descarta os contadores de meses antigos — por isso um relatório
+   * manual deve usar `somarMensagensDoMes`, que não apaga nada.
    * @returns {{servico: number, template: number}|null}
    */
   verificarCotaMensagens() {
     try {
       const props = PropertiesService.getScriptProperties();
-      const todas = props.getProperties();
       const mes   = this._mesAtual();
-      const corte = this._mesAtual(new Date(Date.now() - this.MSG_MESES_GUARDADOS * 31 * 86400000));
+      let servico = 0, template = 0;
 
-      let servico = 0;
-      let template = 0;
-
-      Object.keys(todas).forEach(chave => {
-        if (chave.indexOf(this.MSG_PREFIXO) !== 0) return;
-
-        const mesDaChave = chave.slice(this.MSG_PREFIXO.length, this.MSG_PREFIXO.length + 7);
-        if (mesDaChave < corte) { props.deleteProperty(chave); return; }   // ISO ordena como texto
-        if (mesDaChave !== mes) return;
-
-        const valor = parseInt(todas[chave], 10) || 0;
+      this._somarShards({
+        props,
+        todas:   props.getProperties(),
+        prefixo: this.MSG_PREFIXO,
+        tamanho: 7,                     // yyyy-MM
+        atual:   mes,
+        corte:   this._mesAtual(new Date(Date.now() - this.MSG_MESES_GUARDADOS * 31 * 86400000))
+      }, (chave, valor) => {
         if (chave.indexOf('_template_') >= 0) template += valor;
         else                                  servico  += valor;
       });
 
       const pct = Math.round((servico / this.MSG_FRANQUIA_SERVICO) * 100);
-      const msg = `${servico} de serviço (~${pct}% da franquia de ${this.MSG_FRANQUIA_SERVICO}) ` +
-                  `e ${template} template(s) em ${mes}`;
-
-      if (pct >= 90)      console.error(`🚨 [Mensagens] ${msg} — acima da franquia a Meta cobra por entrega.`);
-      else if (pct >= 70) console.warn(`⚠️ [Mensagens] ${msg}`);
-      else                console.log(`📊 [Mensagens] ${msg}`);
+      this._alertar('Mensagens', pct,
+        `${servico} de serviço (~${pct}% da franquia de ${this.MSG_FRANQUIA_SERVICO}) ` +
+        `e ${template} template(s) em ${mes}`,
+        90, 70, 'acima da franquia a Meta cobra por entrega.');
 
       return { servico, template };
     } catch (e) {
@@ -230,38 +304,23 @@ const Utils = {
     }
   },
 
-  /** Mês em America/Sao_Paulo no formato yyyy-MM. @private */
-  _mesAtual(data) {
-    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
-  },
-
-  /**
-   * Soma os shards do dia, alerta ao se aproximar da cota e descarta contadores
-   * com mais de 7 dias. Chamado pela trigger de sessões, que já roda a cada
-   * 5 min — não precisa de agendamento próprio.
-   * @returns {number|null} total estimado de hoje
-   */
   verificarCotaUrlFetch() {
     try {
       const props = PropertiesService.getScriptProperties();
-      const todas = props.getProperties();
-      const hoje  = this._hoje();
-      const corte = this._hoje(new Date(Date.now() - 7 * 86400000));
 
-      let total = 0;
-      Object.keys(todas).forEach(chave => {
-        if (!chave.startsWith(this.URLFETCH_PREFIXO)) return;
-        const dia = chave.slice(this.URLFETCH_PREFIXO.length, this.URLFETCH_PREFIXO.length + 10);
-        if (dia === hoje)      total += parseInt(todas[chave], 10) || 0;
-        else if (dia < corte)  props.deleteProperty(chave);   // ISO ordena como texto
+      const total = this._somarShards({
+        props,
+        todas:   props.getProperties(),
+        prefixo: this.URLFETCH_PREFIXO,
+        tamanho: 10,                    // yyyy-MM-dd
+        atual:   this._hoje(),
+        corte:   this._hoje(new Date(Date.now() - 7 * 86400000))
       });
 
       const pct = Math.round((total / this.URLFETCH_COTA_DIARIA) * 100);
-      const msg = `${total} chamada(s) externa(s) hoje (~${pct}% de ${this.URLFETCH_COTA_DIARIA})`;
-
-      if (pct >= 80)      console.error(`🚨 [Cota] ${msg} — risco de bloqueio de chamadas externas hoje.`);
-      else if (pct >= 60) console.warn(`⚠️ [Cota] ${msg}`);
-      else                console.log(`📊 [Cota] ${msg}`);
+      this._alertar('Cota', pct,
+        `${total} chamada(s) externa(s) hoje (~${pct}% de ${this.URLFETCH_COTA_DIARIA})`,
+        80, 60, 'risco de bloqueio de chamadas externas hoje.');
 
       return total;
     } catch (e) {
@@ -280,11 +339,18 @@ const Utils = {
    * Centraliza o envio (antes duplicado em enviarSimples/enviarMenu/enviarLista)
    * e — importante — checa o status code, que antes era ignorado: falhas de
    * envio (token expirado, janela de 24h fechada) passavam despercebidas.
+   * TODO envio do bot passa por aqui — inclusive mídia e template. Isso não é
+   * preferência de estilo: é o que garante que a conferência de destinatário
+   * do BL-32 valha para todos. Quando `_enviarMensagemMidia` e o lembrete
+   * mensal montavam o POST por conta própria, o lembrete — único fluxo que
+   * envia para número gravado — era justamente o que escapava do detector.
+   *
    * @param {Object} payload - Corpo já montado da mensagem WhatsApp
+   * @param {Object} [opcoes] - { mensagem: 'servico'|'template', rotulo }
    * @returns {GoogleAppsScript.URL_Fetch.HTTPResponse|null}
    * @private
    */
-  _post(payload) {
+  _post(payload, opcoes = {}) {
     const config = getConfig();
     try {
       // BL-24: não idempotente — reenviar um 5xx poderia entregar a mesma
@@ -299,7 +365,11 @@ const Utils = {
           payload:     JSON.stringify(payload),
           muteHttpExceptions: true
         },
-        { idempotente: false, rotulo: 'WhatsApp', mensagem: 'servico' }
+        {
+          idempotente: false,
+          rotulo:      opcoes.rotulo   || 'WhatsApp',
+          mensagem:    opcoes.mensagem || 'servico'
+        }
       );
 
       const code = response.getResponseCode();
@@ -349,6 +419,62 @@ const Utils = {
     } catch (e) {
       // Resposta sem JSON esperado não é motivo para falhar um envio bem-sucedido.
     }
+  },
+
+  // ============================================================================
+  // VALIDADORES PUROS
+  // ============================================================================
+  //
+  // Regras de validação SEM efeito colateral: não enviam mensagem, não mudam
+  // estado, não gravam nada. Existem porque as mesmas regras precisam valer em
+  // dois caminhos com formas de erro incompatíveis — o cadastro por conversa,
+  // que responde campo a campo, e o Flow, que recebe tudo de uma vez e precisa
+  // acumular erros.
+  //
+  // Antes ficavam copiadas em CadastroHandler e FlowHandler. Como são regras
+  // que já tiveram bug com número de backlog (BL-06 e BL-08), a cópia garantia
+  // que a próxima correção consertasse metade do bot — e os dois caminhos
+  // gravam no MESMO campo do Odoo, então a divergência seria silenciosa.
+
+  /**
+   * Converte um valor digitado em número, tratando separador de milhar.
+   *
+   * BL-06: "1.000,50" → 1000.5. A regra: havendo vírgula, o ponto é milhar;
+   * sem vírgula, ponto seguido de 3 dígitos também é milhar ("1.000"); ponto
+   * isolado é decimal ("50.00").
+   *
+   * @param {string|number} texto
+   * @returns {number|null} null se não for um valor positivo válido.
+   */
+  parseValorBR(texto) {
+    let t = String(texto == null ? '' : texto).replace(/[^\d.,]/g, '');
+    if (t.indexOf(',') >= 0) {
+      t = t.replace(/\./g, '').replace(',', '.');
+    } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
+      t = t.replace(/\./g, '');
+    }
+    const valor = parseFloat(t);
+    return (isNaN(valor) || valor <= 0) ? null : valor;
+  },
+
+  /**
+   * Valida uma data de nascimento em partes.
+   *
+   * BL-08: rejeita data que não existe (31/02), ano anterior a 1900 e data no
+   * futuro. `new Date(2026, 1, 31)` não estoura — ele rola para 03/03 — por
+   * isso a conferência é comparar os componentes de volta.
+   *
+   * @returns {boolean}
+   */
+  validarDataBR(dia, mes, ano) {
+    const nDia = parseInt(dia, 10);
+    const nMes = parseInt(mes, 10);
+    const nAno = parseInt(ano, 10);
+    if (isNaN(nDia) || isNaN(nMes) || isNaN(nAno)) return false;
+
+    const d = new Date(nAno, nMes - 1, nDia);
+    const existe = d.getFullYear() === nAno && d.getMonth() === nMes - 1 && d.getDate() === nDia;
+    return existe && nAno >= 1900 && d <= new Date();
   },
 
   /**

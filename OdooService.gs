@@ -221,19 +221,21 @@ const OdooService = {
 
     if (registros?.length > 0) return registros[0];
 
-    // Busca inteligente: com/sem 9º dígito
-    let whatsappAlt;
-    if (whatsapp.length === 13) {
-      whatsappAlt = whatsapp.substring(0, 4) + whatsapp.substring(5);
-    } else if (whatsapp.length === 12) {
-      whatsappAlt = whatsapp.substring(0, 4) + '9' + whatsapp.substring(4);
-    }
+    // Busca com a outra forma do nono dígito (BL-32). A regra mora em
+    // `Utils.variantesNumeroBR` — antes estava reescrita aqui por `length`, e as
+    // duas versões já divergiam: esta aceitava qualquer número de 12 dígitos e
+    // inventava um 9 no meio, então um TELEFONE FIXO disparava um segundo
+    // search_read garantidamente vazio a cada mensagem.
+    const variantes = Utils.variantesNumeroBR(whatsapp);
+    const alternativo = variantes
+      ? (whatsapp === variantes.comNove ? variantes.semNove : variantes.comNove)
+      : null;
 
-    if (whatsappAlt) {
+    if (alternativo) {
       registros = this.searchRead(
         'x_dizimista',
         this.CAMPOS_DIZIMISTA,
-        [['x_studio_partner_phone', '=', whatsappAlt]]
+        [['x_studio_partner_phone', '=', alternativo]]
       );
 
       if (registros?.length > 0) {
@@ -494,27 +496,59 @@ const OdooService = {
    * @returns {boolean} true se o campo existe no schema
    * @private
    */
-  _temCampoConferenciaPix() {
+  /**
+   * Existe este campo customizado no modelo? (com cache)
+   *
+   * Generalizado de `_temCampoConferenciaPix`: a pergunta "o setup já criou
+   * este campo?" aparece sempre que um campo é opcional, e o `SetupCamposFamilia`
+   * tende a criar mais. Sem isto, cada novo campo copia as mesmas ~20 linhas,
+   * inclusive a chave de cache e a regra de TTL.
+   *
+   * Três níveis, do mais barato ao mais caro:
+   *   1. memória da execução — o laço de família chama isto uma vez por membro
+   *      e a resposta não muda dentro da mesma execução;
+   *   2. CacheService;
+   *   3. um search_read em `ir.model.fields`.
+   *
+   * TTL curto quando ausente, para o campo passar a valer logo após o setup.
+   *
+   * @param {string} model - Ex.: 'x_devolucao'
+   * @param {string} nome  - Ex.: 'x_studio_conferencia_pix'
+   * @returns {boolean}
+   */
+  campoExiste(model, nome) {
+    const chave = `campo_${model}_${nome}`;
+
+    this._camposConhecidos = this._camposConhecidos || {};
+    if (chave in this._camposConhecidos) return this._camposConhecidos[chave];
+
     const cache    = CacheService.getScriptCache();
-    const cacheado = cache.get('campo_conferencia_pix');
-    if (cacheado) return cacheado === '1';
+    const cacheado = cache.get(chave);
+    if (cacheado) {
+      this._camposConhecidos[chave] = cacheado === '1';
+      return this._camposConhecidos[chave];
+    }
 
     let existe = false;
     try {
       const campos = this.searchRead(
-        'ir.model.fields',
-        ['id'],
-        [['model', '=', 'x_devolucao'], ['name', '=', 'x_studio_conferencia_pix']],
+        'ir.model.fields', ['id'],
+        [['model', '=', model], ['name', '=', nome]],
         { limit: 1 }
       );
       existe = !!(campos && campos.length);
     } catch (e) {
-      console.warn('⚠️ [OdooService] Não consegui verificar x_studio_conferencia_pix:', e.message);
+      console.warn(`⚠️ [OdooService] Não consegui verificar ${model}.${nome}:`, e.message);
     }
 
-    // TTL curto quando ausente, para o campo passar a ser usado logo após o setup.
-    cache.put('campo_conferencia_pix', existe ? '1' : '0', existe ? 21600 : 300);
+    cache.put(chave, existe ? '1' : '0', existe ? 21600 : 300);
+    this._camposConhecidos[chave] = existe;
     return existe;
+  },
+
+  /** @private @deprecated Use `campoExiste`. Mantido pelos chamadores do BL-26. */
+  _temCampoConferenciaPix() {
+    return this.campoExiste('x_devolucao', 'x_studio_conferencia_pix');
   },
 
   /**
