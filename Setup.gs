@@ -491,6 +491,18 @@ function enviarFlowDeTeste(numero) {
     return;
   }
 
+  // Uma mensagem simples ANTES do formulário separa dois problemas que se
+  // parecem: "o Flow não chega" e "nada chega". Sem ela, um token vencido,
+  // uma janela de 24h fechada ou um número errado ficam indistinguíveis de
+  // uma incompatibilidade do Flow — e só o primeiro grupo é comum.
+  Logger.log(`📤 Enviando mensagem simples de controle para ${destino}...`);
+  const controle = Utils.enviarSimples(destino,
+    '🔎 *Teste de entrega*\n\nSe você está lendo isto, mensagens comuns chegam ' +
+    'normalmente. O formulário de cadastro vem logo a seguir.'
+  );
+  const controleOk = !!controle && controle.getResponseCode() === 200;
+  Logger.log(`   ${controleOk ? '✅ aceita pela Meta' : '❌ recusada — veja o erro acima'}`);
+
   Logger.log(`📤 Enviando o Flow de cadastro para ${destino}...`);
 
   // Preferência por 'published', que é o estado final de qualquer Flow. Um
@@ -501,8 +513,17 @@ function enviarFlowDeTeste(numero) {
   const enviou = FlowHandler.enviarFlowCadastro(destino);
 
   if (enviou) {
-    Logger.log('✅ Enviado. Abra o WhatsApp desse número e toque em "Preencher cadastro".');
-    Logger.log('   Ao enviar o formulário, procure por "[Flow]" no Cloud Logging:');
+    Logger.log('');
+    Logger.log('✅ As duas mensagens foram aceitas pela Meta. No celular, leia nesta ordem:');
+    Logger.log('   1. Chegou a mensagem "🔎 Teste de entrega"?');
+    Logger.log('      NÃO → o problema não é o Flow. É o número, a janela de 24h ou o token.');
+    Logger.log('      SIM → o canal está bom; siga para o 2.');
+    Logger.log('   2. Chegou o cartão "💛 Cadastro de Dizimista" com o botão?');
+    Logger.log('      NÃO → é específico do Flow. O motivo estará em "❌ [Entrega]" no');
+    Logger.log('            Cloud Logging, alguns segundos depois desta execução.');
+    Logger.log('      SIM → toque em "Preencher cadastro" e preencha.');
+    Logger.log('');
+    Logger.log('   Depois de enviar o formulário, procure por "[Flow]" no Cloud Logging:');
     Logger.log('   o response_json chega inteiro numa execução só.');
   } else {
     Logger.log('❌ Não enviou. Causas comuns, em ordem de frequência:');
