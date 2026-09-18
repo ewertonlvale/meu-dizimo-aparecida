@@ -11,10 +11,14 @@
  *   HTTP 200 nos dois — só um chega. Uma mensagem para o formato errado é
  *   aceita, contada como enviada e nunca entregue, sem erro nenhum.
  *
- *   Quem se cadastrou pelo bot está correto: o número veio do `from` do
- *   webhook, que é o `wa_id` canônico. O risco está em número DIGITADO à mão
- *   no Odoo — e o envio que sofre com isso é o lembrete mensal, justamente o
- *   que ninguém fica olhando.
+ *   Quem se cadastrou pelo bot está correto POR CONSTRUÇÃO: o número gravado
+ *   em `x_studio_partner_phone` vem do `from` do webhook, que é o `wa_id`. Não
+ *   é convenção que alguém possa quebrar sem querer — é a origem do dado.
+ *
+ *   Por isso o relatório deve sair limpo, e é isso que o torna útil: cada
+ *   suspeito na lista denuncia um contato que NÃO veio pelo bot — criado à mão
+ *   no Odoo, importado de planilha. Essa é a única porta que não passa pelo
+ *   webhook, e a que o lembrete mensal alcança sem ninguém conferir.
  *
  * O QUE ESTE ARQUIVO FAZ, E O QUE NÃO FAZ
  *   Faz: lê, classifica e imprime. Nada aqui escreve no Odoo.
