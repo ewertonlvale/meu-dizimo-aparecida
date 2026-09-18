@@ -90,6 +90,13 @@ function gerarMassaTeste(qtdDizimistas, devolucoesPorDizimista) {
     const seq        = String(i + 1).padStart(4, '0');
 
     try {
+      // BL-39: `criarDizimista` passou a conferir se o telefone já tem cadastro,
+      // o que custa um search_read por pessoa e faz esta geração render menos
+      // dentro dos 6 min (o limite já é tratado acima, parando e dizendo de
+      // onde continuar). Em troca, rodar de novo virou idempotente: os números
+      // fictícios são únicos por construção, então a segunda passada só repete
+      // o que faltou. Não vale abrir exceção aqui — uma exceção numa ferramenta
+      // de teste é o tipo de coisa que acaba copiada para o código de produção.
       const dizimistaId = OdooService.criarDizimista({
         nome:             `${MASSA_PREFIXO} Dizimista ${seq} da Silva`,
         nomeUsual:        `${MASSA_PREFIXO} Dizimista ${seq}`,

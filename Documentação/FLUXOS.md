@@ -1,6 +1,8 @@
 # Fluxos do bot e o custo de cada um
 
-*Levantado em 18/09/2026, contando as chamadas de envio no código — não por estimativa.*
+*Levantado em 18/09/2026. Os fluxos de entrada e devolução são contados
+executando o código (`node ferramentas/conta-mensagens.js`); os de cadastro,
+lendo-o. A distinção importa — ver o fim da seção 1.*
 
 Este documento existe por causa de uma preocupação concreta: **a partir de 1º de
 outubro de 2026 a Meta cobra as mensagens de serviço acima de 1.000 por mês**, e
@@ -21,16 +23,26 @@ o bot envia, não quantas trocas acontecem.
 | Cadastro por formulário (Flow) | **4** | uma vez por pessoa |
 | Adicionar membro por conversa | **14** | raro |
 | Adicionar membro por formulário | **4** | raro |
-| **Devolução do dízimo** | **8** | **a mais frequente** |
+| **Devolução do dízimo** | **3** | **a mais frequente** |
 | Lembrete mensal (template) | **1** | uma vez por mês, por pessoa |
 | Relatório do coordenador | 4 a 12 | poucas pessoas |
 
-⚠️ **O cadastro por conversa estava sendo subestimado** em análises anteriores
-deste projeto, que falavam em "~15". A contagem passo a passo dá **19**, e 21
-somando as boas-vindas para quem chega do zero.
+### De onde vem cada número, e quais já erraram
 
-Os números desta tabela são conferidos no código por
-`node ferramentas/conta-mensagens.js` — veja a seção 7.
+Os fluxos de **entrada** e de **devolução** são conferidos no código a cada
+execução de `node ferramentas/conta-mensagens.js` (seção 9). Os de **cadastro**
+são contados lendo o código, e já erraram duas vezes:
+
+- o cadastro por conversa foi dado como "~15" em análises anteriores deste
+  projeto; a contagem passo a passo dá **19**;
+- a devolução foi documentada aqui mesmo como **8**, em 18/09, listando uma
+  mensagem de abertura ("Vou te passar os dados") e uma de confirmação
+  ("Confirma?") que **não existem** no caminho individual. O harness, escrito
+  depois, executou o fluxo e contou **6**. Foi por isso que ele passou a cobrir
+  a devolução: contar lendo é exatamente o que falhou.
+
+Os números de cadastro, portanto, merecem a mesma desconfiança até que o
+harness os cubra.
 
 ---
 
@@ -59,9 +71,9 @@ flowchart TD
     J -- sim --> K["Formulário + foto + resumo<br/><b>4 mensagens</b>"]
     J -- não --> L["Cadastro por conversa<br/><b>19 mensagens</b>"]
 
-    I -- Devolver dízimo --> M["Dados PIX + QR + copia-e-cola<br/>4 mensagens"]
+    I -- Devolver dízimo --> M["QR com os dados na legenda<br/>+ copia-e-cola<br/><b>2 mensagens</b>"]
     M --> N([Aguarda comprovante])
-    G --> O["Análise + dados + confirmação + resultado<br/>4 mensagens"]
+    G --> O["digitando… (grátis)<br/>+ dados do OCR com o resultado<br/><b>1 mensagem</b>"]
 
     I -- Adicionar membro --> P{Flow de membro?}
     P -- sim --> Q["<b>4 mensagens</b>"]
@@ -72,8 +84,8 @@ flowchart TD
     H --> K
     H --> Q
 
-    style M fill:#fde68a,stroke:#b45309,color:#000
-    style O fill:#fde68a,stroke:#b45309,color:#000
+    style M fill:#bbf7d0,stroke:#15803d,color:#000
+    style O fill:#bbf7d0,stroke:#15803d,color:#000
     style L fill:#fecaca,stroke:#b91c1c,color:#000
     style R fill:#fecaca,stroke:#b91c1c,color:#000
     style K fill:#bbf7d0,stroke:#15803d,color:#000
@@ -86,8 +98,12 @@ flowchart TD
 telefone em toda mensagem, então perguntar "você já é dizimista?" é pedir uma
 informação que o bot já tem. Ver seção 3.
 
-Em amarelo, a devolução — **o único fluxo que se repete todo mês**. Em vermelho,
-os caminhos por conversa. Em verde, os por formulário.
+Em verde, o que já foi enxugado. Em vermelho, os caminhos por conversa, que
+sobrevivem para quem desiste do formulário ou está num aparelho que não o
+renderiza — e são os únicos que ainda custam caro.
+
+A **devolução** é o único fluxo que se repete todo mês. Hoje são 3 mensagens:
+2 para pagar, 1 para confirmar. Ver seção 4.
 
 ---
 
@@ -173,43 +189,75 @@ identificação. Remover os `case` transformaria um botão antigo em silêncio.
 ## 4. Devolução do dízimo — o fluxo que pesa
 
 É o único recorrente. Tudo o mais acontece uma vez por pessoa, ou quase nunca.
+Cortar uma mensagem aqui vale 500 por mês; no cadastro, vale 500 uma única vez
+na vida da paróquia.
+
+### Como era: 6 mensagens
 
 ```mermaid
 sequenceDiagram
     participant P as Pessoa
     participant B as Bot
     P->>B: toca "Devolver dízimo"
-    B->>P: 1. "Vou te passar os dados de pagamento"
-    B->>P: 2. Dados da comunidade (banco, titular, valor)
-    B->>P: 3. Imagem do QR Code
-    B->>P: 4. PIX copia-e-cola (mensagem própria)
+    B->>P: 1. Dados da comunidade (banco, titular, chave)
+    B->>P: 2. Imagem do QR Code ("escaneie pelo app do seu banco")
+    B->>P: 3. PIX copia-e-cola (mensagem própria)
     P->>B: envia o comprovante
-    B->>P: 5. "⏳ Analisando comprovante..."
-    B->>P: 6. Dados extraídos pelo OCR
-    B->>P: 7. "Confirma?" (botões)
-    P->>B: toca Confirmar
-    B->>P: 8. "✅ Devolução registrada"
+    B->>P: 4. "⏳ Analisando comprovante..."
+    B->>P: 5. Dados do OCR + "⏳ Registrando sua devolução..."
+    B->>P: 6. "✅ Devolução registrada"
 ```
 
-**8 mensagens.** Se a pessoa chegar pelo menu em vez do botão do lembrete, 9 —
-e eram 12 antes da seção 3: o menu genérico, o "Já sou Dizimista" e as duas
-mensagens de identificação ficavam no caminho de quem só queria devolver.
+### Como é: 3 mensagens
 
-### Onde estão os cortes, e o que cada um custa em usabilidade
+```mermaid
+sequenceDiagram
+    participant P as Pessoa
+    participant B as Bot
+    P->>B: toca "Devolver dízimo"
+    B->>P: 1. QR Code, com os dados de pagamento NA LEGENDA
+    B->>P: 2. PIX copia-e-cola (sozinho, sem formatação)
+    P->>B: envia o comprovante
+    Note over B: balão "digitando…" — não é mensagem, não é cobrado
+    B->>P: 3. Dados do OCR + resultado, juntos
+```
 
-| # | Mensagem | Dá para cortar? |
-|---|---|---|
-| 1 | "Vou te passar os dados" | **Sim** — juntar com a 2. É anúncio do que vem na mensagem seguinte |
-| 2 | Dados da comunidade | Não |
-| 3 | Imagem do QR Code | **Sim** — quem paga pelo celular usa o copia-e-cola; o QR serve para quem lê de outra tela |
-| 4 | PIX copia-e-cola | Não — é o que a pessoa efetivamente usa |
-| 5 | "⏳ Analisando..." | **Sim** — é feedback de progresso. Sem ela a pessoa espera alguns segundos sem retorno |
-| 6 | Dados extraídos | **Sim** — juntar com a 7, que já os repete |
-| 7 | "Confirma?" | Não |
-| 8 | Resultado | Não |
+| # | O que era | O que virou | Perdeu algo? |
+|---|---|---|---|
+| 1+2 | Dados numa mensagem, QR noutra com legenda genérica | **Dados na legenda do QR** | Não. A legenda dizia "escaneie pelo app do banco" — o óbvio — enquanto uma mensagem cobrada carregava os dados |
+| 3 | PIX copia-e-cola | **Intocado** | — |
+| 4 | "⏳ Analisando comprovante..." | **Indicador de digitação** | Não. Melhora: balão vivo no lugar de linha parada, e de graça |
+| 5+6 | Dados do OCR, depois o resultado | **Uma mensagem só** | Não. O resultado já repetia valor e data |
 
-**8 → 4 mensagens** cortando as quatro. Nenhum corte remove informação: três são
-fusões e um é o QR, que duplica o copia-e-cola.
+**6 → 3 mensagens.** Três fusões, zero informação removida da tela, e o QR Code
+— que a proposta original mandava cortar — continua lá.
+
+### Por que o copia-e-cola não foi fundido
+
+Ele é a única mensagem que existe para ser **copiada inteira**. Um toque longo →
+Copiar precisa levar exatamente o código EMV; qualquer texto em volta, ou um
+negrito envolvendo o código, entraria na cópia e o app do banco recusaria.
+Fundi-lo economizaria uma mensagem e quebraria o pagamento. O harness tem uma
+regra só para isso.
+
+### O indicador de digitação, e o que acontece se ele falhar
+
+O `⏳ Analisando...` era uma mensagem de serviço, cobrada, cujo conteúdo é
+"estou trabalhando". O endpoint de marcar-como-lida da Cloud API aceita um
+`typing_indicator` junto — **não é uma mensagem**, não entra na franquia de
+1.000/mês.
+
+Duas ressalvas honestas:
+
+- O balão some após ~25 s. Se o OCR mais o Odoo passarem disso, a pessoa fica
+  sem sinal — o mesmo que já acontecia depois do "Analisando..." antigo, que
+  também não se repetia.
+- Se a Meta recusar a chamada, `sinalizarProcessando` devolve `false` e **o
+  texto volta**. O corte é grátis quando funciona e inofensivo quando não. Vale
+  conferir no Cloud Logging, depois do deploy, se aparece
+  `⚠️ [WhatsApp] Indicador de digitação recusado`.
+
+O mesmo tratamento foi aplicado ao `⏳ Salvando seu cadastro...`.
 
 ---
 
@@ -264,29 +312,38 @@ Cenário da paróquia: **500 dizimistas, 500 devoluções por mês**.
 Tarifa Brasil, mensagem de serviço: **R$ 0,035**. Franquia: **1.000/mês**, a
 partir de 01/10/2026. Template não tem franquia — é cobrado desde o primeiro.
 
-### Hoje, como está
+> ⚠️ **Correção.** A primeira versão deste documento calculou tudo sobre uma
+> devolução de **8 mensagens**, contadas lendo o código. O harness executou o
+> fluxo e achou **6** — duas das que eu listei não existem. Os valores abaixo
+> são os corretos; o custo estava **superestimado em 40%**.
+
+### Antes dos cortes (devolução de 6)
 
 | Item | Contas | Mensagens |
 |---|---|---|
-| Devoluções | 500 × 8 | 4.000 |
+| Devoluções | 500 × 6 | 3.000 |
 | Lembretes (template) | 500 × 1 | 500 |
 
-- Serviço: 4.000 − 1.000 de franquia = 3.000 × R$ 0,035 = **R$ 105,00**
+- Serviço: 3.000 − 1.000 de franquia = 2.000 × R$ 0,035 = **R$ 70,00**
 - Template: 500 × R$ 0,035 = **R$ 17,50**
-- **Total: R$ 122,50/mês** (R$ 1.470/ano)
+- **Total: R$ 87,50/mês** (R$ 1.050/ano)
 
-### Com os quatro cortes da devolução
+### Depois dos cortes (devolução de 3)
 
 | Item | Contas | Mensagens |
 |---|---|---|
-| Devoluções | 500 × 4 | 2.000 |
+| Devoluções | 500 × 3 | 1.500 |
 | Lembretes | 500 × 1 | 500 |
 
-- Serviço: 2.000 − 1.000 = 1.000 × R$ 0,035 = **R$ 35,00**
+- Serviço: 1.500 − 1.000 = 500 × R$ 0,035 = **R$ 17,50**
 - Template: **R$ 17,50**
-- **Total: R$ 52,50/mês** (R$ 630/ano)
+- **Total: R$ 35,00/mês** (R$ 420/ano)
 
-**A conta cai 57%.** E o custo por pessoa por ano sai de R$ 2,94 para R$ 1,26.
+**A conta cai 60%.** O custo por pessoa por ano sai de R$ 2,10 para **R$ 0,84**.
+
+Repare onde a queda é desproporcional: as 500 devoluções passam a caber quase
+inteiras na franquia. Enquanto o total de serviço ficar perto de 1.000, cada
+mensagem cortada vale o dobro — ela sai de cima da franquia, não de dentro dela.
 
 ### O mês da adesão
 
@@ -294,41 +351,46 @@ Se os 500 se cadastrarem no mesmo mês, some os cadastros uma vez:
 
 | Item | Mensagens | Custo do mês |
 |---|---|---|
-| Cadastro por conversa (19) | +9.500 | ≈ R$ 455 |
-| Cadastro por formulário (4) | +2.000 | ≈ R$ 122 |
-| Entrada, antes da seção 3 (4 por pessoa) | +2.000 | ≈ R$ 70 |
+| Cadastro por conversa (19) | +9.500 | ≈ R$ 333 |
+| Cadastro por formulário (4) | +2.000 | ≈ R$ 70 |
+| Entrada, antes do BL-38 (4 por pessoa) | +2.000 | ≈ R$ 70 |
 | Entrada, agora (2 por pessoa) | +1.000 | ≈ R$ 35 |
 
-É evento único, mas é o pico. **O formulário economiza ~R$ 330 só nesse mês, e
+É evento único, mas é o pico. **O formulário economiza ~R$ 263 só nesse mês, e
 a entrada unificada, mais R$ 35.**
 
-A entrada é cobrada uma vez por pessoa, então não muda a conta do mês a mês —
-o que ela muda todo mês são as duas mensagens de identificação que sumiram do
-caminho de quem chega à devolução pelo menu.
+A entrada e o cadastro são cobrados uma vez por pessoa, então não mudam a conta
+mês a mês. O que muda todo mês é a devolução.
 
 ---
 
 ## 7. Conclusão, sem rodeio
 
-**Não fica inviável.** No pior caso de hoje, R$ 122,50/mês — pouco mais de
-R$ 1.400 por ano para 500 famílias. Com os cortes da seção 4, cai para
-R$ 52,50/mês sem perder nada na tela.
+**Não fica inviável — e por uma margem maior do que a primeira versão deste
+documento dizia.** Com os cortes da seção 4 já aplicados, **R$ 35,00/mês** para
+500 famílias: R$ 420 por ano, R$ 0,84 por pessoa por ano.
 
 O que muda a ordem de grandeza não é o cadastro, e sim a **devolução**: ela é a
 única que se repete. Cortar uma mensagem da devolução vale 500 mensagens por
 mês; cortar uma do cadastro vale 500 uma única vez na vida da paróquia.
 
-**A ordem de prioridade, por retorno:**
+**O que já foi feito:**
 
-1. **Fundir as quatro mensagens da devolução** — R$ 70/mês, sem perda
-2. **Manter o formulário ligado** — já feito; evita o pico da adesão
-3. **Entrada unificada** — já feito; corta o pico da adesão e as duas mensagens
-   de identificação de quem chega à devolução pelo menu
-4. Reduzir o cadastro por conversa — só vale para quem não usa o formulário
+1. **Devolução: 6 → 3** (BL-37) — três fusões, nenhuma informação a menos
+2. **Entrada: 4 → 2** (BL-38) — corta o pico da adesão
+3. **Formulário ligado** (BL-33) — evita o cadastro de 19 mensagens
+
+**O que sobra, por retorno:**
+
+4. Reduzir o cadastro por conversa — 7 das 19 são confirmações "X registrado ✅"
+   seguidas da pergunta seguinte; cada par cabe numa mensagem. Só vale para
+   quem não usa o formulário.
 
 **O que não vale a pena mexer:** o lembrete mensal. São 500 templates a
 R$ 17,50 no total, e é ele que traz a pessoa de volta — cortá-lo economiza
-pouco e custa a devolução inteira.
+pouco e custa a devolução inteira. Note que, com o serviço agora em R$ 17,50,
+o lembrete virou **metade da conta** — e continua sendo o melhor dinheiro
+gasto do projeto.
 
 ---
 
@@ -350,9 +412,26 @@ Rode antes e depois de um bloco de testes para medir um fluxo isolado.
 node ferramentas/conta-mensagens.js
 ```
 
-Carrega os `.gs` de verdade e troca só a borda — nada sai pela rede, nada toca o
-Odoo. Conta quantas mensagens cada entrada dispara e compara com a tabela da
-seção 1; sai com código 1 se divergir.
+Carrega `Utils`, `OdooService`, `MediaService` e os handlers **de verdade** e
+troca só o que fala com a rede — nada sai pela rede, nada toca o Odoo. Conta
+quantas mensagens cada fluxo dispara, compara com a tabela da seção 1 e sai com
+código 1 se divergir.
 
-Existe porque número em documento envelhece calado: basta alguém acrescentar um
-`Utils.enviarSimples` para esta página passar a mentir sem que nada falhe.
+Além da contagem, ele guarda o que as fusões do BL-37 poderiam ter derrubado:
+
+- a legenda do QR carrega banco, titular, chave e instrução;
+- o copia-e-cola chega **exatamente** igual ao payload EMV, sem nada em volta;
+- o resultado mostra valor, data e chave lidos pelo OCR;
+- uma legenda acima do teto de 1024 caracteres não derruba os dados;
+- o cadastro duplicado é barrado (BL-39) e responde com uma mensagem só.
+
+Existe porque número em documento envelhece calado — e porque este documento já
+errou: a devolução foi publicada como **8 mensagens**, contada lendo o código.
+O harness executou o fluxo e contou 6.
+
+Duas vezes ele acusou o código à toa, e nas duas o **teste** é que estava
+errado: uma regra proibia `*` no copia-e-cola (é o campo txid do padrão PIX,
+`62070503***`) e outra proibia espaço (está no nome do recebedor). Hoje a regra
+compara com o payload que o próprio `MediaService` gera, que não tem como errar
+assim. Vale a lição: um teste que acusa merece a mesma desconfiança que o
+código.

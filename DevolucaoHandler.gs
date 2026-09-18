@@ -297,12 +297,16 @@ const DevolucaoHandler = {
     msg += `🔑 *Chave PIX:* \`${comunidade.x_studio_chave_pix}\`\n\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n\n📸 *Faça um único pagamento do total e envie o comprovante aqui.*\n\nAceito: imagem (foto) ou PDF.`;
 
-    Utils.enviarSimples(from, msg);
+    // BL-37: mesma fusão do caminho individual — os dados vão na legenda do QR.
+    let enviou = false;
     try {
-      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, total, comunidade.x_studio_titular_conta);
+      enviou = MediaService.enviarQrCode(
+        from, comunidade.x_studio_chave_pix, total, comunidade.x_studio_titular_conta, undefined, msg
+      );
     } catch (e) {
       console.warn('⚠️ QR Code PIX (lote) não pôde ser gerado:', e.message);
     }
+    if (!enviou) Utils.enviarSimples(from, msg);
     return true;
   },
 
@@ -525,13 +529,33 @@ const DevolucaoHandler = {
     mensagem += `📸 *Após efetuar o pagamento, envie o comprovante aqui.*\n\n`;
     mensagem += `Aceito: imagem (foto) ou PDF.`;
 
-    Utils.enviarSimples(from, mensagem);
-
-    // Tentar enviar QR Code PIX via MediaService
+    // BL-37: esta mensagem não é mais enviada por conta própria — ela vai na
+    // LEGENDA da imagem do QR Code, que seria enviada de qualquer forma. Duas
+    // mensagens viram uma, com exatamente o mesmo conteúdo na tela.
+    //
+    // O copia-e-cola continua numa mensagem só dele: é o que permite o toque
+    // longo → Copiar levar exatamente o código EMV, sem o usuário ter de
+    // selecionar o trecho à mão. Fundir ELE seria a fusão que custa caro.
+    let enviou = false;
     try {
-      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, dizimista.x_studio_value, comunidade.x_studio_titular_conta);
+      enviou = MediaService.enviarQrCode(
+        from,
+        comunidade.x_studio_chave_pix,
+        dizimista.x_studio_value,
+        comunidade.x_studio_titular_conta,
+        undefined,
+        mensagem
+      );
     } catch (e) {
       console.warn('⚠️ QR Code PIX não pôde ser gerado:', e.message);
+    }
+
+    // Rede de segurança: se o envio pela legenda falhou inteiro, os dados de
+    // pagamento ainda precisam chegar — sem eles a pessoa não tem como pagar,
+    // e o estado AGUARDANDO_COMPROVANTE ficaria esperando algo impossível.
+    if (!enviou) {
+      console.warn('⚠️ [Devolução] QR não saiu; enviando os dados como texto');
+      Utils.enviarSimples(from, mensagem);
     }
 
     return true;

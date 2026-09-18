@@ -39,42 +39,23 @@ const RAIZ = path.join(__dirname, '..');
 // ---------------------------------------------------------------------------
 
 let enviadas = [];
+let gratis   = [];   // sinais que NÃO são mensagens cobradas
 const registra = (tipo, texto) => enviadas.push({ tipo, texto: String(texto || '') });
 
 function montarContexto(cenario) {
-  const Utils = {
-    enviarSimples:      (to, t)          => registra('texto',   t),
-    enviarComBotaoMenu: (to, t)          => registra('texto',   t),
-    enviarConfirmar:    (to, t)          => registra('botoes',  t),
-    enviarMenu:         (to, t, botoes)  => registra('menu',    t + ' [' + (botoes || []).map(b => b.id).join(', ') + ']'),
-    enviarLista:        (to, t)          => registra('lista',   t),
-    formatarNumeroExibicao: n => n,
-    formatarValor:      v => 'R$ ' + v,
-    formatarDataOdoo:   d => d,
-    parseValorBR:       v => v
-  };
-
-  const OdooService = {
-    buscarParametros:            () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
-    buscarDizimistaPorWhatsapp:  () => {
-      if (cenario.odooForaDoAr) throw new Error('connection refused (simulado)');
-      return cenario.dizimista;
-    },
-    listarComunidades:           () => [{ id: 1, x_name: 'Matriz' }],
-    buscarDevolucoesDizimista:   () => cenario.devolucoes || [],
-    buscarDadosPagamentoComunidade: () => ({ x_studio_chave_pix: 'pix@teste' }),
-    listarFamilia:               () => [cenario.dizimista]
-  };
-
-  const MediaService = {
-    // Imagem com legenda é UMA mensagem — é o ponto da fusão das boas-vindas.
-    enviarImagemFixa: (to, id, legenda) => registra('imagem+legenda', legenda)
-  };
-
+  // Só StateManager (cache/Properties), VisionService (OCR) e FlowHandler são
+  // simulados por inteiro. Utils, OdooService, MediaService e os handlers são
+  // carregados DE VERDADE — deles, apenas os métodos que falam com a rede são
+  // trocados, depois da carga. Foi essa escolha que pegou duas coisas: uma
+  // guarda que um stub de `criarDizimista` teria escondido, e um valor
+  // formatado que um stub de `formatarValor` teria deixado passar.
   const StateManager = {
     setEstado: () => {}, getEstado: () => null, limparDados: () => {},
     iniciarSessaoCadastro: () => {}, registrarSessaoAtiva: () => {},
-    appendLog: () => {}, setDados: () => {}, getDados: () => ({})
+    appendLog: () => {}, setDados: () => {}, getDados: () => ({}),
+    getCampo: (from, campo) => (cenario.sessao || {})[campo],
+    salvarMultiplosCampos: () => {}, getDadosTemporarios: () => (cenario.dadosCadastro || {}),
+    persistirLogCadastro: () => {}
   };
 
   const FlowHandler = {
@@ -87,35 +68,105 @@ function montarContexto(cenario) {
   };
 
   const ctx = {
-    Utils, OdooService, MediaService, StateManager, FlowHandler,
+    StateManager, FlowHandler,
+    // OCR: um comprovante legítimo, com a MESMA chave da comunidade — assim o
+    // caminho exercitado é o do sucesso conferido (BL-26), não o de erro.
+    VisionService: {
+      analisarComprovante: () => ({
+        valor: 50, data: '12/08/2026', tipo: 'PIX',
+        banco: 'Banco do Brasil', chavePix: 'pix@paroquia.org'
+      }),
+      analisarPDF: () => null,
+      validarComprovante: () => ({ ehComprovante: true })
+    },
     console: { log() {}, warn() {}, error() {} },
-    Utilities: { sleep() {} },
+    Utilities: { sleep() {}, base64Encode: () => 'BASE64' },
     Logger: { log() {} },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
-    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
   };
   vm.createContext(ctx);
 
-  // Os .gs declaram `const MenuHandler = {...}` no topo. Num contexto do `vm`
-  // isso é declaração léxica: não vira propriedade do objeto de contexto. Por
-  // isso tudo é carregado num script só e os objetos são devolvidos no fim —
-  // é a forma de alcançá-los sem tocar nos arquivos do projeto.
-  const fontes = ['Config.gs', 'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs']
+  // Os .gs declaram `const Utils = {...}` no topo. Num contexto do `vm` isso é
+  // declaração léxica: não vira propriedade do objeto de contexto. Por isso
+  // tudo é carregado num script só e os objetos são devolvidos no fim — é a
+  // forma de alcançá-los sem tocar nos arquivos do projeto.
+  const ARQUIVOS = [
+    'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
+    'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs'
+  ];
+  const fontes = ARQUIVOS
     .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
     .join('\n;\n');
 
-  return vm.runInContext(
-    fontes + '\n;({ MenuHandler, CadastroHandler, DevolucaoHandler, ESTADOS });',
+  const mod = vm.runInContext(
+    fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
+             'DevolucaoHandler, ComprovanteHandler, ESTADOS });',
     ctx,
     { filename: 'bot.gs' }
   );
+
+  // ── A borda: só o que sai do processo ──────────────────────────────────────
+  Object.assign(mod.Utils, {
+    enviarSimples:      (to, t)         => registra('texto',  t),
+    enviarComBotaoMenu: (to, t)         => registra('texto',  t),
+    enviarConfirmar:    (to, t)         => registra('botoes', t),
+    enviarMenu:         (to, t, botoes) => registra('menu', t + ' [' + (botoes || []).map(b => b.id).join(', ') + ']'),
+    enviarLista:        (to, t)         => registra('lista',  t),
+    // Indicador de digitação: NÃO é mensagem. Registrado à parte justamente
+    // para o teste provar que ele não entra na conta.
+    sinalizarProcessando: () => {
+      gratis.push('digitando');
+      return cenario.digitandoFunciona !== false;
+    },
+    // A API do QR Code. `getContent` alimenta o base64Encode acima.
+    fetchComRetry: () => ({ getResponseCode: () => 200, getContent: () => 'qr', getContentText: () => '' })
+  });
+  // formatarValor, formatarDataOdoo, variantesNumeroBR e o resto continuam reais.
+
+  Object.assign(mod.MediaService, {
+    enviarImagemFixa:   (to, id, legenda)  => registra('imagem+legenda', legenda),
+    enviarImagemBase64: (to, b64, caption) => { registra('imagem+legenda', caption); return {}; },
+    baixarArquivo:      () => ({ base64: 'BASE64DOCOMPROVANTE' })
+  });
+
+  // OdooService: trocado no nível do RPC, para que `criarDizimista` — onde mora
+  // a guarda contra o cadastro duplicado (BL-39) — rode de verdade.
+  Object.assign(mod.OdooService, {
+    searchRead: (modelo, campos, dominio) => {
+      if (cenario.odooForaDoAr) throw new Error('connection refused (simulado)');
+      if (modelo === 'x_dizimista') {
+        const porTelefone = (dominio || []).some(d => d[0] === 'x_studio_partner_phone');
+        if (porTelefone) return cenario.dizimista ? [cenario.dizimista] : [];
+        return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
+      }
+      if (modelo === 'x_devolucao') return cenario.devolucoes || [];
+      return [];
+    },
+    create: () => 99,
+    buscarParametros:               () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
+    listarComunidades:              () => [{ id: 1, x_name: 'Matriz' }],
+    buscarDadosPagamentoComunidade: () => ({
+      x_studio_chave_pix:     'pix@paroquia.org',
+      x_studio_banco:         'Banco do Brasil',
+      x_studio_titular_conta: 'Paróquia N. S. da Conceição Aparecida'
+    }),
+    devolucoesDoMes:    () => cenario.devolucoesDoMes || [],
+    registrarDevolucao: () => 123,
+    salvarFotoDizimista: () => {}
+  });
+
+  return mod;
 }
 
 // ---------------------------------------------------------------------------
 // Os cenários, com o número que Documentação/FLUXOS.md promete
 // ---------------------------------------------------------------------------
 
-const DIZIMISTA = { id: 7, x_name: 'Maria', x_studio_comunidade: [1, 'Matriz'] };
+const DIZIMISTA = { id: 7, x_name: 'Maria', x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] };
+const COMPROVANTE = { id: 'media123', mime_type: 'image/jpeg', sha256: 'abc' };
 
 const CENARIOS = [
   {
@@ -168,6 +219,34 @@ const CENARIOS = [
     porque: 'boas-vindas + menu genérico. O que não pode acontecer é a pessoa ficar sem resposta.'
   },
   {
+    nome: 'Devolução — dados de pagamento (metade 1)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    esperado: 2,
+    porque: 'QR com os dados na legenda + copia-e-cola sozinho. Eram 3.'
+  },
+  {
+    nome: 'Devolução — comprovante analisado (metade 2)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    esperado: 1,
+    porque: 'só o resultado, com os dados do OCR dentro. Eram 3.'
+  },
+  {
+    nome: 'Devolução — comprovante com o indicador de digitação recusado',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, digitandoFunciona: false },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    esperado: 2,
+    porque: 'sem o balão, o "⏳ Analisando..." volta — silêncio de segundos parece travamento'
+  },
+  {
+    nome: 'Formulário antigo respondido por quem JÁ é dizimista (BL-39)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.CadastroHandler.finalizar('55'),
+    esperado: 1,
+    porque: 'o aviso vai junto do menu, numa mensagem só — e nada foi duplicado'
+  },
+  {
     nome: 'Menu principal de quem já é dizimista',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
@@ -201,12 +280,91 @@ const REGRAS_DE_BOTAO = [
   }
 ];
 
+// As fusões do BL-37 só valem se NADA sair da tela. Cada regra abaixo guarda
+// uma informação que antes tinha mensagem própria e agora divide espaço.
+const REGRAS_DE_CONTEUDO = [
+  {
+    nome: 'A legenda do QR carrega os dados de pagamento inteiros',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: msgs => {
+      const legenda = (msgs.find(m => m.tipo === 'imagem+legenda') || {}).texto || '';
+      const faltam = ['Banco do Brasil', 'Paróquia', 'pix@paroquia.org', 'comprovante']
+        .filter(t => !legenda.includes(t));
+      return faltam.length ? `faltou na legenda: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'O copia-e-cola continua sozinho e sem formatação',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: (msgs, ctx) => {
+      // Um toque longo → Copiar precisa levar EXATAMENTE o código EMV. Qualquer
+      // texto em volta, ou negrito/crase envolvendo o código, entraria na cópia
+      // e o app do banco recusaria.
+      //
+      // A comparação é com o payload que o próprio MediaService gera, em vez de
+      // uma lista de caracteres proibidos. Duas versões anteriores deste teste
+      // acusaram o código à toa: uma proibia `*`, que é o campo txid do padrão
+      // PIX (`62070503***`), e a outra proibia espaço, que existe no nome do
+      // recebedor (`5925PAROQUIA N S DA CONCEICAO`). Comparar com o esperado
+      // não tem como errar assim.
+      const esperado = ctx.MediaService._gerarPayloadPix(
+        'pix@paroquia.org', DIZIMISTA.x_studio_value, 'Paróquia N. S. da Conceição Aparecida'
+      );
+      const ultima = msgs[msgs.length - 1];
+      return ultima.texto === esperado
+        ? null
+        : 'a última mensagem não é exatamente o BR Code (veio texto ou formatação junto)';
+    }
+  },
+  {
+    nome: 'O resultado mostra o que o OCR leu (valor, data, chave)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      const faltam = ['DADOS IDENTIFICADOS', '50,00', '12/08/2026', 'pix@paroquia.org']
+        .filter(x => !t.includes(x));
+      return faltam.length ? `faltou no resultado: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'A devolução mostra a última devolução como contexto',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      devolucoes: [{ x_studio_data_da_devolucao: '12/08/2026', x_studio_value: 150 }]
+    },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: msgs => {
+      const legenda = (msgs.find(m => m.tipo === 'imagem+legenda') || {}).texto || '';
+      return legenda.includes('última devolução') && legenda.includes('histórico')
+        ? null : 'a linha do histórico sumiu da mensagem de pagamento';
+    }
+  },
+  {
+    nome: 'Legenda longa demais não derruba os dados de pagamento',
+    cenario: {
+      dizimista: { id: 7, x_name: 'M'.repeat(400), x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] },
+      temAvatar: true, flowLigado: true
+    },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: msgs => {
+      // Acima de 1024 caracteres a Meta recusa a imagem INTEIRA. A legenda
+      // volta a ser mensagem própria: gasta uma mensagem, mas nada se perde.
+      const tem = msgs.some(m => m.texto.includes('pix@paroquia.org') && m.texto.includes('DADOS PARA PAGAMENTO'));
+      return tem ? null : 'os dados de pagamento não chegaram';
+    }
+  }
+];
+
 let falhas = 0;
 
 console.log('\n📊 Mensagens enviadas por entrada no bot\n' + '─'.repeat(64));
 
 for (const c of CENARIOS) {
   enviadas = [];
+  gratis   = [];
   const ctx = montarContexto(c.cenario);
   c.roda(ctx);
 
@@ -217,6 +375,7 @@ for (const c of CENARIOS) {
   console.log(`   ${enviadas.length} mensagem(ns)${ok ? '' : ` — FLUXOS.md diz ${c.esperado}`}`);
   console.log(`   ${c.porque}`);
   enviadas.forEach((m, i) => console.log(`     ${i + 1}. [${m.tipo}] ${m.texto.split('\n')[0].slice(0, 70)}`));
+  if (gratis.length) console.log(`     (+ ${gratis.join(', ')} — não é mensagem, não é cobrado)`);
 }
 
 console.log('\n' + '─'.repeat(64));
@@ -224,9 +383,23 @@ console.log('🔘 Botões dos menus\n');
 
 for (const r of REGRAS_DE_BOTAO) {
   enviadas = [];
+  gratis   = [];
   const ctx = montarContexto(r.cenario);
   r.roda(ctx);
   const erro = enviadas.length ? r.confere(enviadas) : 'nenhuma mensagem enviada';
+  if (erro) falhas++;
+  console.log(`${erro ? '❌' : '✅'} ${r.nome}${erro ? ' — ' + erro : ''}`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧩 Conteúdo que não pode se perder nas fusões\n');
+
+for (const r of REGRAS_DE_CONTEUDO) {
+  enviadas = [];
+  gratis   = [];
+  const ctx = montarContexto(r.cenario);
+  r.roda(ctx);
+  const erro = enviadas.length ? r.confere(enviadas, ctx) : 'nenhuma mensagem enviada';
   if (erro) falhas++;
   console.log(`${erro ? '❌' : '✅'} ${r.nome}${erro ? ' — ' + erro : ''}`);
 }

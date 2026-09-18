@@ -87,6 +87,30 @@ const FlowHandler = {
    * @private
    */
   _processarCadastro(from, resposta) {
+    // BL-39: o formulário pode ser de meses atrás — a mensagem fica na conversa
+    // e o toque nela chega aqui como uma submissão nova. A gravação é barrada
+    // de qualquer jeito (`OdooService.criarDizimista`), mas só lá no fim, depois
+    // da foto e do resumo. Conferir aqui poupa esses passos a quem já é
+    // dizimista; a guarda do OdooService continua sendo a que não pode falhar.
+    let jaCadastrado = null;
+    try {
+      jaCadastrado = OdooService.buscarDizimistaPorWhatsapp(from);
+    } catch (e) {
+      // Odoo fora do ar: segue o fluxo. A guarda da gravação ainda pega.
+      console.warn('⚠️ [Flow] Não consegui conferir cadastro existente:', e.message);
+    }
+
+    if (jaCadastrado) {
+      console.log(`ℹ️ [Flow] ${from} respondeu um formulário antigo — já é dizimista`);
+      StateManager.limparDados(from);
+      MenuHandler.menuDizimista(from, jaCadastrado,
+        '😊 *Você já está cadastrado(a)!*\n\n' +
+        'Este formulário era de uma conversa anterior — não precisava preencher ' +
+        'de novo, e *nada foi duplicado*.'
+      );
+      return;
+    }
+
     const { dados, erros } = this._normalizar(from, resposta);
 
     if (erros.length) {

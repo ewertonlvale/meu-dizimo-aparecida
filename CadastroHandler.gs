@@ -636,7 +636,16 @@ const CadastroHandler = {
     const dados = StateManager.getDadosTemporarios(from);
     const ehMembro = !!dados.cadastrandoMembro;
 
-    Utils.enviarSimples(from, ehMembro ? '⏳ Adicionando membro...' : '⏳ Salvando seu cadastro...');
+    // BL-37: mesmo tratamento do "⏳ Analisando comprovante..." — um aviso de
+    // progresso não vale uma mensagem cobrada quando o balão de "digitando" diz
+    // a mesma coisa de graça. Só quando ele não sai é que o texto volta.
+    //
+    // Efeito colateral bem-vindo: quem responde um formulário antigo (BL-39)
+    // deixa de receber "⏳ Salvando seu cadastro..." seguido de "você já está
+    // cadastrado" — dois avisos contraditórios, sendo o primeiro cobrado.
+    if (!Utils.sinalizarProcessando()) {
+      Utils.enviarSimples(from, ehMembro ? '⏳ Adicionando membro...' : '⏳ Salvando seu cadastro...');
+    }
 
     try {
       // ── Membro da família ────────────────────────────────────────────────
@@ -707,6 +716,22 @@ const CadastroHandler = {
       Utils.enviarComBotaoMenu(from, mensagemFinal);
 
     } catch (error) {
+      // BL-39: não é erro, é cadastro que já existe — tipicamente um formulário
+      // antigo respondido agora, ou dois toques em "Confirmar". Nada foi
+      // gravado, e dizer "ocorreu um erro" faria a pessoa tentar de novo,
+      // repetindo a tentativa que acabou de ser barrada.
+      if (error && error.codigo === OdooService.ERRO_JA_CADASTRADO) {
+        console.log(`ℹ️ [Cadastro] ${from} já tinha cadastro — duplicata evitada`);
+        StateManager.limparDados(from);
+        MenuHandler.menuDizimista(from, error.dizimista,
+          '😊 *Você já está cadastrado(a)!*\n\n' +
+          'Este formulário era de uma conversa anterior — não precisava preencher ' +
+          'de novo, e *nada foi duplicado*. Para atualizar seus dados, fale com ' +
+          'a secretaria.'
+        );
+        return;
+      }
+
       console.error('❌ Erro ao salvar cadastro:', error);
       MenuHandler.erro(from, ehMembro
         ? 'Ocorreu um erro ao adicionar o membro. Tente novamente ou fale com a secretaria.'

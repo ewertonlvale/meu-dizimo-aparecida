@@ -26,7 +26,13 @@ const ComprovanteHandler = {
   // PONTO DE ENTRADA ÚNICO
   // ==========================================================================
 
-  processar(from, arquivo) {
+  /**
+   * @param {string} from
+   * @param {Object} arquivo
+   * @param {string} [messageId] - `id` da mensagem recebida, para o indicador
+   *   de "digitando" (BL-37). Sem ele, o aviso de progresso volta a ser texto.
+   */
+  processar(from, arquivo, messageId) {
     console.log('📄 Iniciando processamento de comprovante de:', from);
 
     const tipo = this._detectarTipo(arquivo);
@@ -39,7 +45,15 @@ const ComprovanteHandler = {
       return;
     }
 
-    Utils.enviarSimples(from, `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+    // BL-37: o "⏳ Analisando comprovante..." era uma mensagem cobrada para
+    // dizer "estou trabalhando". O indicador de digitação diz o mesmo de graça
+    // — e melhor, porque é um balão vivo em vez de uma linha parada. Só quando
+    // ele não sai é que o texto volta: o OCR leva segundos, e silêncio total
+    // parece travamento.
+    if (!Utils.sinalizarProcessando(messageId)) {
+      Utils.enviarSimples(from,
+        `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+    }
 
     const resultado = this._processarArquivo(from, arquivo, tipo);
     this._tratarResultado(from, resultado);
@@ -178,7 +192,7 @@ const ComprovanteHandler = {
    * chave (BL-26) é feita uma vez, contra a comunidade do responsável.
    * @private
    */
-  _tratarResultadoFamilia(from, resultado, lote) {
+  _tratarResultadoFamilia(from, resultado, lote, blocoDados) {
     console.log(`🎯 [Família] Registrando devolução em lote (${lote.length} membro(s))...`);
 
     let responsavel = null;
@@ -231,7 +245,8 @@ const ComprovanteHandler = {
     // Sucesso (ao menos uma criada): encerra a sessão.
     if (registrados.length > 0) {
       StateManager.limparDados(from);
-      const base  = `✅ *Comprovante recebido!*\n\nRegistrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
+      const base  = `✅ *Comprovante recebido!*\n\n${blocoDados || ''}` +
+                    `Registrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
       const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
       Utils.enviarComBotaoMenu(from, conferido
         ? `${base}\n\nSerá confirmada em breve.${fecho}`
@@ -242,7 +257,7 @@ const ComprovanteHandler = {
     // Falha (Odoo/instabilidade): MANTÉM o estado para o usuário reenviar.
     if (erroOdoo || !responsavel) {
       Utils.enviarComBotaoMenu(from,
-        '⚠️ *Não consegui registrar as devoluções agora.*\n\n' +
+        '⚠️ *Não consegui registrar as devoluções agora.*\n\n' + (blocoDados || '') +
         'Seu comprovante foi recebido, mas houve uma falha ao salvar. ' +
         'Por favor, *reenvie o comprovante* em alguns minutos ou fale com a secretaria. 🙏'
       );
@@ -251,6 +266,27 @@ const ComprovanteHandler = {
 
     StateManager.limparDados(from);
     Utils.enviarComBotaoMenu(from, '⚠️ Não consegui registrar as devoluções. Tente novamente.');
+  },
+
+  /**
+   * Monta o resumo do que o OCR leu. Vai prefixado à mensagem de resultado
+   * (BL-37) — não é enviado por conta própria.
+   * @private
+   */
+  _blocoDados(dados) {
+    let t = '━━━━━━━━━━━━━━━━━━━━\n📊 *DADOS IDENTIFICADOS*\n━━━━━━━━━━━━━━━━━━━━\n\n';
+
+    t += (dados.valor && dados.valor > 0)
+      ? `💰 *Valor:* ${Utils.formatarValor(dados.valor)}\n`
+      : '💰 *Valor:* Não identificado\n';
+
+    t += dados.data ? `📅 *Data:* ${dados.data}\n` : '📅 *Data:* Não identificada\n';
+
+    if (dados.tipo && dados.tipo !== 'Desconhecido') t += `💳 *Tipo:* ${dados.tipo}\n`;
+    if (dados.banco)    t += `🏦 *Banco:* ${dados.banco}\n`;
+    if (dados.chavePix) t += `🔑 *Chave PIX:* ${dados.chavePix}\n`;
+
+    return t + '\n━━━━━━━━━━━━━━━━━━━━\n\n';
   },
 
   // ==========================================================================
@@ -298,52 +334,25 @@ const ComprovanteHandler = {
 
     const dados = resultado.dados;
 
-    // ===== EXIBIR DADOS EXTRAÍDOS =====
     console.log('🎯 [_tratarResultado] Comprovante VÁLIDO');
 
-    let mensagemDados = '✅ *Comprovante analisado com sucesso!*\n\n';
-    mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n';
-    mensagemDados += '📊 *DADOS IDENTIFICADOS*\n';
-    mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n\n';
-
-    if (dados.valor && dados.valor > 0) {
-      mensagemDados += `💰 *Valor:* ${Utils.formatarValor(dados.valor)}\n`;
-    } else {
-      mensagemDados += `💰 *Valor:* Não identificado\n`;
-    }
-
-    if (dados.data) {
-      mensagemDados += `📅 *Data:* ${dados.data}\n`;
-    } else {
-      mensagemDados += `📅 *Data:* Não identificada\n`;
-    }
-
-    if (dados.tipo && dados.tipo !== 'Desconhecido') {
-      mensagemDados += `💳 *Tipo:* ${dados.tipo}\n`;
-    }
-
-    if (dados.banco) {
-      mensagemDados += `🏦 *Banco:* ${dados.banco}\n`;
-    }
-
-    if (dados.chavePix) {
-      mensagemDados += `🔑 *Chave PIX:* ${dados.chavePix}\n`;
-    }
-
-    mensagemDados += '\n━━━━━━━━━━━━━━━━━━━━\n';
-    mensagemDados += `⏳ Registrando sua devolução...`;
-
-    Utils.enviarSimples(from, mensagemDados);
-
-    // BL-21: não há espera aqui. O próximo envio ao usuário só acontece depois
-    // das chamadas ao Odoo (buscar dizimista, buscar comunidade e criar a
-    // devolução com o comprovante em base64), que já separam as mensagens de
-    // sobra — a pausa só somava tempo de execução no fluxo mais pesado do bot.
+    // BL-37: os dados extraídos NÃO são mais uma mensagem própria.
+    //
+    // Eram enviados aqui, seguidos de "⏳ Registrando sua devolução...", e logo
+    // depois vinha o resultado — que repetia valor e data. Duas mensagens
+    // cobradas para o mesmo conteúdo, separadas por alguns segundos de Odoo.
+    // Agora o bloco vai NA mensagem de resultado, que sai de qualquer forma.
+    //
+    // A pessoa continua vendo o que o OCR leu, que é o que importa: a extração
+    // de valor é reconhecidamente frágil (BL-14), e é olhando esse bloco que
+    // alguém percebe um valor errado. Só vê junto com o desfecho, em vez de
+    // antes dele.
+    const blocoDados = this._blocoDados(dados);
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
     const lote = StateManager.getCampo(from, 'devolucaoLote');
     if (lote && lote.length) {
-      return this._tratarResultadoFamilia(from, resultado, lote);
+      return this._tratarResultadoFamilia(from, resultado, lote, blocoDados);
     }
 
     // ===== REGISTRAR NO ODOO =====
@@ -402,9 +411,9 @@ const ComprovanteHandler = {
     }
 
     // ===== RESPOSTA FINAL — honesta quanto ao que realmente aconteceu =====
-    const dadosResumo =
-      (dados.valor > 0 ? `• Valor: ${Utils.formatarValor(dados.valor)}\n` : '') +
-      (dados.data     ? `• Data: ${dados.data}\n` : '');
+    // BL-37: `blocoDados` entra em todos os desfechos. Antes havia um
+    // `dadosResumo` reduzido só para o caso de falha, e o bloco completo ia
+    // numa mensagem separada — dois formatos do mesmo conteúdo.
 
     // 1) Sucesso real: devolução criada. Encerra a sessão.
     if (devolucaoId) {
@@ -412,14 +421,14 @@ const ComprovanteHandler = {
       if (conferido) {
         // Chave do comprovante confere com a da comunidade.
         Utils.enviarComBotaoMenu(from,
-          '✅ *Comprovante recebido com sucesso!*\n\n' +
+          '✅ *Comprovante recebido com sucesso!*\n\n' + blocoDados +
           'Sua devolução foi registrada e será confirmada em breve.\n\n' +
           '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
         );
       } else {
         // BL-26: chave divergente ou não identificada — não prometer confirmação.
         Utils.enviarComBotaoMenu(from,
-          '✅ *Comprovante recebido!*\n\n' +
+          '✅ *Comprovante recebido!*\n\n' + blocoDados +
           'Sua devolução foi registrada e passará por *conferência da secretaria* ' +
           'antes de ser confirmada.\n\n' +
           '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
@@ -432,12 +441,11 @@ const ComprovanteHandler = {
     //    AGUARDANDO_COMPROVANTE para o usuário reenviar sem refazer o fluxo.
     if (erroOdoo) {
       Utils.enviarComBotaoMenu(from,
-        '⚠️ *Não consegui registrar sua devolução agora.*\n\n' +
-        'Estamos com uma instabilidade temporária, então seu comprovante ' +
-        '*ainda não foi registrado*. Por favor, *reenvie o comprovante* em ' +
-        'alguns minutos ou fale com a secretaria' +
-        (dadosResumo ? ' informando:\n' + dadosResumo : '.') +
-        '\nPeço desculpas pelo transtorno. 🙏'
+        '⚠️ *Não consegui registrar sua devolução agora.*\n\n' + blocoDados +
+        'Li o comprovante, mas estamos com uma instabilidade temporária — então ' +
+        'ele *ainda não foi registrado*. Por favor, *reenvie o comprovante* em ' +
+        'alguns minutos, ou fale com a secretaria informando os dados acima.\n\n' +
+        'Peço desculpas pelo transtorno. 🙏'
       );
       return;
     }
@@ -445,7 +453,7 @@ const ComprovanteHandler = {
     // 3) Número realmente não cadastrado. Nada foi registrado; volta ao menu.
     StateManager.limparDados(from);
     Utils.enviarMenu(from,
-      '⚠️ *Não encontrei seu cadastro* para registrar a devolução.\n\n' +
+      '⚠️ *Não encontrei seu cadastro* para registrar a devolução.\n\n' + blocoDados +
       'Por isso, seu comprovante *ainda não foi registrado*. Para concluir, ' +
       'faça seu cadastro como dizimista ou entre em contato com a secretaria.',
       [

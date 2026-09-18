@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude). Depois, a documentação de custo (`Documentação/FLUXOS.md`) e o **BL-38**, que ela motivou: a entrada do bot caiu de 4 para 2 mensagens.
+**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude). Depois, a documentação de custo (`Documentação/FLUXOS.md`) e os três itens que ela motivou: **BL-38** (entrada: 4 → 2 mensagens), **BL-37** (devolução: 6 → 3) e **BL-39** (cadastro duplicado). A conta mensal projetada caiu de R$ 87,50 para **R$ 35,00**.
 **Pendências:** **BL-29** ficou parcial: o lote agrupado foi consertado (ordenação por `timestamp`) e o atropelo entre POSTs separados é detectado e recusado, mas o `timestamp` do WhatsApp tem granularidade de 1 s e mensagens do mesmo segundo continuam indistinguíveis. O caminho para o resto não é mais código de ordenação — é o cadastro por formulário (BL-33, pronto) e a redução do tempo de execução (BL-21). O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Uma ação fora do código:** criar o usuário Odoo dedicado (BL-17). O `criarCampoConferenciaPix()` do BL-26 **já foi rodado** — confirmado em 18/09 no dump do schema (`ferramentas/odoo-dump.json`): `x_studio_conferencia_pix` existe em `x_devolucao`, tipo `char`, store. E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
@@ -63,8 +63,9 @@
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
 | BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
-| BL-37 | Fundir as 4 mensagens dispensáveis da devolução (8 → 4) | 🟠 | P | 📋 A fazer — corta 57% da conta mensal |
+| BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
+| BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 
 ---
 
@@ -423,23 +424,34 @@ Sinais possíveis, do mais para o menos confiável:
 
 ---
 
-### BL-37 — Fundir as quatro mensagens dispensáveis da devolução 🟠 (P) — 📋 **a fazer**
-**Arquivos:** `DevolucaoHandler.gs` (`_enviarDadosPagamento`) · `MediaService.gs` (`enviarQrCode`) · `ComprovanteHandler.gs`
-**Base:** `Documentação/FLUXOS.md`, levantado em 18/09 contando os envios no código.
+### BL-37 — Enxugar a devolução, o único fluxo recorrente 🟠 (M) — ✅ concluído em 18/09/2026
+**Arquivos:** `DevolucaoHandler.gs` · `MediaService.gs` (`enviarQrCode`) · `ComprovanteHandler.gs` · `Utils.gs` (`sinalizarProcessando`) · `Router.gs` · `Webhook.gs` · `CadastroHandler.gs`
+**Base:** `Documentação/FLUXOS.md` §4 · verificado por `node ferramentas/conta-mensagens.js`
 
-A devolução custa **8 mensagens** e é o **único fluxo que se repete todo mês** — 500 por mês, contra um cadastro único por pessoa. Cortar uma mensagem aqui vale 500/mês; no cadastro, vale 500 uma vez na vida da paróquia.
+**Primeiro, uma correção.** Este item foi escrito dizendo que a devolução custava **8 mensagens**, número obtido lendo o código. O harness executou o fluxo e contou **6**: duas das mensagens que eu listei — uma abertura "Vou te passar os dados" e uma confirmação "Confirma?" — **não existem** no caminho individual. A conta mensal, portanto, estava superestimada em 40% (R$ 87,50, não R$ 122,50).
 
-**Os quatro cortes, nenhum com perda de informação:**
-1. "Vou te passar os dados" → fundir com a mensagem dos dados. É anúncio do que vem a seguir.
-2. **Imagem do QR Code** → quem paga pelo celular usa o copia-e-cola; o QR serve para ler de outra tela. É o único que tem perda, e pequena.
-3. "⏳ Analisando comprovante..." → feedback de progresso. Sem ela a pessoa espera alguns segundos sem retorno.
-4. Dados extraídos pelo OCR → fundir com a confirmação, que já os repete.
+**O plano original era cortar 4 mensagens, uma delas o QR Code. O resultado foi melhor: 6 → 3, com o QR Code mantido.**
 
-**8 → 4 mensagens.** No cenário de 500 devoluções/mês: de R$ 122,50 para **R$ 52,50/mês** — queda de 57%.
+| Era | Virou | O que se perdeu |
+|---|---|---|
+| Dados da comunidade numa mensagem; QR noutra, com legenda genérica | **Os dados VÃO na legenda do QR** | Nada. A legenda dizia "escaneie pelo app do banco" — o óbvio — enquanto uma mensagem cobrada carregava os dados |
+| "⏳ Analisando comprovante..." | **Indicador de digitação** da Cloud API | Nada; melhora. Balão vivo em vez de linha parada, e não é mensagem |
+| Dados do OCR numa mensagem, resultado noutra | **Uma mensagem só** | Nada. O resultado já repetia valor e data |
 
-**Ressalva ao corte 3:** é o único que a pessoa *sente*. O OCR leva alguns segundos e o silêncio pode parecer travamento. Vale medir o tempo real antes de tirar — se passar de ~4 s, talvez compense manter.
+**O que NÃO foi fundido, e por quê:**
 
-**Aceite:** uma devolução completa gera 4 mensagens do bot, e nenhuma informação que estava na tela deixou de estar.
+- **O copia-e-cola.** É a única mensagem que existe para ser copiada inteira: um toque longo → Copiar precisa levar exatamente o payload EMV. Texto em volta, ou um negrito envolvendo o código, entraria na cópia e o app do banco recusaria. Fundi-lo economizaria uma mensagem e quebraria o pagamento.
+- **O QR Code.** O plano mandava cortá-lo ("quem paga pelo celular usa o copia-e-cola"). Mas a imagem já ia de qualquer forma e tinha uma legenda desperdiçada — pôr os dados nela rende a mesma mensagem economizada **sem** tirar o QR de quem lê de outra tela.
+
+**O indicador de digitação — duas ressalvas honestas.** É o endpoint de marcar-como-lida com `typing_indicator` junto: não é mensagem, não entra na franquia de 1.000/mês. (1) O balão some após ~25 s; se OCR + Odoo passarem disso, a pessoa fica sem sinal — o mesmo que já acontecia depois do "Analisando..." antigo. (2) Se a Meta recusar a chamada, `sinalizarProcessando` devolve `false` e **o texto volta**: o corte é grátis quando funciona e inofensivo quando não. **Conferir no Cloud Logging, após o deploy, se aparece `⚠️ [WhatsApp] Indicador de digitação recusado`** — é a única parte deste item que não pôde ser testada fora da Meta.
+
+O mesmo tratamento foi dado ao `⏳ Salvando seu cadastro...`, que tem exatamente a mesma natureza.
+
+**Em dinheiro:** de **R$ 87,50** para **R$ 35,00/mês** no cenário de 500 devoluções. Queda de 60% — desproporcional ao corte de mensagens porque as 500 devoluções passam a caber quase inteiras na franquia de 1.000.
+
+**Aceite:** uma devolução completa gera 3 mensagens do bot, e nenhuma informação que estava na tela deixou de estar. Cinco regras do harness guardam isso (legenda completa, copia-e-cola intacto, dados do OCR no resultado, linha do histórico, legenda longa demais).
+
+---
 
 ### BL-38 — Entrada do bot: uma boas-vindas e um menu que decide pelo número 🟠 (M) — ✅ concluído em 18/09/2026
 **Arquivos:** `MenuHandler.gs` · `Webhook.gs` · `CadastroHandler.gs` · `Router.gs` · `DevolucaoHandler.gs`
@@ -466,6 +478,27 @@ A devolução custa **8 mensagens** e é o **único fluxo que se repete todo mê
 **Degradação com o Odoo fora do ar:** `entrada` e `menuPrincipal` agora consultam o Odoo, e os dois são destino de fallback — inclusive de fallbacks que existem para quando o Odoo falha. Uma exceção ali deixaria a pessoa sem resposta nenhuma, então ambos caem no menu genérico em vez de propagar. Há cenário no harness para isso.
 
 **Novo:** `ferramentas/conta-mensagens.js` carrega os `.gs` de verdade num contexto isolado, troca só a borda (nada sai pela rede, nada toca o Odoo) e confere a contagem contra `FLUXOS.md`. Sai com código 1 se divergir. Existe porque número em documento envelhece calado: bastava alguém acrescentar um `Utils.enviarSimples` para o documento passar a mentir sem que nada falhasse.
+
+---
+
+### BL-39 — Cadastro duplicado: o mesmo número virava dois dizimistas 🔴 (P) — ✅ concluído em 18/09/2026
+**Arquivos:** `OdooService.gs` (`criarDizimista`) · `CadastroHandler.gs` (`finalizar`) · `FlowHandler.gs` (`_processarCadastro`)
+
+**O problema.** O cadastro conferia se o número já existia ao **começar** (`iniciar`), e não ao **terminar**. Entre um e outro cabe muita coisa:
+
+- tocar num formulário de meses atrás — a mensagem do Flow continua na conversa da pessoa, e o toque nela chega ao webhook como uma submissão nova;
+- tocar duas vezes em "Confirmar cadastro", gerando duas execuções do Apps Script com ~400 ms de diferença;
+- completar o cadastro por conversa num aparelho enquanto o formulário de outro já gravou.
+
+Qualquer um criava um **segundo** `x_dizimista` com o mesmo telefone. E `buscarDizimistaPorWhatsapp` devolve `registros[0]` — então devoluções e lembretes passavam a cair num registro e o histórico no outro, **em silêncio**. Nada falhava; os dados é que divergiam.
+
+**A correção, e por que ela mora no OdooService.** A guarda ficou em `criarDizimista`, não nos handlers: é o ponto por onde todo cadastro obrigatoriamente passa — conversa e formulário. No handler, consertaria os caminhos de hoje e não os de amanhã. Ela lança um erro com `.codigo === OdooService.ERRO_JA_CADASTRADO` e `.dizimista`, de modo que quem chama responde com o menu do dizimista em vez de "ocorreu um erro" — dizer "erro" faria a pessoa tentar de novo, repetindo a tentativa que acabou de ser barrada.
+
+A verificação e a gravação ficam dentro de um `LockService.getScriptLock()`. Sem ele, duas execuções simultâneas passariam as duas pela busca antes de qualquer uma criar — que é exatamente o caso do toque duplo. Mesmo padrão de `StateManager.ehPrimeiroContato`.
+
+`FlowHandler._processarCadastro` também confere, mas **por usabilidade, não por segurança**: sem isso a pessoa preencheria o formulário inteiro, mandaria a foto, veria o resumo e só então seria barrada. A guarda do `OdooService` continua sendo a que não pode falhar.
+
+**Aceite:** responder um formulário antigo não cria registro e devolve **uma** mensagem (o aviso vai junto do menu). Cenário no harness.
 
 ---
 

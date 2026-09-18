@@ -297,6 +297,11 @@ function _processarMensagemWebhook(message) {
   // e resposta é o que custa. Mensagem recebida é grátis; a nossa, não.
   if (Utils.excedeuTaxa(from)) return;
 
+  // BL-37: guarda o id desta mensagem para o indicador de "digitando". Ele é o
+  // que substitui os avisos de progresso ("⏳ Analisando...", "⏳ Salvando...")
+  // que antes eram mensagens cobradas.
+  Utils._mensagemAtualId = message.id || null;
+
   // BL-29: mensagem que chega DEPOIS de outra mais nova, em execuções
   // separadas. Ver `_mensagemForaDeOrdem`.
   if (_mensagemForaDeOrdem(from, message)) return;
