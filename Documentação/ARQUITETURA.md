@@ -170,6 +170,7 @@ na Meta *antes* de republicar.
 | `OdooService.gs` | Toda a comunicação JSON-RPC com o Odoo |
 | `VisionService.gs` | OCR de comprovantes e extração de valor/chave/data |
 | `MediaService.gs` | Upload/download de mídia e QR Code PIX |
+| `FlowHandler.gs` | Recebe e revalida a resposta de WhatsApp Flow (`nfm_reply`) — ver [FLOW-CADASTRO.md](FLOW-CADASTRO.md) |
 | `NotificacaoHandler.gs` | Lembretes mensais e sua trigger |
 | `TriggerSessoes.gs` | Sessões abandonadas e acompanhamento de cota |
 | `Utils.gs` | Envio ao WhatsApp, `fetchComRetry`, contagem de cota, formatadores |

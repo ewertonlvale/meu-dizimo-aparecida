@@ -40,6 +40,11 @@ const ESTADOS = {
   // Contato da pastoral: usuário sem cadastro escolhe a comunidade para ver o responsável
   AGUARDANDO_COMUNIDADE_CONTATO:   'AGUARDANDO_COMUNIDADE_CONTATO',
 
+  // Flow de cadastro enviado — aguardando o `nfm_reply` do aparelho.
+  // Não entra em ESTADOS_CADASTRO: o Flow roda no cliente, então não há
+  // sessão de coleta a expirar nem log passo a passo a acumular.
+  AGUARDANDO_FLOW_CADASTRO:      'AGUARDANDO_FLOW_CADASTRO',
+
   AGUARDANDO_NOTIFICACAO:        'AGUARDANDO_NOTIFICACAO',
   AGUARDANDO_DIA_PREFERIDO:      'AGUARDANDO_DIA_PREFERIDO',
 

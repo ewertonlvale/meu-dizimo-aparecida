@@ -206,6 +206,31 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
+### BL-30 — Cadastro por WhatsApp Flow 🟠 (M) — ⚠️ parcial (simulação pronta, entrada não ligada)
+**Arquivos:** `FlowHandler.gs` (novo) · `Router.gs` · `Config.gs` · `ferramentas/flow-cadastro.json` · `ferramentas/simula-flow.js`
+**Documentação:** `Documentação/FLOW-CADASTRO.md`
+
+**Ideia:** trocar as ~15 mensagens e ~9 execuções do cadastro conversacional por **um formulário nativo**: 2 mensagens, **1 execução**. Como há uma gravação só, a corrida do **BL-29 deixa de existir nesse caminho** — não é mitigada, é eliminada, porque não há duas execuções do mesmo usuário competindo.
+
+**Feito:**
+- `FlowHandler.processar` trata o `nfm_reply`, revalida **tudo** (as validações do Flow JSON rodam no cliente, então o que chega é dado não verificado) e reaproveita `mostrarResumo` → `finalizar`. O Flow troca a **coleta**, não a gravação.
+- Ramo `nfm_reply` no `Router`. Sem ele a resposta cairia no `menuPrincipal` do fim de `_rotearInterativo` e o formulário inteiro sumiria em silêncio — o mesmo buraco do BL-28.
+- `ferramentas/simula-flow.js` manda ao webhook o `nfm_reply` que o aparelho mandaria, com 5 casos (`ok`, `data-invalida`, `valor-zero`, `campo-faltando`, `token-errado`). **Não exige criar Flow na Meta**: no modo sem endpoint, um cadastro por Flow é exatamente uma requisição HTTP.
+- 12 casos de `_normalizar` exercitados fora do GAS, sob `America/Sao_Paulo`. Achado que virou código: o `DatePicker` devolve **epoch em ms na meia-noite UTC**, e lê-lo com `getDate()` num projeto UTC-3 voltaria **um dia em todo cadastro** — daí o `getUTCDate()`.
+
+**Não feito (proposital):**
+- **A entrada não está ligada.** `CadastroHandler.iniciar` continua indo pelo fluxo conversacional. Ligar exige o Flow publicado na Meta e testado num aparelho — o simulador cobre o servidor inteiro, não a renderização.
+- `FLOW_ID_CADASTRO` ausente faz `enviarFlowCadastro` devolver `false`, então este código pode ser publicado **antes** de existir Flow algum.
+- **Foto de perfil fora do formulário**: exigiria tratar upload de mídia, e o ganho do Flow está em cortar mensagens de texto.
+
+**Modo com endpoint é inviável aqui**, e não por escolha: a Meta exige RSA-OAEP-SHA256 + AES-128-GCM por tela, e o Apps Script só tem `computeRsaSha256Signature`, que **assina** — não decifra.
+
+**O Flow não resolve a devolução**, que é o fluxo caro (500/mês contra um cadastro único por pessoa): ela depende de comprovante em imagem/PDF e de OCR.
+
+**Aceite:** com o Flow publicado, um cadastro completo entra em 1 execução e o resumo sai correto; um formulário com data inexistente é recusado pelo servidor.
+
+---
+
 ## Itens baixos / manutenção
 
 ### BL-12 — `ASSETS` não declarado 🟡 (P)

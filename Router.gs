@@ -68,6 +68,14 @@ const Router = {
       return;
     }
 
+    // Resposta de um WhatsApp Flow. Chega como um subtipo próprio, então sem
+    // este ramo ela cairia no `menuPrincipal` do fim da função e o formulário
+    // inteiro seria descartado em silêncio.
+    if (subTipo === 'nfm_reply') {
+      FlowHandler.processar(from, message.interactive.nfm_reply);
+      return;
+    }
+
     if (subTipo === 'list_reply') {
       const itemId    = message.interactive.list_reply?.id;
       const itemTitle = message.interactive.list_reply?.title;
