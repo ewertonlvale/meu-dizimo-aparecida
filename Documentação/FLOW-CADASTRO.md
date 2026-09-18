@@ -162,11 +162,17 @@ A Meta permite enviar a versão **em rascunho** com `mode: 'draft'` nos
 parâmetros da mensagem, então **não é preciso publicar o Flow** para testar.
 O cliente mostra um aviso de que é rascunho.
 
+**O modo se ajusta sozinho.** Pedir `draft` para um Flow já publicado (ou o
+contrário) devolve `131009 — Parameter value is not valid`, com o motivo real
+escondido no `details`. Quem sabe o estado do Flow é a Meta, e ele muda lá sem
+avisar ninguém aqui, então `enviarFlowCadastro` repete o envio uma vez no outro
+modo em vez de falhar. Não é preciso saber em que estado o Flow está.
+
 Duas restrições que costumam ser confundidas com bug:
 
-- Um Flow em rascunho **só abre para números com papel na conta da Meta**
-  (admin, desenvolvedor ou testador). Num número qualquer o botão aparece mas
-  não abre.
+- **Enquanto** o Flow está em rascunho, ele **só abre para números com papel na
+  conta da Meta** (admin, desenvolvedor ou testador). Num número qualquer o
+  botão aparece mas não abre. Depois de publicado, abre para qualquer um.
 - Vale a **janela de 24 h**: o número precisa ter mandado alguma mensagem ao bot
   nas últimas 24 horas, senão a Meta recusa o envio.
 

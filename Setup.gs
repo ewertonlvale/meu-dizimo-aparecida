@@ -459,9 +459,14 @@ function listarPropriedades() {
  *   3. Guardar o número de teste em NUMERO_TESTE (formato 5586999998888),
  *      ou passar o número direto: enviarFlowDeTeste('5586999998888')
  *
- * ⚠️ Um Flow em rascunho só abre para números com papel na conta da Meta
- * (admin, desenvolvedor ou testador). Num número qualquer o botão aparece
- * mas não abre — não é bug do bot.
+ * O modo se ajusta sozinho: se o Flow já estiver publicado, a Meta recusa o
+ * envio em rascunho e o `enviarFlowCadastro` repete como publicado. Não é
+ * preciso saber em que estado o Flow está.
+ *
+ * ⚠️ ENQUANTO o Flow está em rascunho, só abre para números com papel na conta
+ * da Meta (admin, desenvolvedor ou testador). Num número qualquer o botão
+ * aparece mas não abre — não é bug do bot. Depois de publicado, abre para
+ * qualquer um.
  *
  * ⚠️ A janela de 24h vale aqui: o número precisa ter mandado alguma mensagem
  * ao bot nas últimas 24 horas, senão a Meta recusa o envio.
@@ -498,6 +503,7 @@ function enviarFlowDeTeste(numero) {
     Logger.log('❌ Não enviou. Causas comuns, em ordem de frequência:');
     Logger.log('   - Janela de 24h fechada: mande "oi" ao bot por esse número e tente de novo');
     Logger.log('   - Flow ainda não salvo na Meta, ou id errado em FLOW_ID_CADASTRO');
+    Logger.log('   - Flow despublicado ou removido depois de configurado o id');
     Logger.log('   - Nenhuma comunidade ativa no Odoo (a lista vai dentro do Flow)');
     Logger.log('   O erro exato está no log de [WhatsApp] logo acima.');
   }
