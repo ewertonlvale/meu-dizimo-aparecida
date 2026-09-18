@@ -59,7 +59,8 @@
 | BL-30 | Cadastro por WhatsApp Flow — 1 execução de coleta no lugar de 9 | 🟠 | M | ✅ Concluído (18/09) — entrada ligada pelo BL-33 |
 | BL-31 | Webhook descartava os callbacks de entrega da Meta | 🟠 | P | ✅ Concluído — `_registrarStatusEntrega`; sem isso, "não chegou" ficava sem diagnóstico |
 | BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
-| BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — membro ficou na conversa, por decisão |
+| BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — inclui o formulário de membro, com endereço e dia pré-preenchidos |
+| BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 
 ---
 
@@ -358,6 +359,23 @@ E o critério que pesa não era o que eu estava usando. Não é custo de mensage
 
 **Aceite:** com a propriedade ligada, um cadastro completo entra em 1 execução
 de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
+
+---
+
+### BL-34 — Texto durante o formulário derruba para a conversa cedo demais 🟡 (P) — 📋 **a decidir**
+**Arquivo:** `Router.gs` — ramo `AGUARDANDO_FLOW_CADASTRO` em `_rotearTexto`
+
+**Como está:** **qualquer** texto enviado com o formulário aberto leva a pessoa para o cadastro por conversa. Foi escolha do BL-33, pensando em quem desistiu do formulário ou está num aparelho que não o renderiza.
+
+**O problema:** o gatilho não distingue intenção. Atende bem "não consegui abrir", e atropela "quanto é o dízimo?" — quem fez uma pergunta paralela é jogado no passo a passo sem ter pedido, e o formulário que estava preenchendo perde a vez. Formulário aberto e pergunta no chat não são coisas incompatíveis, e o código trata como se fossem.
+
+**Duas saídas:**
+1. **Perguntar em vez de decidir.** Dois botões: *Preencher formulário* (reenvia) e *Fazer por aqui*. Custa uma mensagem e não chuta a intenção.
+2. **Manter.** Defensável: quem está com o formulário aberto e escreve provavelmente está com dificuldade, e a conversa é o socorro. A mensagem atual já explica o que aconteceu.
+
+**Sem dado para decidir.** Com que frequência cada caso acontece só aparece com gente usando. Rodar assim por um tempo e olhar o log (`↩️ [Flow] … caindo para a conversa`) responde.
+
+**Achado relacionado, do mesmo ramo:** a mensagem do formulário **continua clicável** no chat depois do fallback. Quem fizer o cadastro por conversa e depois rolar para cima e tocar em "Preencher cadastro" sobrescreve o que digitou. O resultado fica coerente — os dados do formulário são completos e vencem — mas não é o que a pessoa esperaria.
 
 ---
 
