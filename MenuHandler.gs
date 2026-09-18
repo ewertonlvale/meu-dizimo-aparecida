@@ -309,14 +309,18 @@ const MenuHandler = {
    * Três botões é o máximo que o WhatsApp aceita, então o histórico não cabe
    * aqui — ele virou contexto no início da devolução, onde a pessoa já está
    * pensando em dízimo, e atalho digitando "histórico".
+   *
+   * @param {string} [aviso] - Texto que entra ANTES da saudação, na mesma
+   *   mensagem. Quem precisa avisar algo junto do menu usa isto em vez de
+   *   mandar uma mensagem própria — que seria uma mensagem cobrada a mais.
    */
-  menuDizimista(from, dizimista) {
+  menuDizimista(from, dizimista, aviso) {
     StateManager.setEstado(from, ESTADOS.MENU);
 
     const nome = (dizimista && dizimista.x_name) || 'Dizimista';
 
     Utils.enviarMenu(from,
-      `Olá, *${nome}*! Como posso te ajudar hoje?`,
+      (aviso ? aviso + '\n\n' : '') + `Olá, *${nome}*! Como posso te ajudar hoje?`,
       [
         { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
         { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },

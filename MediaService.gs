@@ -374,31 +374,67 @@ const MediaService = {
   /**
    * Gera e envia o QR Code PIX para o usuário.
    *
+   * BL-37 — A LEGENDA CARREGA OS DADOS DE PAGAMENTO.
+   * Antes eram três mensagens: os dados da comunidade, a imagem do QR com uma
+   * legenda genérica ("escaneie pelo app do banco") e o copia-e-cola. A legenda
+   * da imagem estava sendo usada para dizer o óbvio enquanto uma mensagem
+   * inteira, cobrada, carregava os dados. Agora os dados VÃO na legenda, e as
+   * três viram duas — sem tirar nada da tela e sem perder o QR Code.
+   *
+   * O copia-e-cola continua sozinho: é o motivo de ele existir (ver o comentário
+   * no fim desta função).
+   *
    * @param {string} to            - Número do destinatário
    * @param {string} chavePix      - Chave PIX da comunidade
    * @param {number} valor         - Valor sugerido (opcional)
    * @param {string} recebedorNome - Nome do recebedor (ex.: titular da conta)
    * @param {string} cidade        - Cidade do recebedor (opcional)
+   * @param {string} [legenda]     - Texto que vai na legenda da imagem. Quando
+   *   omitido, usa a instrução genérica.
+   * @returns {boolean} false se nada foi enviado — quem chamou precisa saber,
+   *   porque agora a legenda pode ser a única cópia dos dados de pagamento.
    */
-  enviarQrCode(to, chavePix, valor, recebedorNome, cidade) {
+  enviarQrCode(to, chavePix, valor, recebedorNome, cidade, legenda) {
     // A chave pode ser um CPF — não vai para o log (mesmo critério do VisionService).
     console.log('💳 Gerando QR Code PIX...');
+
+    // Legenda de imagem no WhatsApp tem teto de 1024 caracteres, e a mensagem
+    // de pagamento cresce com o nome do titular, o do banco e a linha do
+    // histórico. Estourar o teto faria a API recusar a imagem INTEIRA — os
+    // dados de pagamento sumiriam junto. Perto do teto, a legenda volta a ser
+    // mensagem própria: gasta uma mensagem, mas nada se perde.
+    if (legenda && legenda.length > 950) {
+      console.warn(`⚠️ [QR] Legenda com ${legenda.length} caracteres — enviando à parte`);
+      Utils.enviarSimples(to, legenda);
+      legenda = null;
+    }
+
+    const instrucao = legenda ||
+      ('💳 *QR Code PIX*\n\nEscaneie pelo app do seu banco — ou use o ' +
+       '*copia e cola* que vou enviar na próxima mensagem. 👇');
 
     let pixPayload;
     try {
       // BR Code (payload EMV) — o texto "copia e cola" do PIX.
       pixPayload = this._gerarPayloadPix(chavePix, valor, recebedorNome, cidade);
     } catch (error) {
+      // Sem payload não há QR nem copia-e-cola. Mas a legenda pode ser a única
+      // cópia dos dados de pagamento — deixar de enviá-la deixaria a pessoa sem
+      // como pagar. Antes isto era um `return` seco, e era seguro só porque os
+      // dados já tinham ido numa mensagem própria.
       console.warn('⚠️ Não foi possível gerar o payload PIX:', error.message);
-      return;   // sem payload não há o que enviar
+      if (legenda) Utils.enviarSimples(to, legenda);
+      // `legenda` é null aqui também quando ela já foi enviada acima por ser
+      // longa demais — nos dois casos os dados chegaram, que é o que o
+      // chamador precisa saber.
+      return true;
     }
 
     // 1. QR Code — depende de serviço externo sem SLA, então é o passo opcional.
     //    Se falhar, o usuário ainda recebe o copia e cola, que é o que permite pagar.
-    const instrucao = '💳 *QR Code PIX*\n\nEscaneie pelo app do seu banco — ou use o ' +
-                      '*copia e cola* que vou enviar na próxima mensagem. 👇';
-    const semImagem = '💳 *PIX copia e cola*\n\nNão consegui gerar a imagem do QR Code, ' +
-                      'mas o código abaixo funciona igual: copie e cole no app do seu banco. 👇';
+    const semImagem = instrucao + (legenda
+      ? '\n\n_(Não consegui gerar a imagem do QR Code; use o código abaixo.)_ 👇'
+      : '');
     try {
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixPayload)}`;
       const response = Utils.fetchComRetry(qrUrl, { muteHttpExceptions: true },
@@ -425,6 +461,7 @@ const MediaService = {
     //    recebeu. Era a mesma espera que o BL-21 removeu de outros quatro
     //    pontos neste ciclo — mantê-la só aqui deixaria a regra ambígua.
     Utils.enviarSimples(to, pixPayload);
+    return true;
   },
 
   /**

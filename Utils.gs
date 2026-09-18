@@ -615,6 +615,76 @@ const Utils = {
   },
 
   /**
+   * Marca a mensagem recebida como lida e liga o indicador de "digitando".
+   *
+   * BL-37 — POR QUE ISTO SUBSTITUI UMA MENSAGEM.
+   * O OCR do comprovante leva alguns segundos, e o bot avisava com um
+   * "⏳ Analisando comprovante..." — uma mensagem de serviço, cobrada, cujo
+   * conteúdo é apenas "estou trabalhando". Este endpoint diz a mesma coisa de
+   * graça: **não é uma mensagem**, é o mesmo POST que marca como lida, com o
+   * `typing_indicator` junto. Não conta na franquia de 1.000/mês porque não
+   * passa por `_post` nem informa `mensagem` ao `fetchComRetry` — só envio
+   * aceito com aquele campo entra no contador.
+   *
+   * O balão some sozinho após ~25 s ou quando o bot envia a próxima mensagem.
+   * Se o processamento passar de 25 s, a pessoa fica sem sinal — o mesmo que
+   * acontecia depois do "Analisando..." antigo, que também não se repetia.
+   *
+   * @param {string} messageId - `id` da mensagem RECEBIDA (vem do webhook)
+   * @returns {boolean} true se a Meta aceitou. Quem chama precisa saber:
+   *   no false, o aviso em texto volta a valer, senão a pessoa espera o OCR
+   *   sem retorno nenhum.
+   */
+  /**
+   * `id` da mensagem que está sendo processada AGORA.
+   *
+   * Uma execução do Apps Script trata uma mensagem, então isto não é estado
+   * compartilhado entre conversas — é o contexto da execução corrente. Existe
+   * para `sinalizarProcessando` não precisar do id passado de mão em mão por
+   * toda a cadeia de handlers só para ligar um balão de "digitando".
+   * O `Webhook.gs` preenche; quem quiser ser explícito passa o id direto.
+   */
+  _mensagemAtualId: null,
+
+  sinalizarProcessando(messageId) {
+    messageId = messageId || this._mensagemAtualId;
+    if (!messageId) return false;
+
+    const config = getConfig();
+    try {
+      const resposta = this.fetchComRetry(
+        getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
+        {
+          method:      'post',
+          contentType: 'application/json',
+          headers:     { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+          payload:     JSON.stringify({
+            messaging_product: 'whatsapp',
+            status:            'read',
+            message_id:        messageId,
+            typing_indicator:  { type: 'text' }
+          }),
+          muteHttpExceptions: true
+        },
+        // Sem `mensagem`: não é envio, não entra no contador de cobrança.
+        // Idempotente: marcar como lida duas vezes não tem efeito colateral.
+        { idempotente: true, rotulo: 'WhatsApp digitando' }
+      );
+
+      const code = resposta ? resposta.getResponseCode() : null;
+      if (code !== 200) {
+        console.warn(`⚠️ [WhatsApp] Indicador de digitação recusado (HTTP ${code}):`,
+                     resposta ? resposta.getContentText().slice(0, 200) : 'sem resposta');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn('⚠️ [WhatsApp] Exceção no indicador de digitação:', e.message);
+      return false;
+    }
+  },
+
+  /**
    * Envia mensagem de texto simples.
    * @param {string} to    - Número do destinatário
    * @param {string} texto - Corpo da mensagem

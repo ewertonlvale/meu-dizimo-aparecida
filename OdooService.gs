@@ -253,11 +253,73 @@ const OdooService = {
   },
 
   /**
+   * Código do erro lançado por `criarDizimista` quando o número já tem cadastro.
+   * Os chamadores comparam contra ele em vez de olhar a mensagem — mensagem é
+   * texto para humano e muda; código não.
+   */
+  ERRO_JA_CADASTRADO: 'JA_CADASTRADO',
+
+  /**
    * Cria um novo dizimista a partir dos dados coletados no cadastro.
+   *
+   * BL-39 — POR QUE A VERIFICAÇÃO MORA AQUI, E NÃO NO HANDLER.
+   * O cadastro já conferia se o número existia ao *começar* (`iniciar`), mas
+   * não ao *terminar*. Entre um e outro cabe muita coisa: tocar num formulário
+   * de meses atrás (a mensagem continua na conversa), tocar duas vezes em
+   * "Confirmar", ou completar o cadastro por conversa num aparelho enquanto o
+   * formulário de outro já gravou. Qualquer um desses criava um SEGUNDO
+   * `x_dizimista` com o mesmo telefone — e `buscarDizimistaPorWhatsapp`
+   * devolve `registros[0]`, então devoluções e lembretes passavam a cair num
+   * registro e o histórico no outro, em silêncio.
+   *
+   * Pôr a guarda no handler consertaria os caminhos de hoje e não os de
+   * amanhã. Aqui, é o ponto por onde todo cadastro obrigatoriamente passa —
+   * conversa e formulário.
+   *
    * @param {Object} dados - Dados temporários do StateManager
    * @returns {number} ID criado
+   * @throws {Error} com `.codigo === ERRO_JA_CADASTRADO` e `.dizimista` quando
+   *   o número já está cadastrado
    */
   criarDizimista(dados) {
+    // O lock fecha a janela do toque duplo: duas execuções do Apps Script
+    // chegando com 400 ms de diferença passariam as duas pela busca antes de
+    // qualquer uma criar. É o mesmo padrão de `StateManager.ehPrimeiroContato`.
+    const lock = LockService.getScriptLock();
+    let travado = false;
+    try {
+      lock.waitLock(10000);
+      travado = true;
+    } catch (e) {
+      // Sem o lock ainda vale conferir: pega o caso comum (formulário antigo),
+      // só não protege contra a corrida.
+      console.warn('⚠️ [criarDizimista] Lock não obtido, seguindo sem serializar:', e.message);
+    }
+
+    try {
+      const existente = this.buscarDizimistaPorWhatsapp(dados.whatsapp);
+      if (existente) {
+        const erro = new Error(
+          `Já existe dizimista para este número (id ${existente.id})`
+        );
+        erro.codigo    = this.ERRO_JA_CADASTRADO;
+        erro.dizimista = existente;
+        throw erro;
+      }
+
+      return this._criarDizimista(dados);
+    } finally {
+      if (travado) lock.releaseLock();
+    }
+  },
+
+  /**
+   * A gravação em si, sem a guarda. Separada para que `criarDizimista` fique
+   * com uma responsabilidade legível e para que a guarda não tenha como ser
+   * pulada por engano — nada fora daqui chama este método.
+   * @private
+   */
+  _criarDizimista(dados) {
     const [dia, mes, ano] = dados.dataNascimento.split('/');
     const dataOdoo = `${ano}-${mes}-${dia}`;
 

@@ -399,7 +399,10 @@ const Router = {
       CadastroHandler.processarFotoPerfil(from, message.image);
     } else if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
                estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
-      ComprovanteHandler.processar(from, message.image);
+      // BL-37: o `message.id` vai junto porque é ele que o indicador de
+      // "digitando" precisa marcar como lido — o aviso de progresso que
+      // substituiu a mensagem "⏳ Analisando comprovante...".
+      ComprovanteHandler.processar(from, message.image, message.id);
     } else {
       MenuHandler.erro(from, 'Não estou esperando uma imagem agora. Digite *menu* para voltar.');
     }
@@ -415,7 +418,7 @@ const Router = {
 
     if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
         estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
-      ComprovanteHandler.processar(from, message.document);
+      ComprovanteHandler.processar(from, message.document, message.id);
     } else {
       MenuHandler.erro(from, 'Não estou esperando um documento agora. Digite *menu* para voltar.');
     }
