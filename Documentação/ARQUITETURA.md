@@ -151,6 +151,10 @@ do WhatsApp.
   | `criarCampoConferenciaPix()` | Criar o campo de conferência do BL-26 no Odoo |
   | `criarCamposFamilia()` | Criar os campos da funcionalidade de família |
   | `instalarTriggerSessoes()` · `instalarTriggerNotificacoes()` | Instalar as triggers |
+  | `ativarFlowCadastro()` · `desativarFlowCadastro()` | Ligar/desligar o formulário no cadastro |
+  | `enviarFlowDeTeste()` | Abrir o formulário num aparelho, mesmo em rascunho |
+  | `listarSessoesAtivas()` | Ver quem está no meio de um cadastro |
+  | `limparTodasSessoes()` | Apagar todas — ⚠️ sem aviso a quem estiver cadastrando |
 
 **O webhook é fail-closed:** sem `WEBHOOK_SECRET` configurado, todo POST é rejeitado. E como
 o Apps Script sempre responde 200 (não há como devolver 403), **a Meta não reenvia o que for
