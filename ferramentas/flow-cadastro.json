@@ -1,0 +1,127 @@
+{
+  "version": "7.1",
+  "screens": [
+    {
+      "id": "CADASTRO",
+      "title": "Cadastro de Dizimista",
+      "terminal": true,
+      "data": {
+        "comunidades": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id":    { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "1", "title": "Comunidade Exemplo" },
+            { "id": "2", "title": "Outra Comunidade" }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form_cadastro",
+            "children": [
+              {
+                "type": "TextSubheading",
+                "text": "Seus dados"
+              },
+              {
+                "type": "Dropdown",
+                "name": "comunidade_id",
+                "label": "Comunidade",
+                "required": true,
+                "data-source": "${data.comunidades}"
+              },
+              {
+                "type": "TextInput",
+                "name": "nome",
+                "label": "Nome completo",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 3,
+                "max-chars": 80
+              },
+              {
+                "type": "TextInput",
+                "name": "nome_usual",
+                "label": "Como quer ser chamado(a)",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 2,
+                "max-chars": 40
+              },
+              {
+                "type": "TextInput",
+                "name": "data_nascimento",
+                "label": "Nascimento (DD/MM/AAAA)",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 8,
+                "max-chars": 10,
+                "helper-text": "Exemplo: 15/03/1990"
+              },
+              {
+                "type": "TextArea",
+                "name": "endereco",
+                "label": "Endereço completo",
+                "required": true,
+                "max-length": 200,
+                "helper-text": "Rua, número, bairro e um ponto de referência"
+              },
+              {
+                "type": "TextInput",
+                "name": "valor_mensal",
+                "label": "Dízimo mensal (R$)",
+                "input-type": "number",
+                "required": true,
+                "helper-text": "Só o valor. É uma referência, pode variar a cada mês."
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "notificacao",
+                "label": "Quer receber lembrete mensal?",
+                "required": true,
+                "data-source": [
+                  { "id": "sim", "title": "Sim" },
+                  { "id": "nao", "title": "Não" }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "dia_preferido",
+                "label": "Dia do lembrete (1 a 28)",
+                "input-type": "number",
+                "required": false,
+                "helper-text": "Preencha só se escolheu Sim acima."
+              },
+              {
+                "type": "Footer",
+                "label": "Enviar cadastro",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "comunidade_id":   "${form.comunidade_id}",
+                    "nome":            "${form.nome}",
+                    "nome_usual":      "${form.nome_usual}",
+                    "data_nascimento": "${form.data_nascimento}",
+                    "endereco":        "${form.endereco}",
+                    "valor_mensal":    "${form.valor_mensal}",
+                    "notificacao":     "${form.notificacao}",
+                    "dia_preferido":   "${form.dia_preferido}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
