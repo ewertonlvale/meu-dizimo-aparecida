@@ -167,6 +167,7 @@ escritos no arquivo:
 |---|---|
 | `label` de qualquer componente | **20 caracteres** — "para evitar truncamento em telas diferentes" |
 | valor inicial de campo | fica em `init-values` **no `Form`**, não em `init-value` no componente |
+| tipo do valor inicial | precisa casar com o campo: `input-type: number` exige `data.<x>` declarado como `number`, com `__example__` numérico |
 | `helper-text` | 80 caracteres |
 | `title` da tela | 30 caracteres |
 
@@ -174,6 +175,21 @@ O limite de 20 é o que pega: um rótulo natural em português como
 "Quer receber lembrete mensal?" estoura. A saída é encurtar o `label` e mandar o
 detalhe para o `helper-text`, que tem quatro vezes mais espaço — foi o que
 `flow-cadastro.json` faz com o formato da data e a faixa de 1 a 28.
+
+**Confira antes de colar:**
+
+```bash
+node ferramentas/valida-flow.js
+```
+
+O validador da Meta só roda depois de colar o arquivo lá, e as regras acima não
+estão escritas em lugar nenhum do JSON — descobrem-se uma por vez, a cada
+recusa. Construir estes dois Flows custou três ciclos de editar/colar/ler o
+erro. O script cobra as mesmas regras aqui, em segundos.
+
+Ele **não substitui** o validador da Meta: cobre só o que já nos mordeu. Uma
+recusa nova é motivo para acrescentar uma regra a ele, não para desconfiar do
+arquivo.
 
 **1. Preview do Flow Builder.** No WhatsApp Manager → Flows, o botão *Preview*
 abre o formulário num telefone simulado, com troca de iOS/Android e claro/escuro.

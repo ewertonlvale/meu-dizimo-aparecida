@@ -468,7 +468,10 @@ const FlowHandler = {
               data: {
                 comunidade:      String(dados.comunidadeNome || '—'),
                 endereco_padrao: String(dados.responsavelEndereco || ''),
-                dia_padrao:      String(dados.responsavelDia || 10)
+                // NÚMERO, não string: o campo do dia é `input-type: number`, e
+                // o validador do Flow confere o tipo do valor inicial contra o
+                // tipo do campo. Um "10" entre aspas é recusado na publicação.
+                dia_padrao:      parseInt(dados.responsavelDia, 10) || 10
               }
             }
           }
