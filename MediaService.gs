@@ -66,7 +66,7 @@ const MediaService = {
           }),
           muteHttpExceptions: true
         },
-        { idempotente: false, rotulo: 'WhatsApp imagem (link)' }
+        { idempotente: false, rotulo: 'WhatsApp imagem (link)', mensagem: 'servico' }
       );
 
       const code = response.getResponseCode();
@@ -517,7 +517,7 @@ const MediaService = {
         }),
         muteHttpExceptions: true
       },
-      { idempotente: false, rotulo: 'WhatsApp mídia (envio)' }
+      { idempotente: false, rotulo: 'WhatsApp mídia (envio)', mensagem: 'servico' }
     );
 
     if (response.getResponseCode() === 200) {

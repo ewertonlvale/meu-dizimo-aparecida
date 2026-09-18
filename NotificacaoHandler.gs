@@ -68,7 +68,7 @@ const NotificacaoHandler = {
           payload: JSON.stringify(payload),
           muteHttpExceptions: true
         },
-        { idempotente: false, rotulo: 'WhatsApp template' }
+        { idempotente: false, rotulo: 'WhatsApp template', mensagem: 'template' }
       );
       
       const statusCode = response.getResponseCode();

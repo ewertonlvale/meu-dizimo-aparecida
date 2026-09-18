@@ -92,6 +92,7 @@ function verificarSessoesAbandonadas() {
     // lugar natural para o acompanhamento da cota — sem agendamento próprio.
     Utils.registrarConsumoExterno();
     Utils.verificarCotaUrlFetch();
+    Utils.verificarCotaMensagens();
   }
 }
 
