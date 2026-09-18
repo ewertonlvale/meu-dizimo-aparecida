@@ -96,8 +96,12 @@ const FlowHandler = {
     StateManager.salvarMultiplosCampos(from, dados);
     StateManager.appendLog(from, `Cadastro via Flow (${Object.keys(dados).length} campos)`);
 
-    console.log(`✅ [Flow] Cadastro de ${from} montado em 1 execução — indo ao resumo`);
-    CadastroHandler.mostrarResumo(from);
+    console.log(`✅ [Flow] Cadastro de ${from} montado em 1 execução — pedindo a foto`);
+
+    // A foto fica FORA do formulário (exigiria tratar upload de mídia no Flow)
+    // e vem logo depois, por conversa. É o único passo que sobra: os 8 campos
+    // de texto chegaram todos numa submissão.
+    CadastroHandler.pedirFotoDoDizimista(from);
   },
 
   /**
@@ -259,9 +263,21 @@ const FlowHandler = {
    * @returns {boolean} true se o Flow foi enviado.
    */
   enviarFlowCadastro(from) {
-    const flowId = PropertiesService.getScriptProperties().getProperty('FLOW_ID_CADASTRO');
+    const props  = PropertiesService.getScriptProperties();
+    const flowId = props.getProperty('FLOW_ID_CADASTRO');
+
     if (!flowId) {
       console.log('ℹ️ [Flow] FLOW_ID_CADASTRO não configurado — seguindo pelo cadastro por conversa');
+      return false;
+    }
+
+    // Interruptor separado do id, e não redundante com ele: id ausente é "não
+    // configurado"; isto aqui é "configurado e DESLIGADO". Com o Flow publicado
+    // e funcionando, é o que permite voltar ao cadastro por conversa sem apagar
+    // o id — e voltar em segundos, que é o que importa quando algo dá errado
+    // com gente usando.
+    if (props.getProperty('FLOW_CADASTRO_ATIVO') !== 'true') {
+      console.log('ℹ️ [Flow] FLOW_CADASTRO_ATIVO não está "true" — seguindo pelo cadastro por conversa');
       return false;
     }
 
@@ -277,7 +293,6 @@ const FlowHandler = {
     }
     if (!comunidades.length) return false;
 
-    const props = PropertiesService.getScriptProperties();
     let modo = props.getProperty('FLOW_MODO_CADASTRO') || 'published';
     let resposta = this._postarFlow(from, flowId, comunidades, modo);
 

@@ -6,7 +6,7 @@
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
 **Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude).
-**Pendências:** **BL-28**, **BL-29** e **BL-33**. Os dois primeiros abertos em 17/09 e descobertos no teste de carga; o BL-33 é pedido de 18/09, não iniciado. O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
+**Pendências:** **BL-29**, único item aberto — mensagens fora de ordem gravam a resposta no campo errado, em silêncio. O BL-33 (18/09) fechou o BL-28 e o BL-30 junto: com o cadastro entrando numa submissão só, a corrida do BL-29 deixa de ter onde acontecer **nesse caminho** — o que a estreita, não a resolve. O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 **Escopo deste arquivo:** é um **registro de trabalho** — o que foi encontrado, decidido e por quê. Para *como o sistema funciona hoje* e as regras a respeitar ao mexer no código (armazenamento, chamadas externas, concorrência, publicação), veja **[ARQUITETURA.md](ARQUITETURA.md)**.
@@ -40,7 +40,7 @@
 | BL-09 | Webhook processa só a 1ª mensagem do lote | 🟠 | M | ✅ Concluído (loop entry/changes/messages + idempotência por messageId) |
 | BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | ✅ Concluído |
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | ✅ Payload corrigido (tag 54 condicional, nome/cidade do titular, tag 62, copia-e-cola). QR externo mantido por decisão (chave não é secreta, baixo risco) |
-| BL-28 | Resposta interativa fora de contexto aborta o cadastro em silêncio | 🟠 | P | Aberto — **descoberto no teste de carga de 17/09** |
+| BL-28 | Resposta interativa fora de contexto aborta o cadastro em silêncio | 🟠 | P | ✅ Concluído (18/09) — o cadastro vence o toque fora de contexto; o passo é repetido |
 | BL-29 | Mensagens processadas fora de ordem gravam a resposta no campo errado | 🟠 | G | Aberto — **comprovado no teste de carga de 17/09** |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | ✅ Concluído (objeto `ASSETS` declarado em Assets.gs) |
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | ✅ Resolvido — opção "Secretaria" virou "Contato Pastoral" (contato do responsável por comunidade; secretaria de `x_parametros` como fallback) |
@@ -56,10 +56,10 @@
 | BL-24 | Sem retry/backoff em 429/5xx (WhatsApp, Odoo, Vision) | 🟡 | M | ✅ Concluído (`Utils.fetchComRetry`, com política por idempotência) |
 | BL-25 | Cota diária de UrlFetch pode limitar volume total | 🟡 | P | ✅ Concluído — contagem diária + alerta em 60%/80% (17/09) |
 | **WhatsApp Flow (18/09)** | | | | |
-| BL-30 | Cadastro por WhatsApp Flow — 1 execução de coleta no lugar de 9 | 🟠 | M | ⚠️ Parcial — Flow publicado e testado em aparelho real; a ENTRADA não está ligada (ver BL-33) |
+| BL-30 | Cadastro por WhatsApp Flow — 1 execução de coleta no lugar de 9 | 🟠 | M | ✅ Concluído (18/09) — entrada ligada pelo BL-33 |
 | BL-31 | Webhook descartava os callbacks de entrega da Meta | 🟠 | P | ✅ Concluído — `_registrarStatusEntrega`; sem isso, "não chegou" ficava sem diagnóstico |
 | BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
-| BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | 📋 Pedido em 18/09 — não iniciado |
+| BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — membro ficou na conversa, por decisão |
 
 ---
 
@@ -166,7 +166,7 @@ O que foi feito:
 
 ---
 
-### BL-28 — Resposta interativa fora de contexto aborta o cadastro 🟠 (P) — **descoberto no teste de carga de 17/09/2026**
+### BL-28 — Resposta interativa fora de contexto aborta o cadastro 🟠 (P) — **descoberto no teste de carga de 17/09/2026** — ✅ concluído em 18/09
 **Arquivo:** `Router.gs` — fallback final de `_rotearInterativo`, ramo `list_reply`
 **Problema:** o tratamento de `list_reply` testa o estado atual contra uma sequência de casos conhecidos e, não casando com nenhum, cai em `MenuHandler.menuPrincipal(from)`. Isso **põe o usuário de volta no menu e abandona o cadastro em andamento**, sem aviso e sem explicação.
 
@@ -179,7 +179,11 @@ Observado ao vivo no teste de carga: uma seleção de comunidade chegou enquanto
 
 **Por que acontece de verdade, e não só em teste:** o WhatsApp mantém as mensagens interativas antigas clicáveis na conversa. Basta o usuário rolar para cima e tocar numa lista de uma etapa anterior — ou numa lista de outro fluxo — para perder o cadastro que estava preenchendo. Não é preciso concorrência nem má-fé.
 
-**Relação com o BL-10:** aquele item tratou exatamente este risco para os atalhos de *texto* (`menu`, `0`, `rel`), que passaram a não abortar o cadastro. As respostas *interativas* fora de contexto ficaram de fora e continuam abortando.
+**Relação com o BL-10:** aquele item tratou exatamente este risco para os atalhos de *texto* (`menu`, `0`, `rel`), que passaram a não abortar o cadastro. As respostas *interativas* fora de contexto ficaram de fora — até agora.
+
+**✅ Corrigido em 18/09.** `Router._interativoForaDeContexto` resolve os dois casos (lista e botão desconhecido) com a mesma regra: **havendo cadastro em andamento, o cadastro vence**. O toque é descartado, a pessoa é avisada de que aquela opção era de uma etapa anterior, e `CadastroHandler.reapresentarPasso` repete a pergunta do passo atual — os 10 estados do cadastro estão cobertos. Sem cadastro em andamento, continua indo ao menu.
+
+**Aceite:** tocar numa lista antiga durante o cadastro não apaga o progresso — atendido.
 
 **Correção sugerida:** durante os `ESTADOS_CADASTRO`, não deixar uma seleção desconhecida cair no menu. Mínimo: responder algo como "não entendi essa opção — vamos continuar de onde paramos" e reenviar a pergunta do passo atual, preservando estado e dados. O mesmo vale para `button_reply`, que deve ser verificado junto.
 **Aceite:** tocar numa lista antiga da conversa durante o cadastro não faz o usuário perder o que já preencheu.
@@ -212,7 +216,7 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
-### BL-30 — Cadastro por WhatsApp Flow 🟠 (M) — ⚠️ parcial (simulação pronta, entrada não ligada)
+### BL-30 — Cadastro por WhatsApp Flow 🟠 (M) — ✅ concluído em 18/09 (entrada ligada pelo BL-33)
 **Arquivos:** `FlowHandler.gs` (novo) · `Router.gs` · `Config.gs` · `ferramentas/flow-cadastro.json` · `ferramentas/simula-flow.js`
 **Documentação:** `Documentação/FLOW-CADASTRO.md`
 
@@ -276,7 +280,7 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
-### BL-33 — Ligar o Flow no fluxo de cadastro 🟠 (G) — 📋 **pedido em 18/09/2026, não iniciado**
+### BL-33 — Ligar o Flow no fluxo de cadastro 🟠 (G) — ✅ **concluído em 18/09/2026**
 
 Refatorar o cadastro para usar o formulário do WhatsApp. O Flow já funciona
 ponta a ponta (BL-30) e já foi testado num aparelho real; o que falta é ligá-lo
@@ -327,6 +331,14 @@ terceira é legítima, porque membro é evento ainda mais raro que cadastro.
 (:34) e `iniciarCadastroMembro` (:80) · o passo de foto em `solicitarFoto` (:434),
 `processarFotoPerfil` (:441) e `ESTADOS.AGUARDANDO_FOTO_PERFIL` ·
 `ferramentas/flow-cadastro.json` · `Documentação/FLOW-CADASTRO.md` seção 5.
+
+**✅ Feito em 18/09:**
+- `CadastroHandler.iniciar` tenta o Flow e cai na conversa quando `enviarFlowCadastro` devolve `false` — o que acontece se o interruptor estiver desligado, se o id faltar, se o Odoo não responder ou se não houver comunidade ativa.
+- Interruptor `FLOW_CADASTRO_ATIVO`, com `ativarFlowCadastro()` / `desativarFlowCadastro()` no `Setup.gs`. Separado do id de propósito: numa hora ruim se quer voltar em segundos sem perder a configuração.
+- A foto vem depois da submissão, com opção de **pular** — ao contrário do cadastro por conversa. Ali a foto é uma pergunta entre outras; aqui é a única coisa entre a pessoa e um cadastro que ela já preencheu inteiro, e travar nesse ponto seria perdê-lo pelo passo mais dispensável.
+- Quem recebe o formulário e **escreve** em vez de preencher cai na conversa, em `confirmarNumero`. É o caso de quem desistiu, de quem está num aparelho que não renderiza e de quem não viu o botão — todos continuam querendo se cadastrar.
+
+**Decisão sobre o MEMBRO da família: fica na conversa, sem Flow.** Exigiria um segundo Flow publicado ou uma tela condicional, pelos cinco pontos de divergência acima. O ganho do Flow é proporcional à frequência, e membro é mais raro que cadastro — que já é uma vez por pessoa. Um segundo formulário para manter em dia não se paga. Anotado no código, em `iniciarCadastroMembro`.
 
 **Aceite:** com a propriedade ligada, um cadastro completo entra em 1 execução
 de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.

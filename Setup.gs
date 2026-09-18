@@ -541,6 +541,48 @@ function enviarFlowDeTeste(numero) {
 }
 
 /**
+ * Liga o formulário no fluxo de cadastro (BL-33).
+ *
+ * A partir daqui, `CadastroHandler.iniciar` manda o Flow em vez de começar a
+ * conversa. O caminho por conversa continua de pé como destino de quem abre o
+ * formulário e desiste, de quem está num aparelho que não o renderiza e de
+ * quem cai na validação do servidor.
+ *
+ * Exige FLOW_ID_CADASTRO configurado.
+ */
+function ativarFlowCadastro() {
+  const props = PropertiesService.getScriptProperties();
+
+  if (!props.getProperty('FLOW_ID_CADASTRO')) {
+    Logger.log('❌ FLOW_ID_CADASTRO não configurado — o Flow não teria o que abrir.');
+    Logger.log("   adicionarPropriedade('FLOW_ID_CADASTRO', '<id do Flow>')");
+    return;
+  }
+
+  props.setProperty('FLOW_CADASTRO_ATIVO', 'true');
+  Logger.log('✅ Flow de cadastro ATIVADO.');
+  Logger.log('   Novos cadastros passam a receber o formulário.');
+  Logger.log('   Para voltar atrás: desativarFlowCadastro()');
+}
+
+/**
+ * Desliga o formulário e volta ao cadastro por conversa (BL-33).
+ *
+ * Existe separado de apagar o FLOW_ID_CADASTRO de propósito: numa hora ruim,
+ * com gente cadastrando, o que se quer é voltar em segundos sem perder a
+ * configuração — e poder religar do mesmo jeito.
+ *
+ * Quem já estiver com o formulário aberto termina por ele: a resposta continua
+ * sendo aceita. O desligamento vale para os PRÓXIMOS cadastros.
+ */
+function desativarFlowCadastro() {
+  PropertiesService.getScriptProperties().setProperty('FLOW_CADASTRO_ATIVO', 'false');
+  Logger.log('🛑 Flow de cadastro DESATIVADO — novos cadastros vão pela conversa.');
+  Logger.log('   O FLOW_ID_CADASTRO foi mantido; religue com ativarFlowCadastro().');
+  Logger.log('   Quem já está com o formulário aberto consegue terminar por ele.');
+}
+
+/**
  * ============================================
  * EXEMPLOS DE USO
  * ============================================

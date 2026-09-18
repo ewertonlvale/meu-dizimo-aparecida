@@ -52,7 +52,19 @@ const CadastroHandler = {
 
     StateManager.limparDados(from);
     StateManager.iniciarSessaoCadastro(from);
-    StateManager.registrarSessaoAtiva(from); 
+    StateManager.registrarSessaoAtiva(from);
+
+    // BL-33: o formulário, quando ligado. `enviarFlowCadastro` devolve `false`
+    // se o interruptor estiver desligado, se o id não estiver configurado, se
+    // o Odoo não responder ou se não houver comunidade ativa — e em todos
+    // esses casos a conversa abaixo continua valendo. O caminho por conversa
+    // NÃO é legado esperando remoção: é o destino de quem abre o formulário e
+    // desiste, de quem está num aparelho que não o renderiza e de quem cai na
+    // validação do servidor.
+    if (FlowHandler.enviarFlowCadastro(from)) {
+      console.log(`📋 [Cadastro] ${from} recebeu o formulário — conversa em espera`);
+      return;
+    }
 
     const numeroFormatado = Utils.formatarNumeroExibicao(from);
 
@@ -78,6 +90,18 @@ const CadastroHandler = {
    * Ponto de entrada: botão 'btn_adicionar_membro'.
    */
   iniciarCadastroMembro(from) {
+    // BL-33 — decisão: o cadastro de MEMBRO fica na conversa, sem Flow.
+    //
+    // Não é o cadastro normal com outro rótulo. Ele diverge em cinco pontos
+    // (endereço herdado do responsável, notificações puladas, dia perguntado
+    // de outro jeito, foto opcional e `criarMembro` no lugar de
+    // `criarDizimista`), então exigiria um segundo Flow publicado na Meta ou
+    // uma tela condicional.
+    //
+    // O ganho do Flow é proporcional à frequência, e membro é evento mais raro
+    // que cadastro — que já é uma vez por pessoa. Um segundo formulário para
+    // manter em dia não se paga. Se a frequência mudar, isto se revisita.
+
     const responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
     if (!responsavel) {
       Utils.enviarComBotaoMenu(from, '❌ Não encontrei seu cadastro. Digite *menu* para começar.');
@@ -422,9 +446,32 @@ const CadastroHandler = {
     );
   },
 
-  /** Membro: pula a foto e vai ao resumo. */
-  pularFotoMembro(from) {
+  /** Pula a foto e vai ao resumo. Serve ao membro e a quem veio pelo Flow. */
+  pularFoto(from) {
     this.mostrarResumo(from);
+  },
+
+  /** @deprecated Use `pularFoto`. Mantido pelo id de botão antigo. */
+  pularFotoMembro(from) {
+    this.pularFoto(from);
+  },
+
+  /**
+   * Pede a foto de quem preencheu o formulário (BL-33).
+   *
+   * Com opção de pular, ao contrário do cadastro por conversa. A diferença é
+   * proposital: ali a foto é uma pergunta entre outras, e quem chegou até ela
+   * já respondeu oito. Aqui é a ÚNICA coisa que separa a pessoa de terminar um
+   * cadastro que ela já preencheu inteiro — travar nesse ponto seria perder o
+   * cadastro por causa do passo mais dispensável.
+   */
+  pedirFotoDoDizimista(from) {
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_FOTO_PERFIL);
+    Utils.enviarMenu(from,
+      `✅ *Recebi seus dados!*\n\n📸 Para terminar, envie uma foto sua de perfil.\n\n` +
+      `💡 Pode ser uma selfie ou uma foto da galeria.`,
+      [{ id: 'btn_foto_pular', title: '⏭️ Pular foto' }]
+    );
   },
 
   // ==========================================================================
@@ -474,6 +521,82 @@ const CadastroHandler = {
 
   //Utilities.sleep(1000);
   //this.mostrarResumo(from);
+
+  // ==========================================================================
+  // REAPRESENTAR O PASSO ATUAL (BL-28)
+  // ==========================================================================
+
+  /**
+   * Repete a pergunta do passo em que o cadastro parou.
+   *
+   * O WhatsApp mantém as mensagens interativas ANTIGAS clicáveis na conversa.
+   * Basta a pessoa rolar para cima e tocar numa lista de uma etapa anterior —
+   * ou de outro fluxo — para que a resposta chegue fora de contexto. Antes,
+   * isso caía no menu principal e o cadastro em andamento era abandonado sem
+   * uma palavra.
+   *
+   * O BL-10 já tinha tratado exatamente este risco para os atalhos de TEXTO
+   * ("menu", "0", "rel"); as respostas interativas ficaram de fora.
+   *
+   * @param {string} from
+   * @returns {boolean} false se não havia cadastro em andamento.
+   */
+  reapresentarPasso(from) {
+    const estado = StateManager.getEstado(from);
+    if (!ESTADOS_CADASTRO.includes(estado)) return false;
+
+    const dados    = StateManager.getDadosTemporarios(from);
+    const ehMembro = !!dados.cadastrandoMembro;
+
+    switch (estado) {
+      case ESTADOS.AGUARDANDO_CONFIRMACAO_NUMERO:
+        Utils.enviarConfirmar(from,
+          `📱 Esse número é o correto para o cadastro?\n\n*${Utils.formatarNumeroExibicao(from)}*`,
+          'btn_numero_confirmar', 'btn_numero_cancelar');
+        return true;
+
+      case ESTADOS.AGUARDANDO_COMUNIDADE:
+        this._enviarPaginaComunidades(from, OdooService.listarComunidades(), 0, true);
+        return true;
+
+      case ESTADOS.AGUARDANDO_NOME:
+        Utils.enviarSimples(from, '📝 *Nome Completo*\n\nDigite seu nome completo como está no documento:');
+        return true;
+
+      case ESTADOS.AGUARDANDO_NOME_USUAL:
+        Utils.enviarSimples(from, '💛 Como gostaria de ser chamado(a)?\n\nPode ser seu apelido ou nome de preferência:');
+        return true;
+
+      case ESTADOS.AGUARDANDO_DATA_NASCIMENTO:
+        Utils.enviarSimples(from, '📅 *Data de Nascimento*\n\nDigite no formato DD/MM/AAAA\nExemplo: 15/03/1990');
+        return true;
+
+      case ESTADOS.AGUARDANDO_ENDERECO:
+        Utils.enviarSimples(from, '🏠 *Endereço*\n\nDigite seu endereço completo:\n\n_Rua, número, bairro e ponto de referência_');
+        return true;
+
+      case ESTADOS.AGUARDANDO_VALOR_MENSAL:
+        Utils.enviarSimples(from, '💰 *Valor Mensal do Dízimo*\n\nEscreva somente o valor. Por exemplo: 50 ou 50,00');
+        return true;
+
+      case ESTADOS.AGUARDANDO_NOTIFICACAO:
+        Utils.enviarConfirmar(from,
+          '📲 *NOTIFICAÇÕES*\n\nDeseja receber lembretes mensais sobre suas devoluções?',
+          'btn_notificacao_sim', 'btn_notificacao_nao');
+        return true;
+
+      case ESTADOS.AGUARDANDO_DIA_PREFERIDO:
+        Utils.enviarSimples(from, '📅 Digite o dia do mês para o lembrete (número de *1 a 28*):');
+        return true;
+
+      case ESTADOS.AGUARDANDO_FOTO_PERFIL:
+        if (ehMembro) this._pedirFotoMembro(from);
+        else          this.pedirFotoDoDizimista(from);
+        return true;
+    }
+
+    return false;
+  },
 
   // ==========================================================================
   // RESUMO E FINALIZAÇÃO
