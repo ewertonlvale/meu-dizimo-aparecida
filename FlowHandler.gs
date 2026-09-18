@@ -262,10 +262,12 @@ const FlowHandler = {
    * é o que permite publicar este código antes de existir Flow nenhum.
    *
    * @param {string}  from
-   * @param {boolean} [rascunho] - true envia a versão em RASCUNHO (`mode:
-   *   'draft'`), que é o que permite abrir o formulário num aparelho de
-   *   verdade antes de publicar o Flow. O WhatsApp mostra um aviso de que é
-   *   rascunho, e só números com papel na conta da Meta conseguem abrir.
+   * @param {boolean} [rascunho] - PREFERÊNCIA de modo, não ordem: true tenta a
+   *   versão em rascunho (`mode: 'draft'`), que permite abrir o formulário num
+   *   aparelho antes de publicar o Flow. Se a Meta recusar por causa do estado
+   *   do Flow, o envio se repete no outro modo — ver `_recusouPorModo`.
+   *   Enquanto o Flow está em rascunho, só números com papel na conta da Meta
+   *   (admin, desenvolvedor ou testador) conseguem abrir o formulário.
    * @returns {boolean} true se o Flow foi enviado.
    */
   enviarFlowCadastro(from, rascunho) {
@@ -287,7 +289,41 @@ const FlowHandler = {
     }
     if (!comunidades.length) return false;
 
-    const resposta = Utils._post({
+    let modo = rascunho ? 'draft' : 'published';
+    let resposta = this._postarFlow(from, flowId, comunidades, modo);
+
+    // Quem sabe se o Flow está publicado ou em rascunho é a Meta, não este
+    // código: o estado muda lá, sem avisar ninguém aqui. Em vez de exigir que
+    // quem chama acerte o modo — e receba um 131009 quando errar — repetimos
+    // uma vez no outro modo. Vale nos dois sentidos, porque publicar o Flow e
+    // voltá-lo a rascunho são igualmente comuns durante os testes.
+    if (this._recusouPorModo(resposta)) {
+      const outro = modo === 'draft' ? 'published' : 'draft';
+      console.log(`ℹ️ [Flow] A Meta recusou o modo '${modo}' — o Flow está como ` +
+                  `'${outro}'. Reenviando.`);
+      modo = outro;
+      resposta = this._postarFlow(from, flowId, comunidades, modo);
+    }
+
+    const enviou = !!resposta && resposta.getResponseCode() === 200;
+    console.log(`📤 [Flow] Envio do cadastro para ${from} ` +
+                `(modo ${modo}, ${comunidades.length} comunidades): ` +
+                `${enviou ? 'ok' : 'falhou'}`);
+    if (enviou) {
+      StateManager.setEstado(from, ESTADOS.AGUARDANDO_FLOW_CADASTRO);
+      StateManager.salvarMultiplosCampos(from, { whatsapp: from });
+    }
+    return enviou;
+  },
+
+  /**
+   * Monta e posta a mensagem de Flow.
+   * @param {string} modo - 'draft' ou 'published'.
+   * @returns {GoogleAppsScript.URL_Fetch.HTTPResponse|null}
+   * @private
+   */
+  _postarFlow(from, flowId, comunidades, modo) {
+    return Utils._post({
       messaging_product: 'whatsapp',
       recipient_type:    'individual',
       to:                from,
@@ -306,10 +342,9 @@ const FlowHandler = {
             flow_id:      flowId,
             flow_cta:     'Preencher cadastro',
             flow_action:  'navigate',
-            // 'draft' abre a versão não publicada; ausente equivale a
-            // 'published'. É o que torna possível testar num aparelho real
-            // antes de publicar o Flow.
-            mode:         rascunho ? 'draft' : 'published',
+            // 'draft' abre a versão não publicada; 'published', a publicada.
+            // Pedir o modo que o Flow não está devolve 131009.
+            mode:         modo,
             flow_action_payload: {
               screen: 'CADASTRO',
               data:   { comunidades }
@@ -318,16 +353,22 @@ const FlowHandler = {
         }
       }
     });
+  },
 
-    const enviou = !!resposta && resposta.getResponseCode() === 200;
-    console.log(`📤 [Flow] Envio do cadastro para ${from} ` +
-                `(${rascunho ? 'RASCUNHO' : 'publicado'}, ${comunidades.length} comunidades): ` +
-                `${enviou ? 'ok' : 'falhou'}`);
-    if (enviou) {
-      StateManager.setEstado(from, ESTADOS.AGUARDANDO_FLOW_CADASTRO);
-      StateManager.salvarMultiplosCampos(from, { whatsapp: from });
-    }
-    return enviou;
+  /**
+   * A recusa foi só por causa do modo (131009), e não por outro motivo?
+   *
+   * A mensagem da Meta é genérica ("Parameter value is not valid"); o que
+   * identifica o caso é o `details`, que cita o estado de rascunho nos dois
+   * sentidos: "The flow is not in a draft state, but the mode is set to
+   * 'draft'" e o equivalente para um Flow ainda não publicado.
+   *
+   * @private
+   */
+  _recusouPorModo(resposta) {
+    if (!resposta || resposta.getResponseCode() === 200) return false;
+    const corpo = String(resposta.getContentText() || '');
+    return corpo.indexOf('131009') >= 0 && corpo.indexOf('draft') >= 0;
   }
 
 };
