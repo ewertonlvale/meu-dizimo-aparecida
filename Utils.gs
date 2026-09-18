@@ -273,7 +273,7 @@ const Utils = {
    * manual deve usar `somarMensagensDoMes`, que não apaga nada.
    * @returns {{servico: number, template: number}|null}
    */
-  verificarCotaMensagens() {
+  verificarCotaMensagens(todasProps) {
     try {
       const props = PropertiesService.getScriptProperties();
       const mes   = this._mesAtual();
@@ -281,7 +281,7 @@ const Utils = {
 
       this._somarShards({
         props,
-        todas:   props.getProperties(),
+        todas:   todasProps || props.getProperties(),
         prefixo: this.MSG_PREFIXO,
         tamanho: 7,                     // yyyy-MM
         atual:   mes,
@@ -304,13 +304,13 @@ const Utils = {
     }
   },
 
-  verificarCotaUrlFetch() {
+  verificarCotaUrlFetch(todasProps) {
     try {
       const props = PropertiesService.getScriptProperties();
 
       const total = this._somarShards({
         props,
-        todas:   props.getProperties(),
+        todas:   todasProps || props.getProperties(),
         prefixo: this.URLFETCH_PREFIXO,
         tamanho: 10,                    // yyyy-MM-dd
         atual:   this._hoje(),

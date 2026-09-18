@@ -40,6 +40,10 @@
  *   Cadastro por Flow:      2 mensagens, 1 execução, sem corrida possível.
  */
 
+// Envelope e construtores de mensagem vivem em envelope.js — os dois
+// simuladores usam os mesmos, e o formato acompanha o Webhook.gs.
+const { envelope, comoFlow } = require('./envelope');
+
 const args = process.argv.slice(2);
 const opt = (nome, padrao) => {
   const i = args.indexOf(`--${nome}`);
@@ -101,41 +105,6 @@ function respostaDoFlow() {
   }
 }
 
-function envelope(from, resposta) {
-  return {
-    object: 'whatsapp_business_account',
-    entry: [{
-      id: 'TESTE',
-      changes: [{
-        field: 'messages',
-        value: {
-          messaging_product: 'whatsapp',
-          metadata: { display_phone_number: '0', phone_number_id: '0' },
-          messages: [{
-            from,
-            // O webhook deduplica por messageId (cache de 10 min). Sem id único
-            // a segunda rodada do teste seria ignorada em silêncio e pareceria
-            // ter passado.
-            id: `wamid.FLOW_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-            timestamp: String(Math.floor(Date.now() / 1000)),
-            type: 'interactive',
-            interactive: {
-              type: 'nfm_reply',
-              nfm_reply: {
-                name:          'flow',
-                body:          'Enviado',
-                // É string mesmo: a Meta entrega o payload do Flow como JSON
-                // serializado dentro do JSON da mensagem.
-                response_json: JSON.stringify(resposta)
-              }
-            }
-          }]
-        }
-      }]
-    }]
-  };
-}
-
 async function main() {
   const resposta = respostaDoFlow();
 
@@ -152,7 +121,7 @@ async function main() {
     r = await fetch(url, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(envelope(DE, resposta))
+      body:    JSON.stringify(envelope(DE, comoFlow(resposta), { prefixo: 'FLOW' }))
     });
   } catch (e) {
     console.error(`❌ Falhou a requisição: ${e.message}`);

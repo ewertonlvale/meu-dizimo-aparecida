@@ -97,6 +97,66 @@ const ESTADOS_CADASTRO = [
 ];
 
 /**
+ * ============================================================================
+ * CONFERÊNCIA DA CHAVE PIX (BL-26)
+ * ============================================================================
+ *
+ * O resultado da conferência entre a chave do comprovante e a da comunidade
+ * nasce em `ComprovanteHandler._conferirChave`, é gravado em
+ * `x_studio_conferencia_pix` e precisa ser lido em dois lugares muito
+ * diferentes: o nome do registro no Odoo (curto, cabe numa linha) e a tela do
+ * coordenador no WhatsApp (uma frase).
+ *
+ * Estava escrito em três lugares — o enum no ComprovanteHandler, um mapa de
+ * texto curto no OdooService e outro de texto longo declarado DENTRO de uma
+ * função do RelatorioHandler. Os dois mapas falham em SILÊNCIO: um código novo
+ * (ou um typo) vira `undefined`, e a devolução aparece sem aviso nenhum para
+ * quem vai confirmar. É exatamente a falha silenciosa que o BL-26 existe para
+ * acabar.
+ *
+ * `exigeConferencia` também mora aqui: o RelatorioHandler codificava a regra
+ * "diferente de 'ok' significa conferir" por conta própria.
+ */
+const CONFERENCIA = {
+  ok: {
+    exigeConferencia: false,
+    avisoRegistro:    '',
+    textoCoordenador: ''
+  },
+  divergente: {
+    exigeConferencia: true,
+    avisoRegistro:    '⚠️ CONFERIR: chave do comprovante diverge da comunidade',
+    textoCoordenador: 'a chave do comprovante *diverge* da chave da comunidade'
+  },
+  ausente: {
+    exigeConferencia: true,
+    avisoRegistro:    '⚠️ CONFERIR: chave não identificada no comprovante',
+    textoCoordenador: 'não consegui identificar a chave no comprovante'
+  },
+  sem_referencia: {
+    exigeConferencia: true,
+    avisoRegistro:    '⚠️ CONFERIR: comunidade sem chave PIX cadastrada',
+    textoCoordenador: 'a comunidade não tem chave PIX cadastrada para comparar'
+  }
+};
+
+/**
+ * Este resultado de conferência pede olhar humano?
+ *
+ * Um código DESCONHECIDO conta como "sim". É o lado seguro: melhor um aviso a
+ * mais do que uma devolução com problema passando batida por falta de entrada
+ * na tabela — que era o comportamento anterior.
+ *
+ * @param {string} codigo - Valor de x_studio_conferencia_pix
+ * @returns {boolean}
+ */
+function exigeConferencia(codigo) {
+  if (!codigo) return false;                    // campo vazio: nada a conferir
+  const regra = CONFERENCIA[codigo];
+  return regra ? regra.exigeConferencia : true;
+}
+
+/**
  * Fuso horário único do projeto. Use esta constante em todo Utilities.formatDate
  * para evitar inconsistências (antes havia mistura de 'America/Sao_Paulo' e
  * 'America/Fortaleza', com risco de erro de borda em datas de relatório).

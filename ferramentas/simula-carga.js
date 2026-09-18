@@ -77,39 +77,9 @@ if (MODO === 'corrida' && !COMUNIDADE) {
 const DDD_TESTE = '5599';
 const espera = ms => new Promise(r => setTimeout(r, ms));
 
-/**
- * O webhook deduplica por messageId (cache de 10 min). Sem id único, todas as
- * requisições menos a primeira seriam ignoradas em silêncio — e o teste
- * pareceria passar sem ter processado nada.
- */
-function idUnico(indice) {
-  return `wamid.TESTE_${Date.now()}_${indice}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function envelope(from, indice, mensagemParcial) {
-  return {
-    object: 'whatsapp_business_account',
-    entry: [{
-      id: 'TESTE',
-      changes: [{
-        field: 'messages',
-        value: {
-          messaging_product: 'whatsapp',
-          metadata: { display_phone_number: '0', phone_number_id: '0' },
-          messages: [Object.assign({
-            from,
-            id: idUnico(indice),
-            timestamp: String(Math.floor(Date.now() / 1000))
-          }, mensagemParcial)]
-        }
-      }]
-    }]
-  };
-}
-
-const comoTexto  = texto => ({ type: 'text', text: { body: texto } });
-const comoBotao  = (id, title) => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title } } });
-const comoLista  = (id, title) => ({ type: 'interactive', interactive: { type: 'list_reply',   list_reply:   { id, title } } });
+// Envelope e construtores de mensagem vivem em envelope.js — os dois
+// simuladores usam os mesmos, e o formato acompanha o Webhook.gs.
+const { envelope, comoTexto, comoBotao, comoLista } = require('./envelope');
 
 async function enviar(from, mensagemParcial, indice) {
   const inicio = Date.now();
@@ -119,7 +89,7 @@ async function enviar(from, mensagemParcial, indice) {
     const resposta = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(envelope(from, indice, mensagemParcial))
+      body: JSON.stringify(envelope(from, mensagemParcial, { prefixo: 'TESTE', indice }))
     });
     const corpo = await resposta.text();
     return { ok: resposta.status === 200, status: resposta.status, ms: Date.now() - inicio, corpo: corpo.slice(0, 80) };

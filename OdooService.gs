@@ -555,12 +555,6 @@ const OdooService = {
    * Texto de alerta correspondente a cada resultado de conferência (BL-26).
    * Usado no nome do registro; a fonte filtrável é `x_studio_conferencia_pix`.
    */
-  AVISO_CONFERENCIA: {
-    divergente:     '⚠️ CONFERIR: chave do comprovante diverge da comunidade',
-    ausente:        '⚠️ CONFERIR: chave não identificada no comprovante',
-    sem_referencia: '⚠️ CONFERIR: comunidade sem chave PIX cadastrada'
-  },
-
   /**
    * Registra uma devolução no Odoo com comprovante (imagem ou PDF).
    * @param {number}      dizimistaId        - ID do dizimista
@@ -588,7 +582,7 @@ const OdooService = {
 
     // BL-26: o resultado da conferência da chave PIX vai num campo estruturado
     // (filtrável pelo coordenador) e, como redundância visível, no nome do registro.
-    const aviso = this.AVISO_CONFERENCIA[conferencia] || '';
+    const aviso = (CONFERENCIA[conferencia] || {}).avisoRegistro || '';
 
     let descricao = `Devolução de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
     if (aviso) descricao += ` — ${aviso}`;

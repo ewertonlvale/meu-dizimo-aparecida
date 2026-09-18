@@ -369,9 +369,14 @@ const StateManager = {
    * Retorna os números com sessão de cadastro ativa.
    * @returns {string[]} Números com sessão ativa
    */
-  getSessoesAtivas() {
+  /**
+   * @param {Object} [todasProps] - Mapa já lido do ScriptProperties. A trigger
+   *   passa o dela: sem isso, três funções varriam o store inteiro na mesma
+   *   execução, a cada 5 minutos. Omitido, lê por conta própria.
+   */
+  getSessoesAtivas(todasProps) {
     try {
-      const todas = PropertiesService.getScriptProperties().getProperties();
+      const todas = todasProps || PropertiesService.getScriptProperties().getProperties();
       return Object.keys(todas)
         .filter(chave => chave.startsWith(this.PREFIXO_SESSAO))
         .map(chave => chave.slice(this.PREFIXO_SESSAO.length));
