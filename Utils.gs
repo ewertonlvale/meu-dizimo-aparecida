@@ -42,10 +42,24 @@ const Utils = {
   URLFETCH_PREFIXO:     'uso_urlfetch_',
   URLFETCH_SHARDS:      5,
 
-  // Contador da execução atual. Cada execução do Apps Script roda num contexto
-  // JS próprio, então isto zera sozinho a cada disparo — é por execução, não
-  // global.
-  _chamadasExternas: 0,
+  // ── Mensagens entregues ao WhatsApp (custo) ─────────────────────────────
+  // Desde 01/10/2026 a Meta cobra as mensagens de serviço acima de uma
+  // franquia mensal por número. Contamos separado dos demais acessos HTTP
+  // porque só mensagem entregue é cobrada — chamada ao Odoo, OCR, upload de
+  // mídia e download não são.
+  //
+  // Serviço e template são contados à parte: a franquia vale para serviço;
+  // template tem tarifa própria.
+  MSG_PREFIXO:          'msgs_',
+  MSG_FRANQUIA_SERVICO: 1000,
+  MSG_MESES_GUARDADOS:  6,
+
+  // Contadores da execução atual. Cada execução do Apps Script roda num
+  // contexto JS próprio, então isto zera sozinho a cada disparo — é por
+  // execução, não global.
+  _chamadasExternas:  0,
+  _mensagensServico:  0,
+  _mensagensTemplate: 0,
 
   /**
    * `UrlFetchApp.fetch` com backoff exponencial para falhas transitórias (BL-24).
@@ -86,7 +100,15 @@ const Utils = {
         excecao = e;
       }
 
-      const code    = resposta ? resposta.getResponseCode() : null;
+      const code = resposta ? resposta.getResponseCode() : null;
+
+      // Só conta ENTREGA aceita (HTTP 200): é o que a Meta cobra. Tentativa
+      // recusada ou repetida não gera cobrança, então não entra na conta.
+      if (cfg.mensagem && code === 200) {
+        if (cfg.mensagem === 'template') this._mensagensTemplate++;
+        else                             this._mensagensServico++;
+      }
+
       const repetir = code === 429 || ((excecao || code >= 500) && idempotente);
 
       if (!repetir) break;
@@ -129,22 +151,88 @@ const Utils = {
    * grandeza e disparar alerta com folga, não para auditoria.
    */
   registrarConsumoExterno() {
-    if (this._chamadasExternas === 0) return;
-
     const chamadas = this._chamadasExternas;
-    this._chamadasExternas = 0;
+    const servico  = this._mensagensServico;
+    const template = this._mensagensTemplate;
+
+    this._chamadasExternas  = 0;
+    this._mensagensServico  = 0;
+    this._mensagensTemplate = 0;
+
+    if (!chamadas && !servico && !template) return;
 
     try {
-      const props  = PropertiesService.getScriptProperties();
-      const shard  = Math.floor(Math.random() * this.URLFETCH_SHARDS);
-      const chave  = `${this.URLFETCH_PREFIXO}${this._hoje()}_${shard}`;
-      const atual  = parseInt(props.getProperty(chave), 10) || 0;
+      const props = PropertiesService.getScriptProperties();
+      const shard = Math.floor(Math.random() * this.URLFETCH_SHARDS);
+      const mes   = this._mesAtual();
 
-      props.setProperty(chave, String(atual + chamadas));
-      console.log(`📊 [Cota] ${chamadas} chamada(s) externa(s) nesta execução`);
+      if (chamadas) this._somar(props, `${this.URLFETCH_PREFIXO}${this._hoje()}_${shard}`, chamadas);
+      // Mensagens são agregadas por MÊS, não por dia: a franquia da Meta é mensal.
+      if (servico)  this._somar(props, `${this.MSG_PREFIXO}${mes}_servico_${shard}`,  servico);
+      if (template) this._somar(props, `${this.MSG_PREFIXO}${mes}_template_${shard}`, template);
+
+      console.log(`📊 [Cota] ${chamadas} chamada(s) externa(s)` +
+                  (servico || template
+                    ? ` · ${servico} mensagem(ns) de serviço, ${template} template(s)`
+                    : '') +
+                  ' nesta execução');
     } catch (e) {
       console.warn('⚠️ [Cota] Não consegui registrar o consumo:', e.message);
     }
+  },
+
+  /** Soma `quanto` ao contador da chave. @private */
+  _somar(props, chave, quanto) {
+    const atual = parseInt(props.getProperty(chave), 10) || 0;
+    props.setProperty(chave, String(atual + quanto));
+  },
+
+  /**
+   * Soma as mensagens do mês corrente e alerta ao se aproximar da franquia.
+   * Roda de carona na trigger de sessões, junto com `verificarCotaUrlFetch`.
+   * Também descarta os contadores de meses antigos.
+   * @returns {{servico: number, template: number}|null}
+   */
+  verificarCotaMensagens() {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const todas = props.getProperties();
+      const mes   = this._mesAtual();
+      const corte = this._mesAtual(new Date(Date.now() - this.MSG_MESES_GUARDADOS * 31 * 86400000));
+
+      let servico = 0;
+      let template = 0;
+
+      Object.keys(todas).forEach(chave => {
+        if (chave.indexOf(this.MSG_PREFIXO) !== 0) return;
+
+        const mesDaChave = chave.slice(this.MSG_PREFIXO.length, this.MSG_PREFIXO.length + 7);
+        if (mesDaChave < corte) { props.deleteProperty(chave); return; }   // ISO ordena como texto
+        if (mesDaChave !== mes) return;
+
+        const valor = parseInt(todas[chave], 10) || 0;
+        if (chave.indexOf('_template_') >= 0) template += valor;
+        else                                  servico  += valor;
+      });
+
+      const pct = Math.round((servico / this.MSG_FRANQUIA_SERVICO) * 100);
+      const msg = `${servico} de serviço (~${pct}% da franquia de ${this.MSG_FRANQUIA_SERVICO}) ` +
+                  `e ${template} template(s) em ${mes}`;
+
+      if (pct >= 90)      console.error(`🚨 [Mensagens] ${msg} — acima da franquia a Meta cobra por entrega.`);
+      else if (pct >= 70) console.warn(`⚠️ [Mensagens] ${msg}`);
+      else                console.log(`📊 [Mensagens] ${msg}`);
+
+      return { servico, template };
+    } catch (e) {
+      console.warn('⚠️ [Mensagens] Falha ao verificar:', e.message);
+      return null;
+    }
+  },
+
+  /** Mês em America/Sao_Paulo no formato yyyy-MM. @private */
+  _mesAtual(data) {
+    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
   },
 
   /**
@@ -211,7 +299,7 @@ const Utils = {
           payload:     JSON.stringify(payload),
           muteHttpExceptions: true
         },
-        { idempotente: false, rotulo: 'WhatsApp' }
+        { idempotente: false, rotulo: 'WhatsApp', mensagem: 'servico' }
       );
 
       const code = response.getResponseCode();

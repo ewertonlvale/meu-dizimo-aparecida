@@ -307,6 +307,59 @@ function testarConexaoOdoo() {
 
 /**
  * ============================================
+ * CONSUMO DE MENSAGENS DO WHATSAPP
+ * ============================================
+ *
+ * Mostra quantas mensagens o bot entregou no mês e projeta o total até o
+ * fechamento, no ritmo atual.
+ *
+ * Existe porque, desde 01/10/2026, a Meta cobra as mensagens de serviço acima
+ * de uma franquia mensal por número. O contador de UrlFetch não serve para isso:
+ * ele soma Odoo, OCR e uploads junto, e nada disso é cobrado.
+ *
+ * ⚠️ A contagem começa do zero quando esta versão entra no ar — meses
+ * anteriores não têm dado. E é aproximada: os contadores são distribuídos em
+ * shards para evitar lock, então execuções concorrentes podem perder um
+ * incremento. Serve para ordem de grandeza e alerta com folga, não para
+ * conferir fatura.
+ */
+function verificarConsumoMensagens() {
+  const contagem = Utils.verificarCotaMensagens();
+
+  if (!contagem) {
+    Logger.log('❌ Não consegui ler os contadores.');
+    return;
+  }
+
+  const agora     = new Date();
+  const diaDoMes  = Number(Utilities.formatDate(agora, 'America/Sao_Paulo', 'd'));
+  const ultimoDia = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).getDate();
+  const projecao  = Math.round((contagem.servico / diaDoMes) * ultimoDia);
+  const franquia  = Utils.MSG_FRANQUIA_SERVICO;
+
+  Logger.log('');
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  Logger.log('📊 MENSAGENS ENTREGUES NESTE MÊS');
+  Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  Logger.log(`   Serviço:   ${contagem.servico}  (franquia mensal: ${franquia})`);
+  Logger.log(`   Template:  ${contagem.template}  (tarifa própria, fora da franquia)`);
+  Logger.log('');
+  Logger.log(`   Dia ${diaDoMes} de ${ultimoDia} → projeção de ${projecao} mensagens de serviço no mês`);
+  Logger.log('');
+
+  if (projecao > franquia) {
+    Logger.log(`🚨 A projeção passa da franquia em ~${projecao - franquia} mensagens.`);
+    Logger.log('   Onde há mais a ganhar: o cadastro gasta ~15 mensagens por pessoa,');
+    Logger.log('   sendo ~10 o par "✅ registrado" + "próxima pergunta", que poderiam');
+    Logger.log('   virar uma só. Ver também a análise do WhatsApp Flows no backlog.');
+  } else {
+    Logger.log('✅ No ritmo atual, o mês fecha dentro da franquia.');
+  }
+  Logger.log('');
+}
+
+/**
+ * ============================================
  * LIMPAR TODAS AS PROPRIEDADES (CUIDADO!)
  * ============================================
  */
