@@ -62,6 +62,7 @@
 | BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — inclui o formulário de membro, com endereço e dia pré-preenchidos |
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
+| BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
 
 ---
 
@@ -392,6 +393,31 @@ de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
 **Uma armadilha que o teste pegou, e o código tinha.** `cache.put` renova o TTL a cada escrita, então um contador de chave fixa nunca expira enquanto chegarem mensagens: a janela de 60 s viraria "60 s desde a última mensagem", e quem respondesse a cada 20 s seria barrado no meio do próprio cadastro. A chave passou a incluir o **balde de tempo** — a janela fecha porque a chave muda.
 
 **Aceite:** um cadastro completo e um dia pesado passam inteiros; 200 mensagens seguidas são cortadas — conferido nos dois padrões, rápido e lento.
+
+---
+
+### BL-36 — Lista de bloqueio de telefones e detecção automática de spam 🟠 (M) — 📋 **pedido em 18/09/2026, não iniciado**
+**Arquivos previstos:** `Utils.gs` (junto de `excedeuTaxa`) · `Webhook.gs` · `Setup.gs` (administração)
+
+Segundo nível sobre o freio do **BL-35**. O freio corta o **laço** — 12 por minuto, 60 por hora — mas zera a cada janela: quem insiste volta a consumir resposta indefinidamente, em ondas. Falta poder dizer "este número não fala mais com o bot".
+
+**Duas partes, e a segunda é a delicada.**
+
+**1. A lista em si.** Bloqueio por número, consultado no `_processarMessagemWebhook` antes de qualquer resposta. Precisa de:
+- Onde guardar. `ScriptProperties` é enumerável e permanente, mas o store é compartilhado com a configuração e tem ~500 KB — uma lista grande o disputaria com os segredos e os contadores. O Odoo é o lugar natural para dado que cresce, custa ~225 ms e precisaria de cache.
+- Administração: incluir, remover e listar. Como é ação irreversível do ponto de vista de quem está do outro lado, vale o mesmo cuidado de `limparTodasSessoes()` — uma função que só lê ao lado da que age.
+- Decidir se o bloqueado recebe alguma mensagem. **Provavelmente não:** avisar custa exatamente o que o bloqueio existe para evitar, e informa ao abusador que ele foi detectado.
+
+**2. Identificar spam sozinho.** É onde o item pode causar mais dano que o problema. Um falso positivo **bloqueia um dizimista** — e ele não recebe aviso, some em silêncio, e ninguém fica sabendo até a pessoa reclamar pessoalmente na paróquia. O sintoma não aponta para a causa.
+
+Sinais possíveis, do mais para o menos confiável:
+- **Estourar o freio do BL-35 repetidas vezes em dias diferentes.** O mais defensável: já é comportamento anômalo medido, não inferido.
+- **Volume sem nunca completar fluxo nenhum** — muitas mensagens, zero cadastro e zero devolução.
+- **Conteúdo** (links, texto repetido, mensagem idêntica em sequência). O mais frágil: um dizimista confuso repete mensagem, e link pode ser legítimo.
+
+**Recomendação para quando for feito:** começar com **sugestão, não bloqueio automático**. O sistema marca o número como suspeito e registra; a inclusão na lista é humana. Só depois de ver os candidatos reais por um tempo é que dá para saber se algum critério é seguro o bastante para agir sozinho — e esse dado não existe hoje.
+
+**Aceite:** um número na lista não gera resposta nenhuma; nenhum dizimista ativo entra na lista sem decisão humana.
 
 ---
 
