@@ -93,8 +93,13 @@ segue pela conversa, sem nada quebrar.
 O de membro tem **seis campos**: não pergunta comunidade (herda a do
 responsável) nem notificações (membro não recebe lembrete).
 
-**Endereço e dia chegam preenchidos**, via `flow_action_payload.data`. Isso é o
-ganho de usabilidade que a conversa não consegue dar: lá, herdar o endereço
+**Endereço e dia chegam preenchidos**, via `flow_action_payload.data` ligado por
+`init-values` **no `Form`** — não `init-value` em cada componente, que o
+validador recusa nesta versão ("Property 'init-value' is not allowed in
+'TextInput' component"). As duas formas existem na documentação; a do
+componente é de versão mais nova. Na dúvida, a do `Form` é a que passa.
+
+Isso é o ganho de usabilidade que a conversa não consegue dar: lá, herdar o endereço
 custa uma pergunta com dois botões e um estado só para isso. No formulário o
 campo já vem com o valor do responsável e a pessoa altera se for diferente —
 que é o que ela faria de qualquer jeito, sem a ida e volta.
@@ -161,6 +166,7 @@ escritos no arquivo:
 | Onde | Limite |
 |---|---|
 | `label` de qualquer componente | **20 caracteres** — "para evitar truncamento em telas diferentes" |
+| valor inicial de campo | fica em `init-values` **no `Form`**, não em `init-value` no componente |
 | `helper-text` | 80 caracteres |
 | `title` da tela | 30 caracteres |
 
