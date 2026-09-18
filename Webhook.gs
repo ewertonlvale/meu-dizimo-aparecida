@@ -103,21 +103,22 @@ function doPost(e) {
       console.log('ℹ️ POST sem mensagens de usuário (provável evento de status).');
     }
 
-    Utils.registrarConsumoExterno();   // BL-25: uma escrita por execução
     return ContentService.createTextOutput('OK');
 
   } catch (error) {
     console.error('❌ Erro no webhook:', error);
     console.error('Stack:', error.stack);
     return ContentService.createTextOutput('Error');
+  } finally {
+    // BL-25: em `finally`, como nos outros dois pontos de entrada. Antes ficava
+    // antes do `return` do caminho feliz, então execução que estourasse perdia
+    // a contagem do lote inteiro — justamente as execuções anômalas, que são as
+    // que mais consumiram chamadas antes de quebrar. O erro não era aleatório:
+    // subestimava sempre.
+    Utils.registrarConsumoExterno();
   }
 }
 
-/**
- * Processa UMA mensagem do webhook, com idempotência por messageId.
- * Extraído do doPost para permitir o loop do lote (BL-09).
- * @param {Object} message - Objeto de mensagem do payload do WhatsApp
- */
 /**
  * Registra o resultado de entrega que a Meta devolve para cada mensagem enviada.
  *
@@ -186,6 +187,11 @@ function _sugerirOutroNumero(destinatario) {
                 `No DDD ${v.ddd}, o wa_id costuma ser ${v.provavel}.`);
 }
 
+/**
+ * Processa UMA mensagem do webhook, com idempotência por messageId.
+ * Extraído do doPost para permitir o loop do lote (BL-09).
+ * @param {Object} message - Objeto de mensagem do payload do WhatsApp
+ */
 function _processarMensagemWebhook(message) {
   if (!message || !message.id || !message.from) return;
 

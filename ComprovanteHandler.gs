@@ -307,7 +307,7 @@ const ComprovanteHandler = {
     mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n\n';
 
     if (dados.valor && dados.valor > 0) {
-      mensagemDados += `💰 *Valor:* R$ ${dados.valor.toFixed(2).replace('.', ',')}\n`;
+      mensagemDados += `💰 *Valor:* ${Utils.formatarValor(dados.valor)}\n`;
     } else {
       mensagemDados += `💰 *Valor:* Não identificado\n`;
     }
@@ -403,7 +403,7 @@ const ComprovanteHandler = {
 
     // ===== RESPOSTA FINAL — honesta quanto ao que realmente aconteceu =====
     const dadosResumo =
-      (dados.valor > 0 ? `• Valor: R$ ${dados.valor.toFixed(2).replace('.', ',')}\n` : '') +
+      (dados.valor > 0 ? `• Valor: ${Utils.formatarValor(dados.valor)}\n` : '') +
       (dados.data     ? `• Data: ${dados.data}\n` : '');
 
     // 1) Sucesso real: devolução criada. Encerra a sessão.

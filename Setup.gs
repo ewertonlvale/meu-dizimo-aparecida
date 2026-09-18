@@ -324,10 +324,15 @@ function testarConexaoOdoo() {
  * conferir fatura.
  */
 function verificarConsumoMensagens() {
-  const contagem = Utils.verificarCotaMensagens();
-
-  if (!contagem) {
-    Logger.log('❌ Não consegui ler os contadores.');
+  // `somarMensagensDoMes` em vez de `verificarCotaMensagens`: a segunda APAGA os
+  // meses vencidos e loga por conta própria no console. Um relatório manual não
+  // deve alterar estado nem imprimir os mesmos números duas vezes, em duas
+  // fontes diferentes — quem for depurar cota desconfia das duas.
+  let contagem;
+  try {
+    contagem = Utils.somarMensagensDoMes();
+  } catch (e) {
+    Logger.log(`❌ Não consegui ler os contadores: ${e.message}`);
     return;
   }
 
@@ -459,9 +464,9 @@ function listarPropriedades() {
  *   3. Guardar o número de teste em NUMERO_TESTE (formato 5586999998888),
  *      ou passar o número direto: enviarFlowDeTeste('5586999998888')
  *
- * O modo se ajusta sozinho: se o Flow já estiver publicado, a Meta recusa o
- * envio em rascunho e o `enviarFlowCadastro` repete como publicado. Não é
- * preciso saber em que estado o Flow está.
+ * O modo se ajusta sozinho e fica guardado em `FLOW_MODO_CADASTRO`: não é
+ * preciso saber em que estado o Flow está, e a descoberta não se repete a cada
+ * envio.
  *
  * ⚠️ ENQUANTO o Flow está em rascunho, só abre para números com papel na conta
  * da Meta (admin, desenvolvedor ou testador). Num número qualquer o botão
@@ -505,10 +510,10 @@ function enviarFlowDeTeste(numero) {
 
   Logger.log(`📤 Enviando o Flow de cadastro para ${destino}...`);
 
-  // Preferência por 'published', que é o estado final de qualquer Flow. Um
-  // Flow ainda em rascunho recusa esse modo, e `enviarFlowCadastro` repete em
-  // 'draft' sozinho — a troca custa uma requisição e aparece no log como um
-  // ❌ de [WhatsApp] seguido de um ℹ️ de [Flow]. Se o ❌ vier sozinho, a
+  // O modo (rascunho/publicado) é do `enviarFlowCadastro`: ele começa pelo
+  // último que funcionou e troca se a Meta recusar. Na primeira vez após uma
+  // mudança de estado do Flow, a troca aparece no log como um ❌ de [WhatsApp]
+  // seguido de um ℹ️ de [Flow] — e não se repete. Se o ❌ vier sozinho, a
   // recusa NÃO foi por modo: leia o `details` dele.
   const enviou = FlowHandler.enviarFlowCadastro(destino);
 
