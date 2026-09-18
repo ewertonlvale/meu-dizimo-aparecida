@@ -257,14 +257,18 @@ const FlowHandler = {
   /**
    * Envia o Flow de cadastro.
    *
-   * Exige a propriedade FLOW_ID_CADASTRO (o id do Flow publicado na Meta).
+   * Exige a propriedade FLOW_ID_CADASTRO (o id do Flow criado na Meta).
    * Sem ela devolve `false` e quem chamou segue pelo cadastro conversacional —
    * é o que permite publicar este código antes de existir Flow nenhum.
    *
-   * @param {string} from
+   * @param {string}  from
+   * @param {boolean} [rascunho] - true envia a versão em RASCUNHO (`mode:
+   *   'draft'`), que é o que permite abrir o formulário num aparelho de
+   *   verdade antes de publicar o Flow. O WhatsApp mostra um aviso de que é
+   *   rascunho, e só números com papel na conta da Meta conseguem abrir.
    * @returns {boolean} true se o Flow foi enviado.
    */
-  enviarFlowCadastro(from) {
+  enviarFlowCadastro(from, rascunho) {
     const flowId = PropertiesService.getScriptProperties().getProperty('FLOW_ID_CADASTRO');
     if (!flowId) {
       console.log('ℹ️ [Flow] FLOW_ID_CADASTRO não configurado — seguindo pelo cadastro por conversa');
@@ -302,6 +306,10 @@ const FlowHandler = {
             flow_id:      flowId,
             flow_cta:     'Preencher cadastro',
             flow_action:  'navigate',
+            // 'draft' abre a versão não publicada; ausente equivale a
+            // 'published'. É o que torna possível testar num aparelho real
+            // antes de publicar o Flow.
+            mode:         rascunho ? 'draft' : 'published',
             flow_action_payload: {
               screen: 'CADASTRO',
               data:   { comunidades }
@@ -312,6 +320,9 @@ const FlowHandler = {
     });
 
     const enviou = !!resposta && resposta.getResponseCode() === 200;
+    console.log(`📤 [Flow] Envio do cadastro para ${from} ` +
+                `(${rascunho ? 'RASCUNHO' : 'publicado'}, ${comunidades.length} comunidades): ` +
+                `${enviou ? 'ok' : 'falhou'}`);
     if (enviou) {
       StateManager.setEstado(from, ESTADOS.AGUARDANDO_FLOW_CADASTRO);
       StateManager.salvarMultiplosCampos(from, { whatsapp: from });

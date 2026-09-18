@@ -440,6 +440,69 @@ function listarPropriedades() {
   Logger.log('');
 }
 
+// ============================================================================
+// TESTE DO FLOW DE CADASTRO NO APARELHO
+// ============================================================================
+
+/**
+ * Manda o Flow de cadastro para um número de verdade, em modo RASCUNHO.
+ *
+ * É assim que se abre o formulário no WhatsApp antes de publicar o Flow: a
+ * Meta permite enviar a versão em rascunho com `mode: 'draft'`, e o cliente
+ * mostra um aviso de que é rascunho.
+ *
+ * ANTES DE RODAR
+ *   1. WhatsApp Manager → Flows → criar o Flow, colar o conteúdo de
+ *      `ferramentas/flow-cadastro.json` e SALVAR (não precisa publicar).
+ *   2. Copiar o id do Flow e guardar em Script Properties:
+ *      adicionarPropriedade('FLOW_ID_CADASTRO', '<id>')
+ *   3. Guardar o número de teste em NUMERO_TESTE (formato 5586999998888),
+ *      ou passar o número direto: enviarFlowDeTeste('5586999998888')
+ *
+ * ⚠️ Um Flow em rascunho só abre para números com papel na conta da Meta
+ * (admin, desenvolvedor ou testador). Num número qualquer o botão aparece
+ * mas não abre — não é bug do bot.
+ *
+ * ⚠️ A janela de 24h vale aqui: o número precisa ter mandado alguma mensagem
+ * ao bot nas últimas 24 horas, senão a Meta recusa o envio.
+ *
+ * @param {string} [numero] - Destinatário. Omitido, usa NUMERO_TESTE.
+ */
+function enviarFlowDeTeste(numero) {
+  const props = PropertiesService.getScriptProperties();
+  const destino = numero || props.getProperty('NUMERO_TESTE');
+
+  if (!destino) {
+    Logger.log('❌ Informe o número ou configure NUMERO_TESTE.');
+    Logger.log("   Exemplo: enviarFlowDeTeste('5586999998888')");
+    return;
+  }
+
+  if (!props.getProperty('FLOW_ID_CADASTRO')) {
+    Logger.log('❌ FLOW_ID_CADASTRO não configurado.');
+    Logger.log('   Crie o Flow no WhatsApp Manager com o conteúdo de');
+    Logger.log('   ferramentas/flow-cadastro.json, salve e guarde o id:');
+    Logger.log("   adicionarPropriedade('FLOW_ID_CADASTRO', '<id do Flow>')");
+    return;
+  }
+
+  Logger.log(`📤 Enviando o Flow de cadastro (rascunho) para ${destino}...`);
+
+  const enviou = FlowHandler.enviarFlowCadastro(destino, true);
+
+  if (enviou) {
+    Logger.log('✅ Enviado. Abra o WhatsApp desse número e toque em "Preencher cadastro".');
+    Logger.log('   Ao enviar o formulário, procure por "[Flow]" no Cloud Logging:');
+    Logger.log('   o response_json chega inteiro numa execução só.');
+  } else {
+    Logger.log('❌ Não enviou. Causas comuns, em ordem de frequência:');
+    Logger.log('   - Janela de 24h fechada: mande "oi" ao bot por esse número e tente de novo');
+    Logger.log('   - Flow ainda não salvo na Meta, ou id errado em FLOW_ID_CADASTRO');
+    Logger.log('   - Nenhuma comunidade ativa no Odoo (a lista vai dentro do Flow)');
+    Logger.log('   O erro exato está no log de [WhatsApp] logo acima.');
+  }
+}
+
 /**
  * ============================================
  * EXEMPLOS DE USO

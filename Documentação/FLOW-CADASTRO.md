@@ -121,10 +121,50 @@ todo cadastro**. Por isso aquele trecho usa `getUTCDate()`.
 
 ---
 
+## 4b. Testar no WhatsApp de verdade, antes de publicar
+
+A página de simulação e o `simula-flow.js` cobrem o **servidor**. Nenhum dos
+dois mostra como o formulário se comporta num aparelho — rolagem, teclado
+numérico, o `DatePicker`, o aviso de campo obrigatório. Para isso há três
+caminhos, do mais barato ao mais fiel:
+
+**1. Preview do Flow Builder.** No WhatsApp Manager → Flows, o botão *Preview*
+abre o formulário num telefone simulado, com troca de iOS/Android e claro/escuro.
+Não envolve o bot: serve para conferir layout e validações declaradas.
+
+**2. Link de preview.** O mesmo Preview gera uma URL compartilhável, válida por
+**30 dias**. Útil para mostrar à secretaria ou ao coordenador sem instalar nada.
+
+**3. Enviar o rascunho para um celular.** É o teste de verdade — o formulário
+abre dentro do WhatsApp e a resposta chega no webhook:
+
+```
+enviarFlowDeTeste('5586999998888')     // Setup.gs, no editor do Apps Script
+```
+
+A Meta permite enviar a versão **em rascunho** com `mode: 'draft'` nos
+parâmetros da mensagem, então **não é preciso publicar o Flow** para testar.
+O cliente mostra um aviso de que é rascunho.
+
+Duas restrições que costumam ser confundidas com bug:
+
+- Um Flow em rascunho **só abre para números com papel na conta da Meta**
+  (admin, desenvolvedor ou testador). Num número qualquer o botão aparece mas
+  não abre.
+- Vale a **janela de 24 h**: o número precisa ter mandado alguma mensagem ao bot
+  nas últimas 24 horas, senão a Meta recusa o envio.
+
+Ordem prática: criar e **salvar** o Flow no WhatsApp Manager (sem publicar) →
+`adicionarPropriedade('FLOW_ID_CADASTRO', '<id>')` → mandar "oi" ao bot pelo
+celular de teste → `enviarFlowDeTeste()`.
+
+---
+
 ## 5. O que falta para valer em produção
 
 1. **Criar o Flow na Meta** (WhatsApp Manager → Flows), colar o conteúdo de
-   `ferramentas/flow-cadastro.json` e publicar.
+   `ferramentas/flow-cadastro.json`, salvar e — depois de testar o rascunho num
+   aparelho, como descrito na seção 4b — publicar.
 2. **Guardar o id** na propriedade `FLOW_ID_CADASTRO`. Sem ela,
    `enviarFlowCadastro` devolve `false` e o bot segue pelo cadastro por
    conversa — é o que permite publicar este código antes de existir Flow algum.
@@ -132,9 +172,9 @@ todo cadastro**. Por isso aquele trecho usa `getUTCDate()`.
    caindo no fluxo atual quando devolver `false`. *Ainda não foi feito*: enquanto
    o Flow não estiver publicado e testado num aparelho real, o caminho de
    entrada continua o de sempre.
-4. **Testar num aparelho.** O simulador cobre o lado do servidor por completo;
-   ele não cobre a renderização do formulário nem o comportamento do
-   `DatePicker` no aparelho.
+4. **Testar num aparelho** com `enviarFlowDeTeste()` (seção 4b). O simulador
+   cobre o lado do servidor por completo; ele não cobre a renderização do
+   formulário nem o comportamento do `DatePicker` no aparelho.
 
 ### Custo
 
