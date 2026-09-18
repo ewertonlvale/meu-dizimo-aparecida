@@ -305,11 +305,47 @@ const Utils = {
       const code = response.getResponseCode();
       if (code !== 200) {
         console.error(`❌ [WhatsApp] Envio falhou (HTTP ${code}):`, response.getContentText());
+      } else {
+        this._conferirDestinatario(payload.to, response);
       }
       return response;
     } catch (e) {
       console.error('❌ [WhatsApp] Exceção ao enviar mensagem:', e.message);
       return null;
+    }
+  },
+
+  /**
+   * Avisa quando a Meta resolve o número para um `wa_id` diferente do enviado.
+   *
+   * BL-32 — O NONO DÍGITO. No Brasil, o WhatsApp de muitos celulares é o número
+   * SEM o 9 depois do DDD, mesmo que o número de telefone o tenha. A Meta
+   * aceita os dois formatos no envio e devolve HTTP 200 nos dois: só o
+   * `wa_id` da resposta diz qual conta realmente recebeu. Enviar para o
+   * formato errado é aceito e nunca chega — sem erro nenhum.
+   *
+   * Números que chegam pelo webhook já vêm canônicos, então o cadastro pelo
+   * bot é seguro. O risco está em número DIGITADO: propriedade de teste,
+   * contato preenchido à mão no Odoo, lembrete mensal para esse contato.
+   *
+   * Só registra — não corrige. Descobrir se o 9 sobra ou falta exige os dados
+   * reais, e adivinhar aqui quebraria os números em que o 9 está certo.
+   *
+   * @private
+   */
+  _conferirDestinatario(enviadoPara, response) {
+    if (!enviadoPara) return;
+    try {
+      const corpo   = JSON.parse(response.getContentText() || '{}');
+      const contato = (corpo.contacts || [])[0];
+      if (!contato || !contato.wa_id) return;
+
+      if (String(contato.wa_id) !== String(enviadoPara)) {
+        console.warn(`⚠️ [WhatsApp] Número ajustado pela Meta: enviado ${enviadoPara}, ` +
+                     `entregue a ${contato.wa_id}. Guarde o segundo — ver BL-32.`);
+      }
+    } catch (e) {
+      // Resposta sem JSON esperado não é motivo para falhar um envio bem-sucedido.
     }
   },
 
