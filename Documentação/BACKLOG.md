@@ -233,6 +233,18 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
+### BL-31 — Webhook descartava os callbacks de entrega 🟠 (P) — **descoberto testando o Flow em 18/09/2026** — ✅ corrigido
+**Arquivo:** `Webhook.gs`
+**Problema:** o laço de `entry[] → changes[]` fazia `continue` em todo POST sem `value.messages`, o que joga fora **todos os callbacks de status**. O sintoma só apareceu quando uma mensagem aceita pela Meta não chegou ao aparelho: o log mostrava `📤 … ok` seguido de `ℹ️ POST sem mensagens de usuário`, e não havia mais nada a olhar.
+
+**Por que isso deixa cego.** O 200 do envio significa apenas que a Meta **aceitou a mensagem na fila** — não que entregou. Falha de entrega (aparelho com WhatsApp antigo demais para o recurso, número inválido, janela fechada, recurso não suportado no aparelho) só é comunicada por esse callback, com um código e um `details`. Descartá-lo transforma qualquer não-entrega em "não chegou", sem diagnóstico.
+
+**Correção:** `_registrarStatusEntrega` registra os `statuses`. `failed` vira `console.error` com código e `details`; `sent`/`delivered`/`read` ficam em log comum — separados porque são três callbacks por mensagem entregue e, como erro, virariam ruído.
+
+**Aceite:** uma mensagem que não chega deixa no log o código de erro da Meta.
+
+---
+
 ## Itens baixos / manutenção
 
 ### BL-12 — `ASSETS` não declarado 🟡 (P)
