@@ -466,7 +466,11 @@ const FlowHandler = {
             flow_action_payload: {
               screen: 'MEMBRO',
               data: {
-                comunidade:      String(dados.comunidadeNome || '—'),
+                // O rótulo vai DENTRO do dado: no Flow JSON o `${...}` só é
+                // resolvido quando é o valor inteiro do campo. Numa frase
+                // maior — "Comunidade: ${data.comunidade}" — ele aparece
+                // literal na tela, como aconteceu no primeiro teste.
+                comunidade:      `Comunidade: ${dados.comunidadeNome || '—'}`,
                 endereco_padrao: String(dados.responsavelEndereco || ''),
                 // NÚMERO, não string: o campo do dia é `input-type: number`, e
                 // o validador do Flow confere o tipo do valor inicial contra o
