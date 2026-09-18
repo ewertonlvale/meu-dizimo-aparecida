@@ -6,7 +6,7 @@
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
 **Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude).
-**Pendências:** **BL-29**, único item aberto — mensagens fora de ordem gravam a resposta no campo errado, em silêncio. O BL-33 (18/09) fechou o BL-28 e o BL-30 junto: com o cadastro entrando numa submissão só, a corrida do BL-29 deixa de ter onde acontecer **nesse caminho** — o que a estreita, não a resolve. O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
+**Pendências:** **BL-29** ficou parcial: o lote agrupado foi consertado (ordenação por `timestamp`) e o atropelo entre POSTs separados é detectado e recusado, mas o `timestamp` do WhatsApp tem granularidade de 1 s e mensagens do mesmo segundo continuam indistinguíveis. O caminho para o resto não é mais código de ordenação — é o cadastro por formulário (BL-33, pronto) e a redução do tempo de execução (BL-21). O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Duas ações fora do código:** rodar `criarCampoConferenciaPix()` no Odoo (BL-26) e criar o usuário Odoo dedicado (BL-17). E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
 **Escopo deste arquivo:** é um **registro de trabalho** — o que foi encontrado, decidido e por quê. Para *como o sistema funciona hoje* e as regras a respeitar ao mexer no código (armazenamento, chamadas externas, concorrência, publicação), veja **[ARQUITETURA.md](ARQUITETURA.md)**.
@@ -41,7 +41,7 @@
 | BL-10 | Atalhos globais (menu/0/rel) abortam o cadastro sem confirmação | 🟠 | P | ✅ Concluído |
 | BL-11 | Payload PIX (BR Code) com tag 54 inválida, dados fixos e vazamento a terceiro | 🟠 | M | ✅ Payload corrigido (tag 54 condicional, nome/cidade do titular, tag 62, copia-e-cola). QR externo mantido por decisão (chave não é secreta, baixo risco) |
 | BL-28 | Resposta interativa fora de contexto aborta o cadastro em silêncio | 🟠 | P | ✅ Concluído (18/09) — o cadastro vence o toque fora de contexto; o passo é repetido |
-| BL-29 | Mensagens processadas fora de ordem gravam a resposta no campo errado | 🟠 | G | Aberto — **comprovado no teste de carga de 17/09** |
+| BL-29 | Mensagens processadas fora de ordem gravam a resposta no campo errado | 🟠 | G | ⚠️ Parcial (18/09) — lote ordenado (conserto) + portão por timestamp (mitigação). Resta o atropelo dentro do MESMO segundo |
 | BL-12 | `ASSETS` não declarado — `getAvatar()` sempre falha | 🟡 | P | ✅ Concluído (objeto `ASSETS` declarado em Assets.gs) |
 | BL-13 | Dados da secretaria com placeholder em produção | 🟡 | P | ✅ Resolvido — opção "Secretaria" virou "Contato Pastoral" (contato do responsável por comunidade; secretaria de `x_parametros` como fallback) |
 | BL-14 | Extração frágil de valor e chave PIX do OCR (chave = fragmento do ID da transação) | 🟠 | M | ✅ Concluído |
@@ -188,7 +188,7 @@ Observado ao vivo no teste de carga: uma seleção de comunidade chegou enquanto
 **Correção sugerida:** durante os `ESTADOS_CADASTRO`, não deixar uma seleção desconhecida cair no menu. Mínimo: responder algo como "não entendi essa opção — vamos continuar de onde paramos" e reenviar a pergunta do passo atual, preservando estado e dados. O mesmo vale para `button_reply`, que deve ser verificado junto.
 **Aceite:** tocar numa lista antiga da conversa durante o cadastro não faz o usuário perder o que já preencheu.
 
-### BL-29 — Mensagens fora de ordem gravam no campo errado 🟠 (G) — **comprovado no teste de carga de 17/09/2026**
+### BL-29 — Mensagens fora de ordem gravam no campo errado 🟠 (G) — **comprovado no teste de carga de 17/09/2026** — ⚠️ parcial em 18/09
 **Arquivos:** `Webhook.gs` · `Router.gs` · `StateManager.gs` — é do modelo de execução, não de um ponto específico
 **Problema:** o WhatsApp entrega cada mensagem como um POST separado, o Apps Script executa os POSTs **em paralelo**, e o fluxo de cadastro decide o que fazer lendo o estado atual. Quando duas mensagens do mesmo usuário se sobrepõem, **quem lê o estado primeiro ganha** — e a ordem em que o usuário digitou deixa de valer.
 
@@ -212,7 +212,19 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 2. **Confirmar o resumo antes de gravar.** O cadastro já mostra um resumo no fim; torná-lo um passo de confirmação obrigatório dá ao usuário a chance de pegar campos trocados.
 3. **Ordenar por `timestamp` antes de processar** — exige fila, ou seja, o BL-21.
 
-**Aceite:** duas respostas enviadas em sequência rápida não acabam gravadas em campos trocados sem que o usuário perceba.
+**⚠️ Tratado em 18/09, em dois níveis — e só o primeiro é conserto.**
+
+**1. Dentro de um POST: ordenado por `timestamp` (conserto).** Quando a Meta agrupa várias mensagens num lote, a ordem do array não é garantida — a documentação dela manda usar o campo `timestamp`. Aí a ordem correta é conhecida e está toda em mãos, então ordenar **elimina** o atropelo nesse caso. O `sort` do V8 é estável, então mensagens do mesmo segundo mantêm a ordem em que vieram.
+
+**2. Entre POSTs separados: portão monotônico (mitigação).** `_mensagemForaDeOrdem` guarda o maior `timestamp` já processado por usuário; uma mensagem estritamente mais antiga é **recusada** em vez de gravada no campo de quem estiver na vez, e `reapresentarPasso` (do BL-28) repete a pergunta. A pessoa é avisada.
+
+**O que continua aberto, e por quê.** O `timestamp` do WhatsApp tem granularidade de **um segundo**. Duas mensagens digitadas com 400 ms de diferença podem trazer o mesmo valor, e o portão não tem como distingui-las — nesse caso a mensagem passa e o atropelo segue possível. Impor ordem de verdade exigiria bufferizar e ordenar antes de processar: a fila assíncrona que o **BL-21 avaliou e descartou** por não caber nos limites do Apps Script.
+
+Isto vale porque a janela real é grande: as execuções medidas levaram **10 a 24 s**, então mensagens separadas por vários segundos ainda se atropelam — e essas o portão pega. O resto é atacado por outros dois caminhos: reduzir o tempo de execução (BL-21) estreita a janela, e o cadastro por formulário (BL-33) a elimina naquele caminho, porque uma submissão só não tem com quem competir.
+
+**Escopo estreito de propósito:** o portão só age durante o cadastro. Fora dele, chegar fora de ordem é inofensivo — um toque no menu ou a escolha de uma devolução não gravam resposta em campo de outra pergunta. Recusar mensagem onde não há dano seria trocar uma falha silenciosa por uma barulhenta.
+
+**Aceite:** duas respostas enviadas em sequência rápida não acabam gravadas em campos trocados sem que o usuário perceba — **atendido para diferenças de 1 s ou mais**; abaixo disso, o cadastro por formulário é a resposta.
 
 ---
 

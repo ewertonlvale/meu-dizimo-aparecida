@@ -87,7 +87,19 @@ function doPost(e) {
         const messages = change.value && change.value.messages;
         if (!Array.isArray(messages)) continue;   // ex.: eventos de status
 
-        for (const message of messages) {
+        // BL-29: quando a Meta agrupa várias mensagens num POST, a ordem do
+        // array NÃO é garantida — a própria documentação manda usar o campo
+        // `timestamp`. Aqui a ordem correta é conhecida e está toda em mãos,
+        // então ordenar é conserto, não mitigação: dentro de um lote, o
+        // atropelo deixa de existir.
+        //
+        // `sort` estável no V8, então mensagens do mesmo segundo mantêm a
+        // ordem em que vieram — que é o melhor palpite disponível.
+        const emOrdem = messages.slice().sort(
+          (a, b) => (parseInt(a.timestamp, 10) || 0) - (parseInt(b.timestamp, 10) || 0)
+        );
+
+        for (const message of emOrdem) {
           // Isola cada mensagem: uma falha não impede as demais do lote.
           try {
             _processarMensagemWebhook(message);
@@ -192,6 +204,73 @@ function _sugerirOutroNumero(destinatario) {
  * Extraído do doPost para permitir o loop do lote (BL-09).
  * @param {Object} message - Objeto de mensagem do payload do WhatsApp
  */
+/**
+ * Detecta uma mensagem que chegou DEPOIS de outra mais recente (BL-29).
+ *
+ * O PROBLEMA
+ *   Cada mensagem é um POST separado, o Apps Script executa os POSTs em
+ *   paralelo, e o cadastro decide o que fazer lendo o ESTADO ATUAL. Quando
+ *   duas mensagens do mesmo usuário se sobrepõem, quem lê o estado primeiro
+ *   ganha — e a ordem em que a pessoa digitou deixa de valer. O dado não se
+ *   perde: vai para o CAMPO ERRADO. Perda é visível; isto não é. O cadastro
+ *   termina completo, plausível e incorreto.
+ *
+ * O QUE ISTO FAZ
+ *   Guarda o maior `timestamp` já processado por usuário. Se chegar uma
+ *   estritamente mais antiga, ela é RECUSADA em vez de gravada no campo de
+ *   quem estiver na vez — e o passo atual é reapresentado, para a pessoa
+ *   responder de novo.
+ *
+ * ⚠️ O QUE ISTO **NÃO** FAZ, E POR QUÊ
+ *   O `timestamp` do WhatsApp tem granularidade de UM SEGUNDO. Duas mensagens
+ *   digitadas com 400 ms de diferença podem trazer o mesmo valor, e aí não há
+ *   como distingui-las — nesse caso a mensagem passa, e o atropelo continua
+ *   possível. Impor ordem de verdade exigiria bufferizar e ordenar antes de
+ *   processar, ou seja, a fila assíncrona que o BL-21 avaliou e descartou por
+ *   não caber nos limites do Apps Script.
+ *
+ *   Isto vale porque a janela real é grande: as execuções medidas levaram 10 a
+ *   24 s, então mensagens separadas por vários segundos ainda se atropelam — e
+ *   essas o portão pega. Reduzir o tempo de execução (BL-21) e o cadastro por
+ *   formulário (BL-33) atacam o resto.
+ *
+ * ESCOPO DELIBERADAMENTE ESTREITO
+ *   Só durante o cadastro. Fora dele, chegar fora de ordem é inofensivo — um
+ *   toque no menu ou a escolha de uma devolução não gravam resposta em campo
+ *   de outra pergunta. Recusar mensagem onde não há dano seria trocar uma
+ *   falha silenciosa por uma barulhenta.
+ *
+ * @returns {boolean} true se a mensagem foi recusada e NÃO deve ser roteada.
+ * @private
+ */
+function _mensagemForaDeOrdem(from, message) {
+  const estado = StateManager.getEstado(from);
+  if (!ESTADOS_CADASTRO.includes(estado)) return false;
+
+  const ts = parseInt(message.timestamp, 10);
+  if (!ts) return false;                    // sem timestamp não há o que comparar
+
+  const cache  = CacheService.getScriptCache();
+  const chave  = `ultimo_ts_${from}`;
+  const maior  = parseInt(cache.get(chave), 10) || 0;
+
+  if (ts < maior) {
+    console.warn(`↩️ [BL-29] Mensagem de ${from} fora de ordem ` +
+                 `(ts ${ts} < ${maior}) em ${estado} — recusada`);
+
+    Utils.enviarSimples(from,
+      '⚠️ Suas mensagens chegaram fora de ordem e eu quase gravei uma resposta ' +
+      'no lugar errado.\n\nNada foi perdido — vamos refazer só este passo. 💛'
+    );
+    CadastroHandler.reapresentarPasso(from);
+    return true;
+  }
+
+  // Guarda por 1 h, que é a duração da sessão de cadastro (BL-03).
+  if (ts > maior) cache.put(chave, String(ts), 3600);
+  return false;
+}
+
 function _processarMensagemWebhook(message) {
   if (!message || !message.id || !message.from) return;
 
@@ -212,6 +291,10 @@ function _processarMensagemWebhook(message) {
   // ─────────────────────────────────────────────────────────────────────
 
   console.log(`📱 Mensagem de ${from} (id: ${messageId})`);
+
+  // BL-29: mensagem que chega DEPOIS de outra mais nova, em execuções
+  // separadas. Ver `_mensagemForaDeOrdem`.
+  if (_mensagemForaDeOrdem(from, message)) return;
 
   // Boas-vindas apenas no primeiro contato
   if (StateManager.ehPrimeiroContato(from)) {
