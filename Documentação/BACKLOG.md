@@ -350,7 +350,11 @@ terceira é legítima, porque membro é evento ainda mais raro que cadastro.
 - A foto vem depois da submissão, com opção de **pular** — ao contrário do cadastro por conversa. Ali a foto é uma pergunta entre outras; aqui é a única coisa entre a pessoa e um cadastro que ela já preencheu inteiro, e travar nesse ponto seria perdê-lo pelo passo mais dispensável.
 - Quem recebe o formulário e **escreve** em vez de preencher cai na conversa, em `confirmarNumero`. É o caso de quem desistiu, de quem está num aparelho que não renderiza e de quem não viu o botão — todos continuam querendo se cadastrar.
 
-**Decisão sobre o MEMBRO da família: fica na conversa, sem Flow.** Exigiria um segundo Flow publicado ou uma tela condicional, pelos cinco pontos de divergência acima. O ganho do Flow é proporcional à frequência, e membro é mais raro que cadastro — que já é uma vez por pessoa. Um segundo formulário para manter em dia não se paga. Anotado no código, em `iniciarCadastroMembro`.
+**Sobre o MEMBRO da família — decisão revista no mesmo dia, e a premissa estava errada.** Eu havia deixado membro na conversa argumentando que "é evento mais raro que cadastro". **Não conferi, e é provavelmente o contrário:** uma família de quatro pessoas gera 1 cadastro e 3 membros, então em agregado membros podem ser MAIS frequentes.
+
+E o critério que pesa não era o que eu estava usando. Não é custo de mensagem: é **usabilidade** — quem acabou de preencher um formulário e toca em "Adicionar membro" cair numa conversa de oito perguntas é uma inconsistência gritante, justamente para quem mais usa o bot.
+
+**Feito:** `ferramentas/flow-membro.json` (6 campos, sem comunidade nem notificação) + `FlowHandler.enviarFlowMembro` + `_processarMembro`, com `FLOW_ID_MEMBRO` próprio e o mesmo interruptor. **Endereço e dia chegam preenchidos** com os do responsável — na conversa isso custa uma pergunta com dois botões e um estado; no formulário é um campo que já vem certo.
 
 **Aceite:** com a propriedade ligada, um cadastro completo entra em 1 execução
 de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.

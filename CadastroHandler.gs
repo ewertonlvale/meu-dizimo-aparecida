@@ -90,18 +90,6 @@ const CadastroHandler = {
    * Ponto de entrada: botão 'btn_adicionar_membro'.
    */
   iniciarCadastroMembro(from) {
-    // BL-33 — decisão: o cadastro de MEMBRO fica na conversa, sem Flow.
-    //
-    // Não é o cadastro normal com outro rótulo. Ele diverge em cinco pontos
-    // (endereço herdado do responsável, notificações puladas, dia perguntado
-    // de outro jeito, foto opcional e `criarMembro` no lugar de
-    // `criarDizimista`), então exigiria um segundo Flow publicado na Meta ou
-    // uma tela condicional.
-    //
-    // O ganho do Flow é proporcional à frequência, e membro é evento mais raro
-    // que cadastro — que já é uma vez por pessoa. Um segundo formulário para
-    // manter em dia não se paga. Se a frequência mudar, isto se revisita.
-
     const responsavel = OdooService.buscarDizimistaPorWhatsapp(from);
     if (!responsavel) {
       Utils.enviarComBotaoMenu(from, '❌ Não encontrei seu cadastro. Digite *menu* para começar.');
@@ -124,6 +112,18 @@ const CadastroHandler = {
       responsavelEndereco: responsavel.x_studio_endereco || '',
       responsavelDia:      responsavel.x_studio_dia_preferido || 10
     });
+
+    // O formulário de membro, quando houver. Ele chega PREENCHIDO com o
+    // endereço e o dia do responsável — que na conversa custam uma pergunta
+    // com dois botões e um estado só para isso, e no formulário são um campo
+    // que já vem certo e a pessoa altera se precisar.
+    //
+    // Degrada sozinho: sem FLOW_ID_MEMBRO ou com o interruptor desligado, o
+    // familiar é cadastrado pela conversa abaixo, como sempre foi.
+    if (FlowHandler.enviarFlowMembro(from, StateManager.getDadosTemporarios(from))) {
+      console.log(`👨‍👩‍👧 [Membro] ${from} recebeu o formulário — conversa em espera`);
+      return;
+    }
 
     Utils.enviarSimples(from,
       `👨‍👩‍👧 *Adicionar membro da família*\n\n` +

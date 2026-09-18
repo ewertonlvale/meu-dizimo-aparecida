@@ -82,12 +82,27 @@ até ela já respondeu oito; aqui é a única coisa entre a pessoa e um cadastro
 que ela já preencheu inteiro. Travar nesse ponto seria perder o cadastro pelo
 passo mais dispensável.
 
-**O cadastro de MEMBRO da família continua na conversa.** Ele diverge do
-cadastro normal em cinco pontos (endereço herdado, notificações puladas, dia
-perguntado de outro jeito, foto opcional, `criarMembro` em vez de
-`criarDizimista`), então exigiria um segundo Flow publicado. O ganho do Flow é
-proporcional à frequência, e membro é mais raro que cadastro — que já é uma vez
-por pessoa.
+### O formulário de MEMBRO da família
+
+São **dois Flows**, com JSONs e ids separados: `flow-cadastro.json`
+(`FLOW_ID_CADASTRO`) e `flow-membro.json` (`FLOW_ID_MEMBRO`). O mesmo
+interruptor `FLOW_CADASTRO_ATIVO` liga os dois, e cada um degrada sozinho — com
+só o id do cadastro configurado, o dizimista vai por formulário e o familiar
+segue pela conversa, sem nada quebrar.
+
+O de membro tem **seis campos**: não pergunta comunidade (herda a do
+responsável) nem notificações (membro não recebe lembrete).
+
+**Endereço e dia chegam preenchidos**, via `flow_action_payload.data`. Isso é o
+ganho de usabilidade que a conversa não consegue dar: lá, herdar o endereço
+custa uma pergunta com dois botões e um estado só para isso. No formulário o
+campo já vem com o valor do responsável e a pessoa altera se for diferente —
+que é o que ela faria de qualquer jeito, sem a ida e volta.
+
+O que identifica a resposta é o `flow_token`: prefixo `membro:` em vez de
+`cadastro:`. A sessão precisa ter `cadastrandoMembro` e `responsavelId`, ambos
+gravados por `iniciarCadastroMembro` **antes** de o formulário sair; sem eles o
+`FlowHandler` recusa, porque gravaria um familiar sem família.
 
 ---
 
@@ -204,12 +219,14 @@ celular de teste → `enviarFlowDeTeste()`.
 
 ## 5. O que falta para valer em produção
 
-1. **Criar o Flow na Meta** (WhatsApp Manager → Flows), colar o conteúdo de
-   `ferramentas/flow-cadastro.json`, salvar e — depois de testar o rascunho num
-   aparelho, como descrito na seção 4b — publicar.
-2. **Guardar o id** na propriedade `FLOW_ID_CADASTRO`. Sem ela,
-   `enviarFlowCadastro` devolve `false` e o bot segue pelo cadastro por
-   conversa — é o que permite publicar este código antes de existir Flow algum.
+1. **Criar os Flows na Meta** (WhatsApp Manager → Flows): um com o conteúdo de
+   `ferramentas/flow-cadastro.json` e outro com `ferramentas/flow-membro.json`.
+   Salvar e — depois de testar o rascunho num aparelho, como descrito na seção
+   4b — publicar.
+2. **Guardar os ids** em `FLOW_ID_CADASTRO` e `FLOW_ID_MEMBRO`. Sem eles, os
+   envios devolvem `false` e o bot segue pela conversa — é o que permite
+   publicar este código antes de existir Flow algum, e configurar um de cada
+   vez.
 3. **Ligar o interruptor:** `ativarFlowCadastro()` no editor do Apps Script.
    A partir daí `CadastroHandler.iniciar` manda o formulário. Para voltar
    atrás, `desativarFlowCadastro()` — em segundos, sem apagar o id. Feito no
