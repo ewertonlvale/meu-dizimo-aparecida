@@ -218,6 +218,8 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 - `ferramentas/simula-flow.js` manda ao webhook o `nfm_reply` que o aparelho mandaria, com 5 casos (`ok`, `data-invalida`, `valor-zero`, `campo-faltando`, `token-errado`). **Não exige criar Flow na Meta**: no modo sem endpoint, um cadastro por Flow é exatamente uma requisição HTTP.
 - 12 casos de `_normalizar` exercitados fora do GAS, sob `America/Sao_Paulo`. Achado que virou código: o `DatePicker` devolve **epoch em ms na meia-noite UTC**, e lê-lo com `getDate()` num projeto UTC-3 voltaria **um dia em todo cadastro** — daí o `getUTCDate()`.
 
+**Teste no aparelho (18/09):** `enviarFlowDeTeste()` no `Setup.gs` manda o Flow em **rascunho** (`mode: 'draft'`) para um número real — a Meta não exige publicar o Flow para isso. Duas restrições que passam por bug: rascunho só abre para números com papel na conta da Meta (admin/dev/testador), e a janela de 24 h continua valendo.
+
 **Não feito (proposital):**
 - **A entrada não está ligada.** `CadastroHandler.iniciar` continua indo pelo fluxo conversacional. Ligar exige o Flow publicado na Meta e testado num aparelho — o simulador cobre o servidor inteiro, não a renderização.
 - `FLOW_ID_CADASTRO` ausente faz `enviarFlowCadastro` devolver `false`, então este código pode ser publicado **antes** de existir Flow algum.
