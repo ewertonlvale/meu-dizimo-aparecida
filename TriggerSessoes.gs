@@ -91,8 +91,19 @@ function verificarSessoesAbandonadas() {
     // sessão ativa. Esta trigger roda a cada 5 min de qualquer forma, então é o
     // lugar natural para o acompanhamento da cota — sem agendamento próprio.
     Utils.registrarConsumoExterno();
-    Utils.verificarCotaUrlFetch();
-    Utils.verificarCotaMensagens();
+
+    // As duas verificações liam o store INTEIRO cada uma — tokens, media_id_*,
+    // sessao_ativa_*, todos os shards de cota. Agora dividem uma leitura só.
+    //
+    // A leitura é AQUI, e não no topo da função, de propósito: o
+    // `registrarConsumoExterno` acima acabou de gravar os contadores desta
+    // execução, e um mapa lido antes dele não os teria. Seria um subregistro
+    // silencioso — o mesmo defeito que este ciclo corrigiu em outros pontos.
+    // Por isso são duas varreduras por execução, não uma: a de sessões
+    // acontece antes das escritas e não pode ser reaproveitada aqui.
+    const propsAtuais = PropertiesService.getScriptProperties().getProperties();
+    Utils.verificarCotaUrlFetch(propsAtuais);
+    Utils.verificarCotaMensagens(propsAtuais);
   }
 }
 

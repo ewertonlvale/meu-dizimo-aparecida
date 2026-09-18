@@ -817,8 +817,8 @@ const RelatorioHandler = {
 
         // BL-26: sinaliza na própria lista quando a chave do comprovante não
         // conferiu — sem isto o coordenador confirma a baixa sem saber.
-        const conferir = dev.x_studio_conferencia_pix &&
-                         dev.x_studio_conferencia_pix !== 'ok';
+        // A regra "o que pede olhar humano" mora em Config.gs, com a tabela.
+        const conferir = exigeConferencia(dev.x_studio_conferencia_pix);
 
         return {
           id:          `pend_${dev.id}`,
@@ -910,12 +910,8 @@ const RelatorioHandler = {
       }
 
       // BL-26: o motivo da conferência pendente, logo antes dos botões de baixa.
-      const MOTIVO_CONFERENCIA = {
-        divergente:     'a chave do comprovante *diverge* da chave da comunidade',
-        ausente:        'não consegui identificar a chave no comprovante',
-        sem_referencia: 'a comunidade não tem chave PIX cadastrada para comparar'
-      };
-      const motivo = MOTIVO_CONFERENCIA[dev.x_studio_conferencia_pix];
+      // Tabela única em Config.gs — antes este mapa vivia dentro desta função.
+      const motivo = (CONFERENCIA[dev.x_studio_conferencia_pix] || {}).textoCoordenador;
       if (motivo) {
         detalhe += `\n⚠️ *Confira antes de confirmar:* ${motivo}.\n`;
       }

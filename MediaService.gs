@@ -87,34 +87,65 @@ const MediaService = {
   MEDIA_ID_VALIDADE_MS: 7 * 24 * 60 * 60 * 1000,
 
   /**
-   * Envia uma imagem base64 ao WhatsApp.
+   * Envia uma imagem FIXA reaproveitando o media ID entre envios.
+   *
+   * O upload custava ~2s e a espera pós-upload outros 3s, repetidos a cada
+   * primeiro contato — sempre para a mesma imagem.
+   *
+   * Isto é uma função à parte, e não um parâmetro de `enviarImagemBase64`,
+   * porque a regra que a torna segura é forte demais para viver num comentário:
+   * o cache só vale para imagem que NÃO MUDA. Reaproveitar o media ID de um QR
+   * Code do PIX mandaria o código de pagamento de uma pessoa para outra. Antes,
+   * nada além do JSDoc impedia passar `chaveCache` num QR Code.
    *
    * @param {string} to
    * @param {string} base64Data
    * @param {string} [caption]
-   * @param {string} [chaveCache] - Quando informado, o media ID do upload é
-   *        guardado e reaproveitado nos próximos envios da MESMA imagem. Use só
-   *        para imagens fixas (o avatar); jamais para conteúdo que muda a cada
-   *        envio, como o QR Code do PIX.
+   * @param {string} [chave] - Identifica a imagem fixa no cache ('avatar')
    */
-  enviarImagemBase64(to, base64Data, caption = '', chaveCache = null) {
+  enviarImagemFixa(to, base64Data, caption = '', chave = 'avatar') {
+    const id = this._mediaIdEmCache(chave, base64Data);
+    if (id) {
+      console.log('♻️ Reaproveitando media ID em cache');
+      const enviado = this._enviarMensagemMidia(to, 'image', { id, caption });
+      if (enviado) return enviado;
+      // ID expirado ou inválido: descarta e segue para o upload normal.
+      console.warn('⚠️ Envio com media ID em cache falhou — refazendo o upload.');
+      this._descartarMediaId(chave);
+    }
+
+    const { resposta, mediaId } = this._subirEEnviarImagem(to, base64Data, caption);
+    if (resposta && mediaId) this._guardarMediaId(chave, base64Data, mediaId);
+    return resposta;
+  },
+
+  /**
+   * Envia uma imagem base64 ao WhatsApp. Um upload por envio.
+   *
+   * Para imagem fixa que se repete (o avatar das boas-vindas), use
+   * `enviarImagemFixa`, que reaproveita o media ID.
+   *
+   * @param {string} to
+   * @param {string} base64Data
+   * @param {string} [caption]
+   */
+  enviarImagemBase64(to, base64Data, caption = '') {
+    return this._subirEEnviarImagem(to, base64Data, caption).resposta;
+  },
+
+  /**
+   * Sobe a imagem e a envia, devolvendo TAMBÉM o media ID.
+   *
+   * O media ID sai daqui num objeto próprio em vez de ser pendurado na
+   * `HTTPResponse`: ela é um objeto nativo do Apps Script, e anexar campo nela
+   * é o tipo de coisa que funciona até parar de funcionar, sem erro.
+   *
+   * @returns {{resposta: Object|null, mediaId: string|null}}
+   * @private
+   */
+  _subirEEnviarImagem(to, base64Data, caption) {
     console.log('🖼️ Enviando imagem (base64) para:', to);
     const config = getConfig();
-
-    // Caminho rápido: mesma imagem já enviada antes → pula upload e espera.
-    // O upload do avatar custava ~2s e a espera pós-upload outros 3s, repetidos
-    // a CADA primeiro contato, sempre para a mesma imagem.
-    if (chaveCache) {
-      const id = this._mediaIdEmCache(chaveCache, base64Data);
-      if (id) {
-        console.log('♻️ Reaproveitando media ID em cache');
-        const enviado = this._enviarMensagemMidia(to, 'image', { id, caption });
-        if (enviado) return enviado;
-        // ID expirado ou inválido: descarta e segue para o upload normal.
-        console.warn('⚠️ Envio com media ID em cache falhou — refazendo o upload.');
-        this._descartarMediaId(chaveCache);
-      }
-    }
 
     try {
       const imageBytes = Utilities.base64Decode(base64Data);
@@ -135,7 +166,7 @@ const MediaService = {
 
       if (!uploadResult.id) {
         console.error('❌ Falha no upload da imagem:', uploadResult);
-        return null;
+        return { resposta: null, mediaId: null };
       }
 
       console.log(`✅ Upload concluído. Media ID: ${uploadResult.id}`);
@@ -149,12 +180,11 @@ const MediaService = {
       const resultado = this._enviarMensagemMidia(to, 'image', { id: uploadResult.id, caption });
       console.log('📤 Resposta envio imagem:', resultado ? resultado.getContentText() : 'null');
 
-      if (chaveCache && resultado) this._guardarMediaId(chaveCache, base64Data, uploadResult.id);
-      return resultado;
+      return { resposta: resultado, mediaId: uploadResult.id };
 
     } catch (error) {
       console.error('❌ Exceção ao enviar imagem:', error.message);
-      return null;
+      return { resposta: null, mediaId: null };
     }
   },
 
