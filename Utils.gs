@@ -422,6 +422,97 @@ const Utils = {
   },
 
   // ============================================================================
+  // LIMITE DE RESPOSTAS POR PESSOA
+  // ============================================================================
+  //
+  // O QUE PROTEGE
+  //   Mensagem RECEBIDA é grátis; o que custa é a RESPOSTA do bot. Então quem
+  //   quiser gerar custo só precisa mandar mensagem sem parar: cada uma nossa
+  //   de volta entra na conta. A franquia de 1.000 mensagens de serviço por mês
+  //   (a partir de 01/10/2026) some rápido assim.
+  //
+  //   Não é preciso má-fé: uma criança com o celular do pai, um número que
+  //   entra em laço com outro bot, alguém testando o sistema — todos produzem
+  //   o mesmo efeito.
+  //
+  // COMO
+  //   Duas janelas por número. A curta pega rajada; a longa pega insistência.
+  //   Ao estourar, o bot PARA DE RESPONDER — que é o ponto: continuar
+  //   respondendo "você excedeu o limite" gastaria exatamente o que se quer
+  //   economizar. Um aviso é enviado UMA vez por hora, e só.
+  //
+  // OS NÚMEROS, e de onde vêm
+  //   Um cadastro completo por conversa são ~13 mensagens recebidas, espalhadas
+  //   por vários minutos. Uma devolução, ~5. O dia mais pesado plausível —
+  //   cadastro, dois familiares e uma devolução — fica perto de 40.
+  //   Os limites ficam acima disso de propósito: barrar quem está usando é pior
+  //   que deixar passar algum abuso, porque o abuso aparece no log e o usuário
+  //   barrado some sem avisar.
+  //
+  //   Ajustáveis por Script Properties, sem republicar: LIMITE_MSG_MINUTO e
+  //   LIMITE_MSG_HORA.
+
+  LIMITE_MSG_MINUTO_PADRAO: 12,
+  LIMITE_MSG_HORA_PADRAO:   60,
+
+  /**
+   * A pessoa passou do limite de mensagens? Se passou, não devemos responder.
+   *
+   * @param {string} from
+   * @returns {boolean} true se a mensagem deve ser DESCARTADA.
+   */
+  excedeuTaxa(from) {
+    try {
+      const props  = PropertiesService.getScriptProperties();
+      const porMin = parseInt(props.getProperty('LIMITE_MSG_MINUTO'), 10) || this.LIMITE_MSG_MINUTO_PADRAO;
+      const porHora = parseInt(props.getProperty('LIMITE_MSG_HORA'), 10) || this.LIMITE_MSG_HORA_PADRAO;
+
+      const cache = CacheService.getScriptCache();
+      const agora = Date.now();
+
+      // A chave inclui o BALDE de tempo. Isso não é detalhe: `cache.put` renova
+      // o TTL a cada escrita, então um contador de chave fixa nunca expira
+      // enquanto chegarem mensagens — a janela de 60 s viraria "60 s desde a
+      // última mensagem", e quem respondesse a cada 20 s acumularia até ser
+      // barrado no meio do próprio cadastro. Com o balde na chave, a janela
+      // termina na hora certa porque a CHAVE muda.
+      const kMin  = `taxa_min_${from}_${Math.floor(agora / 60000)}`;
+      const kHora = `taxa_hora_${from}_${Math.floor(agora / 3600000)}`;
+
+      const nMin  = (parseInt(cache.get(kMin), 10)  || 0) + 1;
+      const nHora = (parseInt(cache.get(kHora), 10) || 0) + 1;
+
+      // Janela FIXA, não deslizante. O caso ruim conhecido é o dobro do limite
+      // em torno da virada do balde — irrelevante para cortar laço, e muito
+      // mais barato que manter uma lista de horários por número.
+      cache.put(kMin,  String(nMin),  120);
+      cache.put(kHora, String(nHora), 7200);
+
+      if (nMin <= porMin && nHora <= porHora) return false;
+
+      const qual = nMin > porMin ? `${nMin} em 1 min` : `${nHora} em 1 h`;
+      console.warn(`🛑 [Taxa] ${from} excedeu o limite (${qual}) — não vamos responder`);
+
+      // Um aviso por hora, no máximo. Ele também é uma mensagem cobrada: se
+      // fosse enviado a cada mensagem descartada, o freio viraria o vazamento.
+      if (!cache.get(`taxa_aviso_${from}`)) {
+        cache.put(`taxa_aviso_${from}`, '1', 3600);
+        this.enviarSimples(from,
+          '⏳ Recebi muitas mensagens suas em pouco tempo e preciso de uma pausa.\n\n' +
+          'Tente de novo daqui a alguns minutos — seu cadastro e suas devoluções ' +
+          'continuam guardados. 💛'
+        );
+      }
+
+      return true;
+    } catch (e) {
+      // Falha do cache não pode derrubar o bot: na dúvida, responde.
+      console.warn('⚠️ [Taxa] Não consegui verificar o limite:', e.message);
+      return false;
+    }
+  },
+
+  // ============================================================================
   // VALIDADORES PUROS
   // ============================================================================
   //

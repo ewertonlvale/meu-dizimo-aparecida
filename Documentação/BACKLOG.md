@@ -61,6 +61,7 @@
 | BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
 | BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — inclui o formulário de membro, com endereço e dia pré-preenchidos |
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
+| BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
 
 ---
 
@@ -376,6 +377,21 @@ de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
 **Sem dado para decidir.** Com que frequência cada caso acontece só aparece com gente usando. Rodar assim por um tempo e olhar o log (`↩️ [Flow] … caindo para a conversa`) responde.
 
 **Achado relacionado, do mesmo ramo:** a mensagem do formulário **continua clicável** no chat depois do fallback. Quem fizer o cadastro por conversa e depois rolar para cima e tocar em "Preencher cadastro" sobrescreve o que digitou. O resultado fica coerente — os dados do formulário são completos e vencem — mas não é o que a pessoa esperaria.
+
+---
+
+### BL-35 — Freio de gasto: uma pessoa podia gerar cobrança sem limite 🟠 (P) — ✅ concluído em 18/09/2026
+**Arquivos:** `Utils.gs` (`excedeuTaxa`) · `Webhook.gs`
+
+**O problema.** Mensagem RECEBIDA é grátis; o que custa é a RESPOSTA do bot. Então bastava alguém mandar mensagem sem parar para cada resposta nossa entrar na conta — e a franquia de 1.000 mensagens de serviço por mês (a partir de 01/10/2026) some rápido assim. Não precisa de má-fé: uma criança com o celular do pai, um número em laço com outro bot, alguém testando.
+
+**Correção.** Duas janelas por número — 12 por minuto e 60 por hora, ajustáveis por `LIMITE_MSG_MINUTO` e `LIMITE_MSG_HORA` sem republicar. Ao estourar, o bot **para de responder**: continuar respondendo "você excedeu" gastaria exatamente o que se quer economizar. Um aviso por hora, no máximo, porque o aviso também é cobrado.
+
+**Os limites vieram do uso medido**, não de palpite: cadastro por conversa são ~13 mensagens, devolução ~5, e o dia mais pesado plausível (cadastro + dois familiares + devolução) fica perto de 45. Os limites ficam acima disso de propósito — barrar quem está usando é pior que deixar passar algum abuso, porque o abuso aparece no log e o usuário barrado some sem avisar.
+
+**Uma armadilha que o teste pegou, e o código tinha.** `cache.put` renova o TTL a cada escrita, então um contador de chave fixa nunca expira enquanto chegarem mensagens: a janela de 60 s viraria "60 s desde a última mensagem", e quem respondesse a cada 20 s seria barrado no meio do próprio cadastro. A chave passou a incluir o **balde de tempo** — a janela fecha porque a chave muda.
+
+**Aceite:** um cadastro completo e um dia pesado passam inteiros; 200 mensagens seguidas são cortadas — conferido nos dois padrões, rápido e lento.
 
 ---
 
