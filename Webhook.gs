@@ -78,6 +78,12 @@ function doPost(e) {
     for (const entry of entries) {
       const changes = Array.isArray(entry.changes) ? entry.changes : [];
       for (const change of changes) {
+        // Callbacks de status vêm no mesmo formato das mensagens. Registrar as
+        // falhas é o único jeito de saber por que uma mensagem aceita pela
+        // Meta (HTTP 200 no envio) não chegou ao aparelho: o motivo só existe
+        // aqui. Sem isto, "não chegou" fica sem diagnóstico nenhum.
+        _registrarStatusEntrega(change.value && change.value.statuses);
+
         const messages = change.value && change.value.messages;
         if (!Array.isArray(messages)) continue;   // ex.: eventos de status
 
@@ -112,6 +118,47 @@ function doPost(e) {
  * Extraído do doPost para permitir o loop do lote (BL-09).
  * @param {Object} message - Objeto de mensagem do payload do WhatsApp
  */
+/**
+ * Registra o resultado de entrega que a Meta devolve para cada mensagem enviada.
+ *
+ * Só as FALHAS viram log de erro; `sent`, `delivered` e `read` ficam em debug,
+ * senão o log vira ruído — são três callbacks por mensagem entregue.
+ *
+ * Por que importa: o 200 do envio diz apenas que a Meta aceitou a mensagem na
+ * fila. Uma mensagem pode ser aceita e nunca chegar (aparelho com WhatsApp
+ * antigo demais para o recurso, número inválido, janela fechada), e o motivo
+ * só aparece neste callback. Antes disto o webhook descartava tudo e o
+ * sintoma ficava sendo "não chegou", sem diagnóstico.
+ *
+ * @param {Array} statuses - change.value.statuses do payload da Meta
+ * @private
+ */
+function _registrarStatusEntrega(statuses) {
+  if (!Array.isArray(statuses) || !statuses.length) return;
+
+  statuses.forEach(st => {
+    const situacao = st && st.status;
+
+    if (situacao !== 'failed') {
+      console.log(`📬 [Entrega] ${st.id} → ${situacao}`);
+      return;
+    }
+
+    const erros = Array.isArray(st.errors) ? st.errors : [];
+    if (!erros.length) {
+      console.error(`❌ [Entrega] ${st.id} FALHOU (sem detalhe da Meta)`);
+      return;
+    }
+
+    erros.forEach(e => {
+      // `error_data.details` é onde a Meta põe o motivo real; `title` e
+      // `message` costumam ser genéricos.
+      const detalhe = (e.error_data && e.error_data.details) || e.message || '';
+      console.error(`❌ [Entrega] ${st.id} FALHOU — código ${e.code}: ${e.title || ''} ${detalhe}`.trim());
+    });
+  });
+}
+
 function _processarMensagemWebhook(message) {
   if (!message || !message.id || !message.from) return;
 
