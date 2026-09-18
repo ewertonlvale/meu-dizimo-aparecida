@@ -445,11 +445,11 @@ function listarPropriedades() {
 // ============================================================================
 
 /**
- * Manda o Flow de cadastro para um número de verdade, em modo RASCUNHO.
+ * Manda o Flow de cadastro para um número de verdade.
  *
- * É assim que se abre o formulário no WhatsApp antes de publicar o Flow: a
- * Meta permite enviar a versão em rascunho com `mode: 'draft'`, e o cliente
- * mostra um aviso de que é rascunho.
+ * Funciona com o Flow publicado ou em rascunho: a Meta aceita `mode: 'draft'`
+ * para a versão não publicada, então dá para abrir o formulário no WhatsApp
+ * antes de publicar o Flow — e o modo certo é descoberto sozinho.
  *
  * ANTES DE RODAR
  *   1. WhatsApp Manager → Flows → criar o Flow, colar o conteúdo de
@@ -491,9 +491,14 @@ function enviarFlowDeTeste(numero) {
     return;
   }
 
-  Logger.log(`📤 Enviando o Flow de cadastro (rascunho) para ${destino}...`);
+  Logger.log(`📤 Enviando o Flow de cadastro para ${destino}...`);
 
-  const enviou = FlowHandler.enviarFlowCadastro(destino, true);
+  // Preferência por 'published', que é o estado final de qualquer Flow. Um
+  // Flow ainda em rascunho recusa esse modo, e `enviarFlowCadastro` repete em
+  // 'draft' sozinho — a troca custa uma requisição e aparece no log como um
+  // ❌ de [WhatsApp] seguido de um ℹ️ de [Flow]. Se o ❌ vier sozinho, a
+  // recusa NÃO foi por modo: leia o `details` dele.
+  const enviou = FlowHandler.enviarFlowCadastro(destino);
 
   if (enviou) {
     Logger.log('✅ Enviado. Abra o WhatsApp desse número e toque em "Preencher cadastro".');
