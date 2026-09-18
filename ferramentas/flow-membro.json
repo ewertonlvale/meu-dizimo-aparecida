@@ -25,6 +25,10 @@
           {
             "type": "Form",
             "name": "form_membro",
+            "init-values": {
+              "endereco": "${data.endereco_padrao}",
+              "dia_preferido": "${data.dia_padrao}"
+            },
             "children": [
               {
                 "type": "TextSubheading",
@@ -69,7 +73,6 @@
                 "label": "Endereço",
                 "required": true,
                 "max-length": 200,
-                "init-value": "${data.endereco_padrao}",
                 "helper-text": "Já vem com o seu endereço. Altere se for diferente."
               },
               {
@@ -86,7 +89,6 @@
                 "label": "Dia da devolução",
                 "input-type": "number",
                 "required": true,
-                "init-value": "${data.dia_padrao}",
                 "helper-text": "De 1 a 28. Já vem com o seu dia."
               },
               {
@@ -95,12 +97,12 @@
                 "on-click-action": {
                   "name": "complete",
                   "payload": {
-                    "nome":            "${form.nome}",
-                    "nome_usual":      "${form.nome_usual}",
+                    "nome": "${form.nome}",
+                    "nome_usual": "${form.nome_usual}",
                     "data_nascimento": "${form.data_nascimento}",
-                    "endereco":        "${form.endereco}",
-                    "valor_mensal":    "${form.valor_mensal}",
-                    "dia_preferido":   "${form.dia_preferido}"
+                    "endereco": "${form.endereco}",
+                    "valor_mensal": "${form.valor_mensal}",
+                    "dia_preferido": "${form.dia_preferido}"
                   }
                 }
               }
