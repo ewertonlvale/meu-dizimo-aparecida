@@ -328,11 +328,23 @@ const Router = {
     // visto o botão. Não é caso de menu: a pessoa pediu para se cadastrar e
     // continua querendo — só não pelo formulário. Segue por conversa.
     if (estado === ESTADOS.AGUARDANDO_FLOW_CADASTRO) {
-      console.log(`↩️ [Flow] ${from} escreveu em vez de preencher — caindo para a conversa`);
+      // O mesmo estado serve aos dois formulários; quem diz QUAL está em curso
+      // é a sessão. Retomar o cadastro de um dizimista quando a pessoa estava
+      // adicionando um familiar seria pior que o menu.
+      const ehMembro = !!StateManager.getCampo(from, 'cadastrandoMembro');
+      console.log(`↩️ [Flow] ${from} escreveu em vez de preencher ` +
+                  `(${ehMembro ? 'membro' : 'cadastro'}) — caindo para a conversa`);
+
       Utils.enviarSimples(from,
-        'Sem problema, podemos fazer o cadastro por aqui mesmo, passo a passo. 💛'
+        'Sem problema, podemos fazer por aqui mesmo, passo a passo. 💛'
       );
-      CadastroHandler.confirmarNumero(from);
+
+      if (ehMembro) {
+        Utils.enviarSimples(from, '📝 *Nome Completo*\n\nDigite o nome completo do familiar:');
+        StateManager.setEstado(from, ESTADOS.AGUARDANDO_NOME);
+      } else {
+        CadastroHandler.confirmarNumero(from);
+      }
       return;
     }
 

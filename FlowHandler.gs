@@ -37,6 +37,9 @@ const FlowHandler = {
   /** Prefixo do flow_token que identifica o Flow de cadastro. */
   TOKEN_CADASTRO: 'cadastro:',
 
+  /** Prefixo do flow_token do Flow de membro da família. */
+  TOKEN_MEMBRO: 'membro:',
+
   // ==========================================================================
   // ENTRADA
   // ==========================================================================
@@ -61,6 +64,11 @@ const FlowHandler = {
 
     if (token.indexOf(this.TOKEN_CADASTRO) === 0) {
       this._processarCadastro(from, resposta);
+      return;
+    }
+
+    if (token.indexOf(this.TOKEN_MEMBRO) === 0) {
+      this._processarMembro(from, resposta);
       return;
     }
 
@@ -102,6 +110,90 @@ const FlowHandler = {
     // e vem logo depois, por conversa. É o único passo que sobra: os 8 campos
     // de texto chegaram todos numa submissão.
     CadastroHandler.pedirFotoDoDizimista(from);
+  },
+
+  /**
+   * Converte a resposta do Flow de MEMBRO e segue para a foto.
+   *
+   * O membro não tem comunidade nem notificações — ele herda a comunidade do
+   * responsável, e essas informações já foram gravadas na sessão por
+   * `iniciarCadastroMembro` antes do formulário sair. Aqui só entram os seis
+   * campos do familiar.
+   *
+   * @private
+   */
+  _processarMembro(from, resposta) {
+    const dados = StateManager.getDadosTemporarios(from);
+
+    // A sessão precisa dizer que é membro. Se não disser, o formulário chegou
+    // sem contexto — o cache expirou, ou a pessoa respondeu um formulário
+    // antigo. Gravar como membro sem `responsavelId` criaria um familiar solto.
+    if (!dados.cadastrandoMembro || !dados.responsavelId) {
+      console.warn(`⚠️ [Flow] Resposta de membro sem sessão de membro para ${from}`);
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ Não consegui ligar esse formulário à sua família — a sessão expirou.\n\n' +
+        'Toque em *Adicionar membro* de novo e preencha, que desta vez vai. 💛'
+      );
+      return;
+    }
+
+    const { campos, erros } = this._validarMembro(resposta);
+
+    if (erros.length) {
+      console.warn('⚠️ [Flow] Membro recusado:', erros.join(' | '));
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Não consegui aproveitar o formulário.*\n\n' +
+        erros.map(e => `• ${e}`).join('\n') +
+        '\n\nPodemos cadastrar o familiar pelo menu, passo a passo. 💛'
+      );
+      return;
+    }
+
+    StateManager.salvarMultiplosCampos(from, campos);
+    StateManager.appendLog(from, `Membro via Flow (${Object.keys(campos).length} campos)`);
+
+    console.log(`✅ [Flow] Membro de ${from} montado em 1 execução — pedindo a foto`);
+    CadastroHandler._pedirFotoMembro(from);
+  },
+
+  /**
+   * Regras do membro. São as mesmas do dizimista menos comunidade e
+   * notificação — e o dia é obrigatório aqui, porque o membro sempre tem um
+   * dia de devolução (herdado ou escolhido), enquanto no cadastro normal ele
+   * só existe se a pessoa quiser lembrete.
+   *
+   * @returns {{campos: Object, erros: string[]}}
+   * @private
+   */
+  _validarMembro(r) {
+    const erros  = [];
+    const campos = {};
+
+    const nome = String(r.nome || '').trim();
+    if (nome.length < 3) erros.push('Nome do familiar muito curto.');
+    else campos.nome = nome;
+
+    const apelido = String(r.nome_usual || '').trim();
+    if (apelido.length < 2) erros.push('Apelido muito curto.');
+    else campos.nomeUsual = apelido;
+
+    const data = this._data(r.data_nascimento);
+    if (!data) erros.push('Data de nascimento inválida ou no futuro.');
+    else campos.dataNascimento = data;
+
+    const endereco = String(r.endereco || '').trim();
+    if (endereco.length < 5) erros.push('Endereço muito curto.');
+    else campos.endereco = endereco;
+
+    const valor = Utils.parseValorBR(r.valor_mensal);
+    if (valor === null) erros.push('Valor mensal inválido.');
+    else campos.valorMensal = valor;
+
+    const dia = parseInt(r.dia_preferido, 10);
+    if (isNaN(dia) || dia < 1 || dia > 28) erros.push('Dia da devolução deve ficar entre 1 e 28.');
+    else campos.diaPreferido = dia;
+
+    return { campos, erros };
   },
 
   /**
@@ -318,6 +410,76 @@ const FlowHandler = {
       // Sem gravar `whatsapp` aqui: `_normalizar` já o põe em `dados` quando a
       // resposta chega, e esta escrita pagava o lock global à toa.
     }
+    return enviou;
+  },
+
+  /**
+   * Envia o Flow de MEMBRO da família.
+   *
+   * Exige `FLOW_ID_MEMBRO` e o mesmo interruptor `FLOW_CADASTRO_ATIVO` do
+   * cadastro. Um id sem o outro degrada sozinho: com o interruptor ligado e
+   * só o `FLOW_ID_CADASTRO` configurado, o cadastro vai por formulário e o
+   * membro segue pela conversa — sem nada quebrar.
+   *
+   * O formulário chega PREENCHIDO com o endereço e o dia do responsável. Isso
+   * não é enfeite: na conversa, herdar o endereço custa uma pergunta com dois
+   * botões e um estado só para isso. No formulário, o campo já vem com o valor
+   * e a pessoa altera se for diferente — que é o que ela faria de qualquer
+   * jeito, sem a ida e volta.
+   *
+   * @param {string} from
+   * @param {Object} dados - Sessão já montada por `iniciarCadastroMembro`
+   * @returns {boolean} true se o Flow foi enviado.
+   */
+  enviarFlowMembro(from, dados) {
+    const props  = PropertiesService.getScriptProperties();
+    const flowId = props.getProperty('FLOW_ID_MEMBRO');
+
+    if (!flowId) {
+      console.log('ℹ️ [Flow] FLOW_ID_MEMBRO não configurado — membro segue pela conversa');
+      return false;
+    }
+    if (props.getProperty('FLOW_CADASTRO_ATIVO') !== 'true') {
+      console.log('ℹ️ [Flow] FLOW_CADASTRO_ATIVO não está "true" — membro segue pela conversa');
+      return false;
+    }
+
+    const resposta = Utils._post({
+      messaging_product: 'whatsapp',
+      recipient_type:    'individual',
+      to:                from,
+      type:              'interactive',
+      interactive: {
+        type:   'flow',
+        header: { type: 'text', text: '👨‍👩‍👧 Adicionar familiar' },
+        body:   { text: 'Preencha os dados do familiar. O endereço e o dia já vêm com os seus. 💛' },
+        footer: { text: 'Com carinho, Cidinha 💛' },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+            flow_token:  `${this.TOKEN_MEMBRO}${from}:${Date.now()}`,
+            flow_id:     flowId,
+            flow_cta:    'Preencher dados',
+            flow_action: 'navigate',
+            mode:        props.getProperty('FLOW_MODO_CADASTRO') || 'published',
+            flow_action_payload: {
+              screen: 'MEMBRO',
+              data: {
+                comunidade:      String(dados.comunidadeNome || '—'),
+                endereco_padrao: String(dados.responsavelEndereco || ''),
+                dia_padrao:      String(dados.responsavelDia || 10)
+              }
+            }
+          }
+        }
+      }
+    }, { rotulo: 'WhatsApp Flow (membro)' });
+
+    const enviou = !!resposta && resposta.getResponseCode() === 200;
+    console.log(`📤 [Flow] Envio do formulário de membro para ${from}: ${enviou ? 'ok' : 'falhou'}`);
+
+    if (enviou) StateManager.setEstado(from, ESTADOS.AGUARDANDO_FLOW_CADASTRO);
     return enviou;
   },
 

@@ -20,6 +20,10 @@
  *   node simula-flow.js --url "<URL>/exec" --token "<SECRET>" --comunidade 3
  *
  *   --comunidade  id de uma comunidade real do Odoo (obrigatório)
+ *   --membro      simula o formulário de MEMBRO da família em vez do cadastro.
+ *                 Exige que o número já tenha tocado em "Adicionar membro" —
+ *                 é a sessão que carrega o responsavelId, e sem ela o
+ *                 FlowHandler recusa (de propósito: gravaria um familiar solto).
  *   --de          número remetente        (padrão 5599900000002)
  *   --caso        ok | data-invalida | valor-zero | campo-faltando | token-errado
  *   --nome        sobrescreve o nome enviado
@@ -55,12 +59,13 @@ const TOKEN       = opt('token');
 const COMUNIDADE  = opt('comunidade');
 const DE          = opt('de', '5599900000002');
 const CASO        = opt('caso', 'ok');
+const MEMBRO      = args.indexOf('--membro') >= 0;
 
 if (!URL_WEBHOOK || !TOKEN) {
   console.error('Faltou --url ou --token. Veja o cabeçalho do arquivo.');
   process.exit(1);
 }
-if (!COMUNIDADE) {
+if (!COMUNIDADE && !MEMBRO) {
   console.error('Faltou --comunidade <id de uma comunidade real do Odoo>.');
   console.error('Sem id válido o FlowHandler recusa o cadastro e o teste não chega ao resumo.');
   process.exit(1);
@@ -71,6 +76,20 @@ if (!COMUNIDADE) {
  * Os nomes dos campos são os do flow-cadastro.json — se um mudar lá, muda aqui.
  */
 function respostaDoFlow() {
+  // --membro: o formulário do familiar, que não tem comunidade nem notificação
+  // e cujo token leva outro prefixo — é por ele que o FlowHandler despacha.
+  if (MEMBRO) {
+    return {
+      flow_token:      `membro:${DE}:${Date.now()}`,
+      nome:            opt('nome', 'João Pedro da Silva'),
+      nome_usual:      'Joãozinho',
+      data_nascimento: CASO === 'data-invalida' ? '31/02/2010' : '20/07/2010',
+      endereco:        'Rua das Flores, 123, Centro, perto da praça',
+      valor_mensal:    CASO === 'valor-zero' ? '0' : '20,00',
+      dia_preferido:   CASO === 'dia-invalido' ? '31' : '10'
+    };
+  }
+
   const base = {
     flow_token:      `cadastro:${DE}:${Date.now()}`,
     comunidade_id:   String(COMUNIDADE),
