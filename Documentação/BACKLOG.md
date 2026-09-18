@@ -245,32 +245,28 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
-### BL-32 — Nono dígito: mensagem aceita e nunca entregue 🔴 (M) — **descoberto testando o Flow em 18/09/2026** — ⚠️ parcial, por limite da API
+### BL-32 — Nono dígito: mensagem aceita e nunca entregue 🟠 (P) — **descoberto testando o Flow em 18/09/2026** — ✅ concluído
 **Arquivos:** `Utils.gs` · `Webhook.gs` · `AuditoriaNumeros.gs` (novo)
 
 **O que aconteceu.** O envio para `5586988521231` voltou **HTTP 200** e a mensagem nunca chegou. O WhatsApp daquele aparelho é `558688521231` — **sem o 9** depois do DDD. Trocado o número, o formulário chegou na hora.
 
-**Por que é grave.** A Meta aceita os dois formatos e devolve 200 nos dois. Não há erro, não há exceção, e o contador conta como enviada. É a pior forma de falha: silenciosa e com todos os sinais de sucesso.
+**Por que a falha é traiçoeira.** A Meta aceita os dois formatos e devolve 200 nos dois. Não há erro, não há exceção, e o contador conta como enviada: todos os sinais de sucesso, nenhuma entrega.
 
-**A regra, e o limite dela.** Nos DDDs **11–19, 21, 22, 24, 27 e 28** o `wa_id` mantém o 9 — são as regiões que receberam o nono dígito antes de o WhatsApp chegar. Nos demais, contas antigas ficaram registradas com os 8 dígitos de então. Mas **é heurística**: uma conta criada depois da mudança mantém o 9 em qualquer DDD.
+**A regra, e o limite dela.** Nos DDDs **11–19, 21, 22, 24, 27 e 28** o `wa_id` mantém o 9 — são as regiões que receberam o nono dígito antes de o WhatsApp chegar. Nos demais, contas antigas ficaram registradas com os 8 dígitos de então. Mas **é heurística**: uma conta criada depois da mudança mantém o 9 em qualquer DDD. E não há como conferir: a Cloud API **não tem endpoint de validação** (o `contacts` do On-Premises foi descontinuado e respondia "válido" para qualquer entrada).
 
-**Não há atalho.** A Cloud API **não tem endpoint para validar um número**; o `contacts` do On-Premises foi descontinuado e, mesmo lá, respondia "válido" para qualquer entrada. A única fonte exata do `wa_id` é uma mensagem **recebida** daquele número.
+**⚠️ CORREÇÃO DE 18/09, DEPOIS DE VERIFICAR NO CÓDIGO.** A primeira versão deste item dizia que o lembrete mensal para 500 pessoas corria risco. **Não corre.** O número gravado no Odoo vem de `x_studio_partner_phone` ← `dados.whatsapp` ← `from` do webhook — que é o `wa_id` **por construção**, não por convenção. Todo dizimista cadastrado pelo bot já está no formato que entrega.
 
-**Onde há risco e onde não há.**
-- **Não há** no cadastro pelo bot: o número vem do `from` do webhook, que já é canônico.
-- **Há** em todo número **digitado** — e o envio exposto é o **lembrete mensal**, justamente o que ninguém acompanha.
+**Onde o risco realmente estava:** em número **digitado fora do fluxo do bot**. Foi exatamente o caso — a propriedade `NUMERO_TESTE`, preenchida à mão. O mesmo vale para contato criado direto no Odoo pela secretaria, que é a única porta que ainda não passa pelo webhook.
 
 **Feito:**
 - `Utils.variantesNumeroBR` devolve as duas formas e o palpite por DDD.
-- Na falha de entrega (BL-31), o log já sugere a outra forma — este é o **único sinal confiável**, porque o envio devolve 200 e o número como veio.
-- `auditarNumerosWhatsApp()` lê o Odoo e separa os números a conferir, marcando quem recebe lembrete. **Só lê.**
-- `Utils._conferirDestinatario` avisa quando a Meta normaliza o número. **Sinal secundário:** quando ela normaliza, a mensagem chega — no caso que originou este item, nada foi avisado ali.
+- Na falha de entrega (BL-31), o log sugere a outra forma. É o **único sinal confiável**: a resposta do envio devolve 200 e o número como veio.
+- `auditarNumerosWhatsApp()` lê o Odoo e separa o que destoa do formato usual do DDD. Com a origem sendo o webhook, espera-se relatório limpo — e é justamente por isso que ele serve: **um suspeito na lista denuncia um contato que não veio do bot**.
+- `Utils._conferirDestinatario` avisa quando a Meta normaliza o número. **Sinal secundário:** quando ela normaliza, a mensagem chega; no caso deste item nada foi avisado ali.
 
-**Não feito, e de propósito: não há correção automática.** Trocar por regra estragaria os números em que o 9 está certo, e o estrago seria do mesmo tipo do problema — silencioso. A confirmação é humana, ou vem de um "oi" ao bot.
+**Descartado:** um campo próprio para o `wa_id` no `x_dizimista`, cogitado antes da verificação acima. Seria duplicar um dado que `x_studio_partner_phone` já guarda corretamente.
 
-**O que fecharia o item:** um campo próprio no `x_dizimista` para o `wa_id` (separado do telefone, que deve continuar sendo o número real), preenchido com o `from` toda vez que a pessoa escreve ao bot, e preferido nos envios. Exige criar o campo no Odoo — mesmo padrão do `criarCampoConferenciaPix`.
-
-**Aceite:** nenhum lembrete mensal falha em silêncio por causa do formato do número.
+**Aceite:** uma não-entrega por formato de número deixa no log o número alternativo a tentar — atendido.
 
 ---
 
