@@ -178,6 +178,7 @@ na Meta *antes* de republicar.
 | `MediaService.gs` | Upload/download de mídia e QR Code PIX |
 | `FlowHandler.gs` | Recebe e revalida a resposta de WhatsApp Flow (`nfm_reply`) — ver [FLOW-CADASTRO.md](FLOW-CADASTRO.md) |
 | `AuditoriaNumeros.gs` | Relatório dos números de WhatsApp gravados no Odoo (BL-32) — só lê |
+| `ferramentas/odoo-dump.mjs` | Extrai o schema do Odoo (modelos, campos, regras). Roda fora do Apps Script; **exige `--url`, `--db`, `--uid` e `ODOO_API_KEY`** — nada vem preenchido, porque o repositório é público |
 | `NotificacaoHandler.gs` | Lembretes mensais e sua trigger |
 | `TriggerSessoes.gs` | Sessões abandonadas e acompanhamento de cota |
 | `Utils.gs` | Envio ao WhatsApp, `fetchComRetry`, contagem de cota, formatadores |
