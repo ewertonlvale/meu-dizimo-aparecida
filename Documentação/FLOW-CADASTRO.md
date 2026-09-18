@@ -168,6 +168,7 @@ escritos no arquivo:
 | `label` de qualquer componente | **20 caracteres** — "para evitar truncamento em telas diferentes" |
 | valor inicial de campo | fica em `init-values` **no `Form`**, não em `init-value` no componente |
 | tipo do valor inicial | precisa casar com o campo: `input-type: number` exige `data.<x>` declarado como `number`, com `__example__` numérico |
+| `${data.x}` em texto | só resolve quando é a string **inteira**. `"Comunidade: ${data.x}"` aparece literal no aparelho — e o Flow Builder **aceita sem reclamar** |
 | `helper-text` | 80 caracteres |
 | `title` da tela | 30 caracteres |
 
@@ -184,8 +185,10 @@ node ferramentas/valida-flow.js
 
 O validador da Meta só roda depois de colar o arquivo lá, e as regras acima não
 estão escritas em lugar nenhum do JSON — descobrem-se uma por vez, a cada
-recusa. Construir estes dois Flows custou três ciclos de editar/colar/ler o
-erro. O script cobra as mesmas regras aqui, em segundos.
+recusa. Construir estes dois Flows custou quatro ciclos de editar/colar/ver o
+resultado — e o quarto **não deu erro nenhum**: o texto saiu literal na tela do
+aparelho e só apareceu porque alguém olhou o formulário. O script cobra as
+mesmas regras aqui, em segundos.
 
 Ele **não substitui** o validador da Meta: cobre só o que já nos mordeu. Uma
 recusa nova é motivo para acrescentar uma regra a ele, não para desconfiar do

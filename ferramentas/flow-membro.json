@@ -8,7 +8,7 @@
       "data": {
         "comunidade": {
           "type": "string",
-          "__example__": "Comunidade São José"
+          "__example__": "Comunidade: São José"
         },
         "endereco_padrao": {
           "type": "string",
@@ -36,7 +36,7 @@
               },
               {
                 "type": "TextBody",
-                "text": "Comunidade: ${data.comunidade}"
+                "text": "${data.comunidade}"
               },
               {
                 "type": "TextInput",

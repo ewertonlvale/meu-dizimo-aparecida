@@ -12,6 +12,9 @@
  *     1. "label must be 20 characters or less"
  *     2. "Property 'init-value' is not allowed in 'TextInput' component"
  *     3. "Expected property 'dia_preferido' to be of type 'number'"
+ *     4. (sem erro nenhum) "Comunidade: ${data.comunidade}" apareceu LITERAL na
+ *        tela do aparelho — o binding só resolve a string inteira, e o Flow
+ *        Builder aceita a mistura sem reclamar
  *
  *   Cada uma custou um ciclo de editar, colar, ler o erro. Este script cobra as
  *   mesmas regras aqui, em segundos.
@@ -73,6 +76,18 @@ function validar(arquivo) {
       if ('init-value' in c) {
         aviso(`${onde} · ${c.name || c.type}`,
               "usa 'init-value' no componente; mova para 'init-values' no Form");
+      }
+
+      // `${...}` só resolve quando é o valor INTEIRO. Dentro de uma frase
+      // maior ele aparece literal na tela do aparelho — e o Flow Builder
+      // aceita sem reclamar, então só se descobre olhando o formulário.
+      for (const chave of ['text', 'label', 'helper-text']) {
+        const v = c[chave];
+        if (typeof v === 'string' && /\$\{/.test(v) && !/^\$\{[^}]+\}$/.test(v)) {
+          aviso(`${onde} · ${c.name || c.type}`,
+                `${chave} mistura texto com \${...}: "${v.slice(0, 44)}". ` +
+                `O binding só resolve a string inteira — ponha o texto fixo dentro do dado.`);
+        }
       }
     }
 
