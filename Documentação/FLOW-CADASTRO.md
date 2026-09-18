@@ -201,9 +201,10 @@ celular de teste → `enviarFlowDeTeste()`.
    `enviarFlowCadastro` devolve `false` e o bot segue pelo cadastro por
    conversa — é o que permite publicar este código antes de existir Flow algum.
 3. **Chamar `FlowHandler.enviarFlowCadastro(from)` no `CadastroHandler.iniciar`**,
-   caindo no fluxo atual quando devolver `false`. *Ainda não foi feito*: enquanto
-   o Flow não estiver publicado e testado num aparelho real, o caminho de
-   entrada continua o de sempre.
+   caindo no fluxo atual quando devolver `false`. *Ainda não foi feito* — está
+   pedido e detalhado no **BL-33**, junto com o interruptor em Properties, o
+   passo de foto após a submissão e a questão em aberto do cadastro de membro
+   da família.
 4. **Testar num aparelho** com `enviarFlowDeTeste()` (seção 4b). O simulador
    cobre o lado do servidor por completo; ele não cobre a renderização do
    formulário nem o comportamento do `DatePicker` no aparelho.

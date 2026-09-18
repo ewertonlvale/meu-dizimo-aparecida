@@ -270,6 +270,63 @@ Evidência direta do log, com as respostas enviadas em ordem e 400 ms de interva
 
 ---
 
+### BL-33 — Ligar o Flow no fluxo de cadastro 🟠 (G) — 📋 **pedido em 18/09/2026, não iniciado**
+
+Refatorar o cadastro para usar o formulário do WhatsApp. O Flow já funciona
+ponta a ponta (BL-30) e já foi testado num aparelho real; o que falta é ligá-lo
+na entrada.
+
+**O pedido, em quatro partes:**
+
+1. **Usar o formulário no fluxo de cadastro.** Hoje `CadastroHandler.iniciar`
+   vai direto para a conversa; `FlowHandler.enviarFlowCadastro` existe mas nada
+   o chama fora do `enviarFlowDeTeste`.
+
+2. **Não remover o cadastro conversacional.** Os dois convivem. Isso não é só
+   prudência de migração: quem abre o Flow e desiste, quem está num aparelho
+   que não renderiza o formulário e quem cai no erro de validação do servidor
+   precisam de um caminho — e o caminho é o de hoje.
+
+3. **Uma propriedade que liga e desliga.** Um interruptor no Script Properties
+   (`FLOW_CADASTRO_ATIVO`, por exemplo). Reparar que `FLOW_ID_CADASTRO` ausente
+   já faz `enviarFlowCadastro` devolver `false` — mas isso é *não configurado*,
+   não *desligado*. São coisas diferentes: com o Flow publicado e funcionando,
+   é preciso poder voltar atrás sem apagar o id.
+
+4. **Pedir a foto depois do cadastro pelo Flow.** Hoje a foto está fora do
+   formulário de propósito (exigiria tratar upload de mídia no Flow), e quem
+   vem pelo Flow cai direto no resumo, sem foto. O pedido é acrescentar o passo
+   de foto **depois** da submissão.
+
+**A investigar antes de implementar: o cadastro de MEMBRO da família.** O
+pedido cita isso explicitamente, e com razão — o fluxo de membro não é o de
+cadastro com outro rótulo. Ele diverge em pelo menos quatro pontos, todos com
+`if (cadastrandoMembro)` espalhados pelo `CadastroHandler`:
+
+| Onde | O que muda |
+|---|---|
+| `iniciarCadastroMembro` (:80) | grava `cadastrandoMembro` e `responsavelId` na sessão |
+| `processarDataNascimento` (:239) | oferece o endereço do responsável em vez de pedir |
+| `processarValorMensal` (:311) | pula notificações e pergunta o dia da devolução |
+| `processarDiaPreferido` (:380) | vai para `_pedirFotoMembro`, sem texto de lembrete |
+| `finalizar` (:522) | chama `criarMembro(dados, responsavelId)`, não `criarDizimista` |
+
+Um Flow de membro precisaria de menos campos (sem comunidade, sem
+notificações) e de dados do responsável embarcados no
+`flow_action_payload.data`. **Decidir se vale um segundo Flow, uma tela
+condicional no mesmo Flow, ou deixar o cadastro de membro na conversa** — a
+terceira é legítima, porque membro é evento ainda mais raro que cadastro.
+
+**Pontos de partida:** `FlowHandler.enviarFlowCadastro` · `CadastroHandler.iniciar`
+(:34) e `iniciarCadastroMembro` (:80) · o passo de foto em `solicitarFoto` (:434),
+`processarFotoPerfil` (:441) e `ESTADOS.AGUARDANDO_FOTO_PERFIL` ·
+`ferramentas/flow-cadastro.json` · `Documentação/FLOW-CADASTRO.md` seção 5.
+
+**Aceite:** com a propriedade ligada, um cadastro completo entra em 1 execução
+de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
+
+---
+
 ## Itens baixos / manutenção
 
 ### BL-12 — `ASSETS` não declarado 🟡 (P)
