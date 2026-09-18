@@ -223,6 +223,10 @@ const Router = {
       case 'btn_foto_pular':         CadastroHandler.pularFoto(from);                 break;
 
       // --- Devolução ---
+      // Os dois ids abaixo saíram dos menus, mas continuam vivos aqui: as
+      // mensagens antigas seguem na conversa das pessoas e o toque nelas chega
+      // ao webhook como sempre. Remover os `case` transformaria um botão antigo
+      // em silêncio.
       case 'btn_ja_sou_dizimista':   DevolucaoHandler.verificarDizimista(from); break;
       case 'btn_devolver_dizimo':    DevolucaoHandler.iniciarDevolucao(from);   break;
       case 'btn_dev_prosseguir':     DevolucaoHandler.prosseguirAposAviso(from); break;
@@ -312,6 +316,13 @@ const Router = {
         if (PALAVRAS_RELATORIO.includes(lower)) {
           StateManager.limparDados(from);
           RelatorioHandler.iniciar(from);
+          return;
+        }
+        // O histórico saiu do menu (3 botões é o teto do WhatsApp) e virou
+        // contexto no início da devolução. Este atalho é a porta para quem
+        // quer só consultar, sem começar uma devolução.
+        if (lower === 'historico' || lower === 'histórico') {
+          DevolucaoHandler.exibirHistorico(from);
           return;
         }
       }

@@ -21,37 +21,19 @@ const DevolucaoHandler = {
   // ==========================================================================
 
   /**
-   * Verifica se o usuário tem cadastro e exibe as opções de devolução.
-   * Ponto de entrada via botão 'btn_ja_sou_dizimista'.
+   * Ponto de entrada do antigo botão 'btn_ja_sou_dizimista'.
+   *
+   * O botão saiu dos menus, mas continua chegando: mensagens antigas ficam na
+   * conversa das pessoas e o toque nelas chega ao webhook como sempre. Por isso
+   * o id segue atendido — só que sem a sequência de identificação.
+   *
+   * Ela pedia à pessoa que se identificasse ('🔍 Buscando seu cadastro...',
+   * '✅ Cadastro encontrado!', menu) para descobrir pelo número o que o número
+   * já dizia. Três mensagens para nada; agora delega a `MenuHandler.entrada`,
+   * que decide pelo número em uma só.
    */
   verificarDizimista(from) {
-    Utils.enviarSimples(from, '🔍 Buscando seu cadastro...');
-
-    const dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
-
-    if (!dizimista) {
-      Utils.enviarMenu(from,
-        '😕 Não encontrei seu cadastro em nosso sistema.\n\n' +
-        'Para acessar as opções de dizimista, primeiro você precisa se cadastrar.',
-        [
-          { id: 'btn_ser_dizimista', title: '🙏 Ser Dizimista' },
-          { id: 'btn_menu',          title: '🔙 Menu'           }
-        ]
-      );
-      return;
-    }
-
-    Utils.enviarSimples(from, `✅ *Olá, ${dizimista.x_name}!*\n\nSeu cadastro foi encontrado! 😊`);
-    Utilities.sleep(1000);
-
-    Utils.enviarMenu(from,
-      'O que você gostaria de fazer?',
-      [
-        { id: 'btn_devolver_dizimo',   title: '💰 Devolver dízimo'  },
-        { id: 'btn_minhas_devolucoes', title: '📊 Meu histórico'    },
-        { id: 'btn_menu',              title: '🔙 Menu'              }
-      ]
-    );
+    MenuHandler.entrada(from);
   },
 
   // ==========================================================================
@@ -475,6 +457,38 @@ const DevolucaoHandler = {
    * @param {string} from       - Número do destinatário
    * @param {Object} dizimista  - Registro do dizimista no Odoo
    */
+  /**
+   * Uma linha com a última devolução registrada, para abrir a tela de
+   * pagamento com contexto.
+   *
+   * Silenciosa quando não há histórico ou quando a consulta falha: é
+   * informação de apoio, e derrubar a devolução por causa dela seria trocar o
+   * essencial pelo acessório.
+   *
+   * @returns {string} Já com quebra de linha, ou '' quando não há o que dizer.
+   * @private
+   */
+  _linhaUltimaDevolucao(dizimistaId) {
+    try {
+      const ultimas = OdooService.buscarDevolucoesDizimista(dizimistaId, 1);
+      if (!ultimas || !ultimas.length) {
+        return '✨ Esta será sua *primeira devolução* registrada por aqui!\n\n';
+      }
+
+      const u = ultimas[0];
+      const data  = u.x_studio_data_da_devolucao
+        ? Utils.formatarDataOdoo(u.x_studio_data_da_devolucao)
+        : '—';
+      const valor = Utils.formatarValor(u.x_studio_value);
+
+      return `📊 Sua última devolução: *${valor}* em *${data}*\n` +
+             `_Digite *histórico* para ver as anteriores._\n\n`;
+    } catch (e) {
+      console.warn('⚠️ Não consegui ler a última devolução:', e.message);
+      return '';
+    }
+  },
+
   _enviarDadosPagamento(from, dizimista) {
     const comunidade = OdooService.buscarDadosPagamentoComunidade(dizimista);
 
@@ -493,6 +507,10 @@ const DevolucaoHandler = {
     mensagem    += `━━━━━━━━━━━━━━━━━━━━\n\n`;
     mensagem    += `Olá, *${nomeUsual}*! 😊\n\n`;
     mensagem    += `Sua devolução mensal registrada é de *${valorMensal}*\n\n`;
+    // O histórico entra AQUI, como contexto, em vez de ser um destino de menu.
+    // Os três botões do menu estão ocupados, e uma linha aqui alcança todo
+    // mundo que vai devolver — não só quem sairia procurando por ela.
+    mensagem    += this._linhaUltimaDevolucao(dizimista.id);
     mensagem    += `💡 *Mas você pode contribuir com qualquer valor!*\n`;
     mensagem    += `Doe o que sentir confortável no momento. 💛\n\n`;
     mensagem    += `━━━━━━━━━━━━━━━━━━━━\n`;

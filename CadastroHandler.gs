@@ -31,22 +31,21 @@ const CadastroHandler = {
   // INICIAR CADASTRO
   // ==========================================================================
 
-  iniciar(from) {
-    const dizimistaExistente = OdooService.buscarDizimistaPorWhatsapp(from);
+  /**
+   * @param {string} from
+   * @param {Object|null} [jaBuscado] - Resultado de `buscarDizimistaPorWhatsapp`
+   *   quando quem chamou já consultou. Evita a segunda ida ao Odoo no caminho
+   *   do primeiro contato, que passa por `MenuHandler.entrada`.
+   */
+  iniciar(from, jaBuscado) {
+    const dizimistaExistente = jaBuscado !== undefined
+      ? jaBuscado
+      : OdooService.buscarDizimistaPorWhatsapp(from);
 
     if (dizimistaExistente) {
-      const nome = dizimistaExistente.x_name || 'Dizimista';
-      // BL-21: sem espera — não há mensagem anterior para ordenar; a busca no
-      // Odoo acima já é a pausa natural antes deste envio.
-      Utils.enviarMenu(from,
-        `👋 Olá, *${nome}*!\n\nVocê já está cadastrado(a) em nosso sistema!\n\n` +
-        `Se deseja atualizar seus dados, entre em contato com a secretaria.`,
-        [
-          { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
-          { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },
-          { id: 'btn_menu',             title: '🔙 Menu'             }
-        ]
-      );
+      // Mesmo menu de sempre para quem já é dizimista — um lugar só, para as
+      // duas telas não divergirem com o tempo.
+      MenuHandler.menuDizimista(from, dizimistaExistente);
       return;
     }
 

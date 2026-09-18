@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude).
+**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude). Depois, a documentação de custo (`Documentação/FLUXOS.md`) e o **BL-38**, que ela motivou: a entrada do bot caiu de 4 para 2 mensagens.
 **Pendências:** **BL-29** ficou parcial: o lote agrupado foi consertado (ordenação por `timestamp`) e o atropelo entre POSTs separados é detectado e recusado, mas o `timestamp` do WhatsApp tem granularidade de 1 s e mensagens do mesmo segundo continuam indistinguíveis. O caminho para o resto não é mais código de ordenação — é o cadastro por formulário (BL-33, pronto) e a redução do tempo de execução (BL-21). O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Uma ação fora do código:** criar o usuário Odoo dedicado (BL-17). O `criarCampoConferenciaPix()` do BL-26 **já foi rodado** — confirmado em 18/09 no dump do schema (`ferramentas/odoo-dump.json`): `x_studio_conferencia_pix` existe em `x_devolucao`, tipo `char`, store. E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
@@ -64,6 +64,7 @@
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
 | BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
 | BL-37 | Fundir as 4 mensagens dispensáveis da devolução (8 → 4) | 🟠 | P | 📋 A fazer — corta 57% da conta mensal |
+| BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 
 ---
 
@@ -439,6 +440,34 @@ A devolução custa **8 mensagens** e é o **único fluxo que se repete todo mê
 **Ressalva ao corte 3:** é o único que a pessoa *sente*. O OCR leva alguns segundos e o silêncio pode parecer travamento. Vale medir o tempo real antes de tirar — se passar de ~4 s, talvez compense manter.
 
 **Aceite:** uma devolução completa gera 4 mensagens do bot, e nenhuma informação que estava na tela deixou de estar.
+
+### BL-38 — Entrada do bot: uma boas-vindas e um menu que decide pelo número 🟠 (M) — ✅ concluído em 18/09/2026
+**Arquivos:** `MenuHandler.gs` · `Webhook.gs` · `CadastroHandler.gs` · `Router.gs` · `DevolucaoHandler.gs`
+**Base:** `Documentação/FLUXOS.md` §3 · verificado por `node ferramentas/conta-mensagens.js`
+
+**O problema.** Toda pessoa passa pela entrada, e ela custava 4 mensagens antes da primeira escolha útil — 6 para quem já era dizimista. Três delas existiam para descobrir **pelo número** algo que o número já dizia: o WhatsApp entrega o telefone em toda mensagem recebida, e é por ele que o Odoo é consultado. O bot perguntava "você já é dizimista?", e depois ignorava a resposta e consultava o telefone.
+
+**O que mudou:**
+1. **Boas-vindas viraram uma mensagem.** Eram a imagem com legenda curta + um texto com o resto. A legenda da imagem já carrega texto — as duas viraram uma, com o mesmo conteúdo na tela. Sem avatar no Odoo, vira texto simples: ainda uma mensagem.
+2. **A entrada decide pelo número** (`MenuHandler.entrada`). Número novo vai direto ao formulário de cadastro; número cadastrado recebe o menu de dizimista. A mensagem que abriu a conversa não é roteada — era só o "oi".
+3. **`btn_ja_sou_dizimista` saiu dos menus.** Com ele foram as duas mensagens de identificação ("🔍 Buscando seu cadastro...", "✅ Cadastro encontrado").
+4. **`menuPrincipal` passou a decidir pelo número também**, para que o menu digitado (`menu`) e o menu de entrada não divirjam.
+
+**Resultado, conferido pelo harness:** primeiro contato **4 → 2**; quem já é dizimista e chega à devolução pelo menu, **6 → 2**.
+
+**Três decisões que não são óbvias:**
+
+- **O histórico não coube.** O WhatsApp aceita no máximo 3 botões, e Devolver / Adicionar membro / Contato Pastoral já ocupam os três. Em vez de gastar uma quarta mensagem, virou uma linha **dentro** da devolução (`_linhaUltimaDevolucao`), na mensagem de dados de pagamento que já seria enviada — custo zero — mais o atalho digitando `histórico`, que funciona em qualquer ponto.
+
+- **Os botões antigos continuam atendidos.** `btn_ja_sou_dizimista` e `btn_minhas_devolucoes` saíram dos menus, mas as mensagens antigas seguem na conversa de cada pessoa e o toque nelas chega ao webhook normalmente. Remover os `case` do `Router.gs` transformaria um botão antigo em silêncio. `verificarDizimista` virou um encaminhamento para `MenuHandler.entrada`.
+
+- **Primeira mensagem com intenção não vira menu.** Quem a secretaria cadastrou no Odoo e nunca escreveu ao bot recebe o lembrete mensal e toca "Devolver agora" — e essa é a primeira mensagem dele. O `Webhook.gs` roteia mensagens `interactive`/`button` do primeiro contato em vez de mandar o menu, senão o lembrete custaria um toque a mais logo para quem ele foi buscar.
+
+**Degradação com o Odoo fora do ar:** `entrada` e `menuPrincipal` agora consultam o Odoo, e os dois são destino de fallback — inclusive de fallbacks que existem para quando o Odoo falha. Uma exceção ali deixaria a pessoa sem resposta nenhuma, então ambos caem no menu genérico em vez de propagar. Há cenário no harness para isso.
+
+**Novo:** `ferramentas/conta-mensagens.js` carrega os `.gs` de verdade num contexto isolado, troca só a borda (nada sai pela rede, nada toca o Odoo) e confere a contagem contra `FLUXOS.md`. Sai com código 1 se divergir. Existe porque número em documento envelhece calado: bastava alguém acrescentar um `Utils.enviarSimples` para o documento passar a mentir sem que nada falhasse.
+
+---
 
 ---
 
