@@ -582,6 +582,116 @@ function desativarFlowCadastro() {
   Logger.log('   Quem já está com o formulário aberto consegue terminar por ele.');
 }
 
+// ============================================================================
+// SESSÕES DE CADASTRO
+// ============================================================================
+
+/**
+ * Mostra quem está com cadastro em andamento. Só lê.
+ *
+ * Rode antes de `limparTodasSessoes()`: a limpeza apaga o progresso de quem
+ * estiver no meio do cadastro, e essa gente não recebe aviso nenhum — do lado
+ * dela, a próxima resposta simplesmente cai no menu.
+ */
+function listarSessoesAtivas() {
+  const props = PropertiesService.getScriptProperties();
+  const todas = props.getProperties();
+  const cache = CacheService.getScriptCache();
+  const pref  = StateManager.PREFIXO_SESSAO;
+
+  const numeros = Object.keys(todas)
+    .filter(c => c.indexOf(pref) === 0)
+    .map(c => c.slice(pref.length));
+
+  if (!numeros.length) {
+    Logger.log('✅ Nenhuma sessão de cadastro ativa.');
+    return [];
+  }
+
+  Logger.log(`📋 ${numeros.length} sessão(ões) ativa(s):`);
+  Logger.log('');
+
+  numeros.forEach(from => {
+    const estado  = cache.get(`estado_${from}`) || '(fora do cache)';
+    const inicio  = parseInt(todas[pref + from], 10);
+    const minutos = inicio ? Math.floor((Date.now() - inicio) / 60000) : '?';
+    Logger.log(`   ${from}  ·  ${estado}  ·  há ${minutos} min`);
+  });
+
+  Logger.log('');
+  Logger.log('Para apagar todas: limparTodasSessoes()');
+  return numeros;
+}
+
+/**
+ * Apaga TODAS as sessões de cadastro em andamento.
+ *
+ * ⚠️ Quem estiver no meio de um cadastro perde o progresso, e **sem aviso**:
+ * do lado da pessoa, a próxima resposta cai no menu sem explicação. Rode
+ * `listarSessoesAtivas()` antes para ver quem será afetado.
+ *
+ * O QUE APAGA, por número: `estado_`, `dados_`, `log_cadastro_`,
+ * `sessao_inicio_`, `aviso_sessao_` e a propriedade `sessao_ativa_`.
+ *
+ * O QUE **NÃO** APAGA: o `contato_<numero>` (cache de 6 h que marca o número
+ * como conhecido). É de propósito — apagá-lo faria o bot dar boas-vindas de
+ * novo a quem já é do sistema. Para isso existe `limparCacheContatos()`.
+ *
+ * ⚠️ LIMITE DO CACHE: só alcança sessões que ainda têm a propriedade
+ * `sessao_ativa_`. O CacheService **não permite listar chaves**, então uma
+ * sessão cuja propriedade já sumiu deixa restos no cache — que expiram
+ * sozinhos em no máximo 6 h. Ver ARQUITETURA.md, seção 1.
+ */
+function limparTodasSessoes() {
+  const numeros = listarSessoesAtivas();
+  if (!numeros.length) return;
+
+  Logger.log('');
+  Logger.log('🧹 Limpando...');
+
+  let limpas = 0;
+  numeros.forEach(from => {
+    try {
+      StateManager.limparDados(from);
+      limpas++;
+    } catch (e) {
+      Logger.log(`   ⚠️ Falhou em ${from}: ${e.message}`);
+    }
+  });
+
+  Logger.log('');
+  Logger.log(`✅ ${limpas} de ${numeros.length} sessão(ões) limpa(s).`);
+  if (limpas < numeros.length) {
+    Logger.log('   As que falharam podem ser tentadas de novo: nada aqui é cumulativo.');
+  }
+}
+
+/**
+ * Apaga o cache que marca números como "já conhecidos" (`contato_<numero>`).
+ *
+ * Efeito: as pessoas afetadas recebem a mensagem de boas-vindas de novo no
+ * próximo contato, como se fosse a primeira vez. É útil ao testar o primeiro
+ * contato; em produção, é ruído para quem já usa o bot.
+ *
+ * ⚠️ Pelo mesmo limite do CacheService, isto só alcança os números que você
+ * informar — não há como listar as chaves do cache. Passe uma lista:
+ *
+ *   limparCacheContatos(['5586988521231', '5586999998888'])
+ */
+function limparCacheContatos(numeros) {
+  if (!Array.isArray(numeros) || !numeros.length) {
+    Logger.log('❌ Informe a lista de números.');
+    Logger.log("   Exemplo: limparCacheContatos(['5586988521231'])");
+    Logger.log('   Não dá para limpar "todos": o CacheService não lista chaves.');
+    return;
+  }
+
+  const cache = CacheService.getScriptCache();
+  numeros.forEach(n => cache.remove(`contato_${n}`));
+  Logger.log(`🗑️ Cache de contato limpo para ${numeros.length} número(s).`);
+  Logger.log('   Eles receberão as boas-vindas de novo no próximo contato.');
+}
+
 /**
  * ============================================
  * EXEMPLOS DE USO
