@@ -248,7 +248,11 @@ function montarContexto(cenario) {
     }),
     contatosDoDizimista: () => ({
       comunidade: 'São José',
-      contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '5586988521231' }]
+      // Formato do cadastro padrão do Odoo: com máscara e SEM o 55. Era
+      // '5586988521231', já normalizado, e isso escondia um bug de produção —
+      // o `wa_id` saía sem código de país e o WhatsApp lia o DDD 86 como
+      // China. Um fixture já arrumado testa a si mesmo, não o código.
+      contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231' }]
     }),
     salvarFotoDizimista: () => {}
     // `devolucoesDoMes`, `buscarDevolucoesDizimista`, `listarDevolucoesPorPeriodo`
@@ -658,6 +662,24 @@ const REGRAS_DE_CONTEUDO = [
       const faltam = ['João da Silva', '+5586988521231', 'São José']
         .filter(t => !c.texto.includes(t));
       return faltam.length ? `faltou no cartão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'O wa_id do cartão leva o código do país',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      // Sem o 55, o WhatsApp lê o DDD 86 como código de país da China: o
+      // contato é salvo com o país errado e "Conversar" abre um número que
+      // não existe. O `phone` pode estar certo e o `wa_id` errado — eram
+      // montados por caminhos diferentes, e foi assim que o bug passou.
+      const m = c.texto.match(/"wa_id":"(\d+)"/);
+      if (!m) return 'o cartão não trouxe wa_id';
+      return m[1] === '5586988521231'
+        ? null
+        : `wa_id saiu como ${m[1]} — devia ser 5586988521231`;
     }
   },
   {
