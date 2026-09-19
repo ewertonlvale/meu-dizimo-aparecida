@@ -546,6 +546,56 @@ const OdooService = {
     return this.buscarContatosComunidade(comunidadeId);
   },
 
+  /**
+   * O campo existe **e pode ser gravado**? (com cache, como `campoExiste`)
+   *
+   * BL-41 — POR QUE `campoExiste` NÃO BASTA AQUI.
+   * `x_studio_comunidade` sempre existiu. O que muda na migração é ele deixar
+   * de ser `related` (espelho do dizimista, readonly) e virar gravável. Um
+   * `campoExiste` responderia "sim" nos dois casos, e o bot tentaria gravar
+   * num campo readonly — o Odoo recusa a escrita inteira, e a devolução se
+   * perde. Numa mensagem por onde passa dinheiro, isso é inaceitável.
+   *
+   * Então a pergunta certa é "posso escrever?", e a resposta é: existe, não é
+   * `related` e não é `readonly`.
+   *
+   * @param {string} model
+   * @param {string} nome
+   * @returns {boolean}
+   */
+  campoGravavel(model, nome) {
+    const chave = `campo_grav_${model}_${nome}`;
+
+    this._camposGravaveis = this._camposGravaveis || {};
+    if (chave in this._camposGravaveis) return this._camposGravaveis[chave];
+
+    const cache    = CacheService.getScriptCache();
+    const cacheado = cache.get(chave);
+    if (cacheado) {
+      this._camposGravaveis[chave] = cacheado === '1';
+      return this._camposGravaveis[chave];
+    }
+
+    let gravavel = false;
+    try {
+      const campos = this.searchRead(
+        'ir.model.fields', ['id', 'related', 'readonly'],
+        [['model', '=', model], ['name', '=', nome]],
+        { limit: 1 }
+      );
+      const c = campos && campos[0];
+      gravavel = !!c && !c.related && !c.readonly;
+    } catch (e) {
+      console.warn(`⚠️ [OdooService] Não consegui verificar se ${model}.${nome} é gravável:`, e.message);
+    }
+
+    // TTL curto quando ainda não é gravável, para passar a valer logo após a
+    // migração — mesma regra do `campoExiste`.
+    cache.put(chave, gravavel ? '1' : '0', gravavel ? 21600 : 300);
+    this._camposGravaveis[chave] = gravavel;
+    return gravavel;
+  },
+
   // ==========================================================================
   // DEVOLUÇÕES
   // ==========================================================================
@@ -627,7 +677,19 @@ const OdooService = {
    *        PIX (BL-26): 'ok' | 'divergente' | 'ausente' | 'sem_referencia'
    * @returns {number} ID da devolução criada
    */
-  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '') {
+  /**
+   * @param {number|null} dizimistaId - null numa OFERTA de quem não é cadastrado
+   * @param {Object} dadosAnalise
+   * @param {string} [comprovanteBase64]
+   * @param {string} [tipoComprovante]
+   * @param {string} [conferencia]
+   * @param {Object} [extras] - BL-41:
+   *   `comunidadeId` (obrigatório quando não há dizimista),
+   *   `tipo` ('dizimo' | 'oferta', padrão 'dizimo'),
+   *   `telefoneOfertante`
+   * @throws {Error} se não houver como determinar a comunidade
+   */
+  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '', extras = {}) {
     const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
     let dataOdoo = hoje;
@@ -646,17 +708,67 @@ const OdooService = {
     // (filtrável pelo coordenador) e, como redundância visível, no nome do registro.
     const aviso = (CONFERENCIA[conferencia] || {}).avisoRegistro || '';
 
-    let descricao = `Devolução de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
+    const rotulo = (extras.tipo === 'oferta') ? 'Oferta' : 'Devolução';
+    let descricao = `${rotulo} de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
     if (aviso) descricao += ` — ${aviso}`;
+
+    const tipo = extras.tipo || 'dizimo';
+
+    // ── BL-41: a COMUNIDADE ─────────────────────────────────────────────────
+    // Antes da migração ela era `related` ao dizimista: o bot nunca a gravava,
+    // e o Odoo a espelhava sozinho. Depois da migração o espelho some, e quem
+    // não gravar deixa o campo vazio — em silêncio, porque nada falha.
+    //
+    // É por isso que aqui se EXIGE a comunidade em vez de deixá-la opcional:
+    // uma devolução sem comunidade é uma linha que ninguém concilia e que some
+    // dos relatórios do coordenador, sem nenhum sinal de erro.
+    let comunidadeId = extras.comunidadeId || null;
+
+    if (!comunidadeId && dizimistaId) {
+      // Dízimo: a comunidade é a do dizimista, como sempre foi. Buscar aqui
+      // custa uma leitura, e é o preço de a garantia valer para todo chamador
+      // em vez de depender de cada um lembrar de passar.
+      try {
+        const d = this.searchRead('x_dizimista', ['x_studio_comunidade'],
+          [['id', '=', dizimistaId]], { limit: 1 });
+        const rel = d && d[0] && d[0].x_studio_comunidade;
+        if (rel) comunidadeId = Array.isArray(rel) ? rel[0] : rel;
+      } catch (e) {
+        console.warn('⚠️ [Devolução] Não consegui ler a comunidade do dizimista:', e.message);
+      }
+    }
+
+    if (!comunidadeId) {
+      throw new Error(
+        'Devolução sem comunidade: ' +
+        (dizimistaId ? `dizimista ${dizimistaId} está sem comunidade no Odoo`
+                     : 'oferta sem comunidade informada')
+      );
+    }
 
     const dados = {
       x_name:                        descricao,
-      x_studio_dizimista:            dizimistaId,
+      x_studio_dizimista:            dizimistaId || false,
       x_studio_data_da_devolucao:    dataOdoo,
       x_studio_value:                dadosAnalise?.valor || 0,
       x_studio_status:               'Pendente',
       x_studio_tipo_comprovante:     tipoComprovante
     };
+
+    // Só grava a comunidade quando o campo já aceita escrita. Enquanto for
+    // `related`, o Odoo recusaria a escrita INTEIRA e a devolução se perderia
+    // — pior que o campo ficar espelhado, que é o que ele já faz sozinho.
+    if (this.campoGravavel('x_devolucao', 'x_studio_comunidade')) {
+      dados.x_studio_comunidade = comunidadeId;
+    }
+
+    if (this.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) {
+      dados.x_studio_tipo_contribuicao = tipo;
+    }
+
+    if (extras.telefoneOfertante && this.campoExiste('x_devolucao', 'x_studio_telefone_ofertante')) {
+      dados.x_studio_telefone_ofertante = String(extras.telefoneOfertante);
+    }
 
     if (conferencia && this._temCampoConferenciaPix()) {
       dados.x_studio_conferencia_pix = conferencia;

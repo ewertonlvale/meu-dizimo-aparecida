@@ -650,7 +650,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 - [x] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). ✅ 19/09 — contexto da comunidade vai no campo de organização, dentro do cartão, para o caminho continuar em 1 mensagem; texto antigo mantido como reserva se a Meta recusar
 - [x] **A2.** `SetupCamposOferta.gs`. ✅ 19/09 — 4 funções separadas por risco: `conferirMigracaoOferta()` (só lê) → `criarCamposOferta()` (aditivo) → `tornarComunidadeGravavel()` (⚠️ travado por `MODO_TESTE`, mede a contagem antes e depois) → `backfillTipoContribuicao()`
-- [ ] **A3.** `OdooService.registrarDevolucao`: exige comunidade (lança erro se vazia), grava `tipo_contribuicao` e `telefone_ofertante` — atrás de `campoExiste`
+- [x] **A3.** `registrarDevolucao` exige comunidade e grava tipo + telefone. ✅ 19/09 — precisou de `campoGravavel()` novo: `campoExiste` não bastava, porque `x_studio_comunidade` já existe e só muda de readonly para gravável; escrever antes da migração faria o Odoo recusar a gravação INTEIRA
 - [ ] **A4.** `FerramentasTeste.gs:166`: gerador de massa preenche os campos novos
 - [ ] **A5.** Leitura filtrada — 6 funções, 12 pontos de chamada (ver tabela abaixo), tudo atrás de `campoExiste`
 - [ ] **A6.** Menu novo: `[💰 Dízimo] [🎁 Oferta] [⋯ Outras opções]` + submenu em **lista** (4 itens não cabem em 3 botões)

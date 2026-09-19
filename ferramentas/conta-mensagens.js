@@ -80,7 +80,13 @@ function montarContexto(cenario) {
       validarComprovante: () => ({ ehComprovante: true })
     },
     console: { log() {}, warn() {}, error() {} },
-    Utilities: { sleep() {}, base64Encode: () => 'BASE64' },
+    Utilities: {
+      sleep() {},
+      base64Encode: () => 'BASE64',
+      // `registrarDevolucao` usa formatDate para a data de hoje. Só o formato
+      // yyyy-MM-dd é usado no projeto, então o stub cobre esse caso.
+      formatDate: (d, _tz, _fmt) => new Date(d).toISOString().slice(0, 10)
+    },
     Logger: { log() {} },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
@@ -158,6 +164,11 @@ function montarContexto(cenario) {
       if (modelo === 'x_dizimista') {
         const porTelefone = (dominio || []).some(d => d[0] === 'x_studio_partner_phone');
         if (porTelefone) return cenario.dizimista ? [cenario.dizimista] : [];
+        // Busca por id — é como `registrarDevolucao` descobre a comunidade.
+        const porId = (dominio || []).some(d => d[0] === 'id');
+        if (porId) return cenario.dizimistaNoOdoo !== undefined
+          ? (cenario.dizimistaNoOdoo ? [cenario.dizimistaNoOdoo] : [])
+          : (cenario.dizimista ? [cenario.dizimista] : []);
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
       if (modelo === 'x_devolucao') return cenario.devolucoes || [];
@@ -176,8 +187,10 @@ function montarContexto(cenario) {
       contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '5586988521231' }]
     }),
     devolucoesDoMes:    () => cenario.devolucoesDoMes || [],
-    registrarDevolucao: () => 123,
     salvarFotoDizimista: () => {}
+    // `registrarDevolucao` NÃO é trocado de propósito: é nele que vive a guarda
+    // do BL-41 contra devolução sem comunidade. Um stub a esconderia — foi o que
+    // aconteceu com `criarDizimista` e o BL-39 antes desta mudança.
   });
 
   return mod;
@@ -555,6 +568,53 @@ const TELEFONES = [
     if (!ok) falhas++;
     console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(24)} ${JSON.stringify(entrada).padEnd(22)} → ${obtido || '(vazio)'}${ok ? '' : `  (esperado ${esperado})`}`);
   }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🏛️  registrarDevolucao — a comunidade é obrigatória (BL-41)\n');
+
+// Antes da migração, a comunidade era espelhada do dizimista e o bot nunca a
+// gravava. Depois, quem não gravar deixa o campo vazio EM SILÊNCIO: nada falha,
+// e a linha some dos relatórios do coordenador. Por isso é erro, não omissão.
+const GRAVACAO = [
+  {
+    nome: 'Dízimo: herda a comunidade do dizimista',
+    cenario: { dizimista: DIZIMISTA },
+    roda: ctx => ctx.OdooService.registrarDevolucao(7, { valor: 50, data: '12/08/2026' }),
+    espera: 'ok'
+  },
+  {
+    nome: 'Oferta sem dizimista, com comunidade informada',
+    cenario: { dizimista: null },
+    roda: ctx => ctx.OdooService.registrarDevolucao(null, { valor: 20 }, null, 'imagem', '',
+      { comunidadeId: 3, tipo: 'oferta', telefoneOfertante: '5586988521231' }),
+    espera: 'ok'
+  },
+  {
+    nome: 'Oferta SEM comunidade → recusa, em vez de gravar linha órfã',
+    cenario: { dizimista: null },
+    roda: ctx => ctx.OdooService.registrarDevolucao(null, { valor: 20 }, null, 'imagem', '',
+      { tipo: 'oferta' }),
+    espera: 'erro'
+  },
+  {
+    nome: 'Dizimista sem comunidade no Odoo → recusa',
+    cenario: { dizimista: DIZIMISTA, dizimistaNoOdoo: { id: 7, x_studio_comunidade: false } },
+    roda: ctx => ctx.OdooService.registrarDevolucao(7, { valor: 50 }),
+    espera: 'erro'
+  }
+];
+
+for (const g of GRAVACAO) {
+  enviadas = [];
+  gratis   = [];
+  const ctx = montarContexto(g.cenario);
+  let obtido;
+  let motivo = '';
+  try { g.roda(ctx); obtido = 'ok'; } catch (e) { obtido = 'erro'; motivo = e.message; }
+  const ok = obtido === g.espera;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} ${g.nome}${ok ? '' : `  (esperado ${g.espera}, veio ${obtido}: ${motivo})`}`);
 }
 
 console.log('\n' + '─'.repeat(64));
