@@ -27,27 +27,42 @@ const MenuHandler = {
    * cadastrar. O botão "Já sou Dizimista" saiu: pedia identificação de quem o
    * bot já tinha identificado.
    */
-  menuPrincipal(from) {
+  menuPrincipal(from, opcoes = {}) {
     // O menu é o destino de vários fallbacks — inclusive dos que existem para
     // quando o Odoo falha. Uma exceção aqui deixaria a pessoa sem resposta
     // nenhuma, então o Odoo fora do ar degrada para o menu de quem não é
     // dizimista, e não para o silêncio.
+    //
+    // `dizimista` em `opcoes` pula a consulta quando quem chama já buscou.
+    // Testado com `in`, e não pela verdade do valor: o primeiro contato passa
+    // `null` de propósito — "já procurei, não achou" —, e `opcoes.dizimista ||`
+    // trataria isso como "não sei" e consultaria o Odoo de novo.
     let dizimista = null;
-    try {
-      dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
-    } catch (e) {
-      console.warn('⚠️ [Menu] Odoo indisponível, menu genérico:', e.message);
+    if ('dizimista' in opcoes) {
+      dizimista = opcoes.dizimista;
+    } else {
+      try {
+        dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+      } catch (e) {
+        console.warn('⚠️ [Menu] Odoo indisponível, menu genérico:', e.message);
+      }
     }
 
     if (dizimista) {
-      this.menuDizimista(from, dizimista);
+      this.menuDizimista(from, dizimista, null, opcoes);
       return;
     }
 
     StateManager.setEstado(from, ESTADOS.MENU);
 
+    // Com imagem no cabeçalho, o título em texto perde o lugar: `header` é um
+    // só. A arte do avatar já diz "Pastoral do Dízimo".
+    const cabecalho = opcoes.imagemId
+      ? { imagemId: opcoes.imagemId }
+      : { header: '💛 Pastoral do Dízimo' };
+
     Utils.enviarMenu(from,
-      'Como posso te ajudar hoje?',
+      opcoes.texto || 'Como posso te ajudar hoje?',
       [
         // BL-41: oferta NÃO exige cadastro, então precisa estar visível aqui —
         // é a razão de este menu voltar a existir para número novo.
@@ -55,7 +70,7 @@ const MenuHandler = {
         { id: 'btn_oferta',        title: '🎁 Oferta'          },
         { id: 'btn_secretaria',    title: '📞 Contato Pastoral' }
       ],
-      { header: '💛 Pastoral do Dízimo' }
+      cabecalho
     );
   },
 
@@ -360,21 +375,27 @@ const MenuHandler = {
       return;
     }
 
-    // Número novo. Mensagem de FLOW: cabeçalho por URL, não por media ID — a
-    // sonda S10 mostrou que o flow recusa `image.id` e exige `image.link`.
+    // Número novo: o MENU, não o formulário direto.
     //
-    // As boas-vindas viajam DENTRO do formulário, como `opcoes`, em vez de
-    // virem antes dele. Se o formulário não sair, `CadastroHandler.iniciar` as
-    // manda antes de começar a conversa — por isso `boasVindas: true` vai
-    // junto. Mandá-las aqui e só então tentar o formulário custaria duas
-    // mensagens sempre, que é exatamente o que o A12 remove.
-    const imagemUrl = MediaService.urlDoAvatar();
-    if (imagemUrl) {
-      CadastroHandler.iniciar(from, dizimista, {
-        imagemUrl,
-        texto: this._textoBoasVindasCadastro(),
-        boasVindas: true
+    // Por um tempo esta entrada mandou o formulário de cadastro em cima das
+    // boas-vindas — uma mensagem, o caminho mais curto até o cadastro. O
+    // problema é que era o ÚNICO caminho visível: quem só queria fazer uma
+    // oferta, ou falar com a pastoral, chegava num beco sem saída, porque
+    // `menuPrincipal` — que existe exatamente para isso, e cujos botões dizem
+    // exatamente isso — só aparecia depois.
+    //
+    // Continua sendo UMA mensagem. A diferença é que quem escolhe cadastro
+    // gasta mais uma, uma vez na vida, e as outras duas portas deixam de ser
+    // invisíveis. Oferta não exige cadastro; esconder isso de quem chega é
+    // perder a oferta inteira, não uma mensagem.
+    const imagemId = MediaService.mediaIdDoAvatar();
+    if (imagemId) {
+      this.menuPrincipal(from, {
+        imagemId,
+        texto: this._textoBoasVindasMenu(),
+        dizimista            // já buscado acima: não consulta o Odoo de novo
       });
+      console.log('✅ [A12] Primeiro contato em UMA mensagem (número novo)');
       return;
     }
 
@@ -384,18 +405,17 @@ const MenuHandler = {
 
   /**
    * Boas-vindas de quem chega pela primeira vez e ainda não é dizimista,
-   * fundidas com o convite do formulário (BL-41 · A12).
+   * fundidas com a pergunta do menu (BL-41 · A12).
    *
    * As duas frases vinham em mensagens separadas — a legenda do avatar e o
-   * corpo do formulário. Juntas num balão só, o convite fica logo abaixo da
+   * corpo do menu. Juntas num balão só, a pergunta fica logo abaixo da
    * apresentação, que é a ordem em que a pessoa lê de qualquer jeito.
    * @private
    */
-  _textoBoasVindasCadastro() {
+  _textoBoasVindasMenu() {
     return '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛\n\n' +
            '🙏 *Bem-vindo(a) ao Meu Dízimo!*\n\n' +
-           'Para começar, preencha seus dados de uma vez só. ' +
-           'Leva menos de um minuto. 💛';
+           'Como posso te ajudar hoje?';
   },
 
   /**
