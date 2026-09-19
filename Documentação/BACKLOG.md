@@ -71,6 +71,7 @@
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
 | BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
+| BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
 
 ---
 
@@ -708,6 +709,31 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
 - [x] **S10.** ✅ **19/09, 12:11 — flow aceita cabeçalho de imagem, mas só por LINK.** Duas rodadas: a 1ª devolveu `(#131008) header image must contain link` com `image.id`; a 2ª, com `AVATAR_URL` apontando para `docs/avatar.png` no GitHub Pages, chegou com a imagem em cima. **A12 fechado.** Na 1ª rodada o veredito da sonda lia HTTP 400 como recusa e teria matado o A12 por engano — passou a ler o `details`. Houve ainda uma rodada perdida porque o `avatar.png` estava no `main` e o Pages construía do `staging`: a URL não abria
 - [x] **S6.** ✅ 19/09 — **deixou de ser tarefa.** O webhook passou a guardar `WHATSAPP_NUMERO_BOT` a partir do `metadata.display_phone_number`, que a Meta manda em TODO callback, de graça. É o número dito por quem o registrou, e vem antes da `WHATSAPP_NUMERO_EXIBICAO` digitada à mão — que foi justamente a que entrou sem o código do país. A escrita só acontece quando o valor muda; um `setProperty` por mensagem recebida seria uma escrita por conversa para gravar sempre a mesma coisa
+
+
+### BL-43 — O arnês de testes só roda quando o Claude está no meio do caminho 🟡 (P)
+
+**Adiado por decisão do usuário em 19/09** ("agora não"). Registrado para não se
+perder.
+
+**O problema.** `ferramentas/conta-mensagens.js` tem 99 verificações e pegou
+vários bugs antes de chegarem em produção — `tipoDaChavePix` chamada solta,
+`comImagem` apagada num refactor, `wa_id` sem código de país. Mas **não existe
+`.github/workflows`**: nada o executa sozinho.
+
+Na prática ele roda antes de cada commit porque o Claude o roda. Quem editar um
+`.gs` direto pelo GitHub, ou no editor do Apps Script e der push, não passa por
+verificação nenhuma — e é justamente o caminho em que ninguém está olhando.
+
+**A saída.** Uma GitHub Action que rode `node ferramentas/conta-mensagens.js`
+em todo push e todo PR. Sem dependência para instalar: o script usa só a
+biblioteca padrão do Node, e já sai com código 1 quando algo diverge — foi
+escrito para CI desde o começo, e o cabeçalho dele diz isso.
+
+**Custo:** pequeno. O que o adia não é dificuldade, é prioridade.
+
+**Enquanto não existe:** `node ferramentas/conta-mensagens.js` antes de
+publicar, quando a edição for sua. Não envia mensagem nem toca o Odoo.
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
