@@ -690,7 +690,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
 - [x] **S5a.** `clasp push` ✅ (as funções do setup rodaram, logo o código novo está lá)
 - [ ] **S5b.** ⚠️ **Republicar o deployment** — o `doPost` mudou (portão de bloqueio do BL-36, roteamento da oferta). Sem isto, nada do fluxo novo responde no WhatsApp
-- [ ] **S8.** `conferirDizimistasSemComunidade()` — quem estiver sem comunidade **não consegue mais devolver**, porque `registrarDevolucao` agora exige o campo
+- [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
 - [ ] **S7.** Publicar `ferramentas/flow-oferta.json` no WhatsApp Manager e guardar o id em **`FLOW_ID_OFERTA`** (sem ela, a oferta usa a conversa)
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
