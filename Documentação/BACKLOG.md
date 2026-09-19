@@ -5,7 +5,7 @@
 **Atualizado em:** 17/09/2026 — **auditoria do código** conferindo cada item marcado como concluído contra os `.gs` (ver "Auditoria de 17/09/2026"). Resultado: adicionado BL-27, BL-26 reclassificado para parcial, BL-22 elevado a 🟠 e registrada a inversão de sequência do BL-01.
 **Atualizado em:** 14/09/2026 — adicionados BL-26 e refino do BL-14 a partir de uma **simulação real** (cadastro + devolução) capturada do WhatsApp.
 **Progresso:** Sprints 1 e 2 concluídas na `main`, mais BL-09 e BL-11. Em 17/09 fecharam BL-22, BL-23, BL-24, BL-26 e BL-27, e o BL-17 ficou pela metade (webhook fail-closed; falta o uid dedicado no Odoo).
-**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude). Depois, a documentação de custo (`Documentação/FLUXOS.md`) e os três itens que ela motivou: **BL-38** (entrada: 4 → 2 mensagens), **BL-37** (devolução: 6 → 3) e **BL-39** (cadastro duplicado). A conta mensal projetada caiu de R$ 87,50 para **R$ 35,00**.
+**Atualizado em:** 18/09/2026 — ciclo do WhatsApp Flow: BL-30 a BL-33, mais uma refatoração do diff acumulado (quatro revisões independentes: reuso, simplificação, eficiência e altitude). Depois, a documentação de custo (`Documentação/FLUXOS.md`) e os três itens que ela motivou: **BL-38** (entrada: 4 → 2 mensagens), **BL-37** (devolução: 6 → 3) e **BL-39** (cadastro duplicado). A conta mensal projetada caiu de R$ 87,50 para **R$ 35,00**. Em 19/09, o **BL-40** registrou a pesquisa do card de pagamento nativo do WhatsApp, com a sonda pronta para rodar.
 **Pendências:** **BL-29** ficou parcial: o lote agrupado foi consertado (ordenação por `timestamp`) e o atropelo entre POSTs separados é detectado e recusado, mas o `timestamp` do WhatsApp tem granularidade de 1 s e mensagens do mesmo segundo continuam indistinguíveis. O caminho para o resto não é mais código de ordenação — é o cadastro por formulário (BL-33, pronto) e a redução do tempo de execução (BL-21). O BL-29 é o mais relevante: mensagens processadas fora de ordem gravam a resposta no campo errado, em silêncio — e a janela do problema é proporcional à duração da execução, o que o amarra ao BL-21. **BL-21** ficou parcial por decisão técnica — o tempo de execução caiu, mas a fila assíncrona foi avaliada e **descartada** (não cabe nos limites do Apps Script; ver análise no item), então o teto de execuções simultâneas continua de pé **com o BL-01 em produção** (ver nota no BL-01). A metade aberta do **BL-17** (uid Odoo dedicado) é tarefa de administração no Odoo — roteiro passo a passo no item.
 ⚠️ **Uma ação fora do código:** criar o usuário Odoo dedicado (BL-17). O `criarCampoConferenciaPix()` do BL-26 **já foi rodado** — confirmado em 18/09 no dump do schema (`ferramentas/odoo-dump.json`): `x_studio_conferencia_pix` existe em `x_devolucao`, tipo `char`, store. E, como sempre, as correções só valem no bot após `clasp push` + republicação do deployment (ver observação no fim).
 **Como usar:** cada item tem um ID (`BL-NN`), severidade, esforço estimado, arquivo(s), proposta de correção e critério de aceite. Priorize de cima para baixo.
@@ -66,6 +66,7 @@
 | BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
+| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟡 | ? | 🔬 Sonda pronta — `testarPixNativo()`. Decisão depende do resultado |
 
 ---
 
@@ -499,6 +500,74 @@ A verificação e a gravação ficam dentro de um `LockService.getScriptLock()`.
 `FlowHandler._processarCadastro` também confere, mas **por usabilidade, não por segurança**: sem isso a pessoa preencheria o formulário inteiro, mandaria a foto, veria o resumo e só então seria barrada. A guarda do `OdooService` continua sendo a que não pode falhar.
 
 **Aceite:** responder um formulário antigo não cria registro e devolve **uma** mensagem (o aviso vai junto do menu). Cenário no harness.
+
+---
+
+### BL-40 — Card de pagamento nativo do WhatsApp 🟡 (tamanho depende do resultado) — 🔬 **sonda pronta, aguardando execução**
+**Arquivos:** `TestePixNativo.gs` (sonda) · eventualmente `DevolucaoHandler.gs` e `MediaService.gs`
+**Origem:** teste do app concorrente **Dizify**, 19/09 — ele mostra um card de pagamento com botão nativo **Copiar código Pix**.
+
+#### O que é
+
+A **API de Pagamentos do WhatsApp para o Brasil**: mensagem interativa `order_details` com `payment_settings: [{ type: "pix_dynamic_code" }]`. Renderiza um card com nº da cobrança, total e o botão nativo de copiar.
+
+#### Por que interessa
+
+Resolve a **única** mensagem que o BL-37 não conseguiu fundir. O copia-e-cola tem que ir sozinho e sem formatação, senão o toque longo → Copiar não leva o código exato e o app do banco recusa. Com o botão nativo, ele vira parte do card: **devolução de 3 → 2 mensagens**.
+
+#### A descoberta que divide a decisão em duas
+
+Os campos do `pix_dynamic_code` são `code`, `merchant_name`, `key`, `key_type`. **O `code` é uma string que nós fornecemos** — não há campo apontando para provedor de pagamento. Isso sugere que a MENSAGEM não exige PSP; quem exige é a CONCILIAÇÃO.
+
+| | O que ganha | O que custa |
+|---|---|---|
+| **(A) Só o botão** | 3 → 2 mensagens; dinheiro continua caindo direto na conta da comunidade | Nada, se a Meta aceitar. O comprovante e o OCR ficam |
+| **(B) Conciliação automática** | 3 → 1 mensagem; morrem o OCR, o **BL-14** e o **BL-26** | PSP, tarifa, intermediário: **R$ 150–500/mês** |
+
+#### Pesquisa de PSP e tarifas (19/09/2026)
+
+Um padrão se repete em todos: **a isenção acaba exatamente onde a API começa.**
+
+| PSP | Taxa zero | O que fica de fora |
+|---|---|---|
+| Asaas | 100 transações/mês | Só chave ou QR **estático**. Dinâmico/fatura paga tarifa contratual (~R$ 0,99–1,99) |
+| Efí | 30 transações/mês | Só app/chave/QR estático. Via **API/webhook**: **1,19%** desde a primeira |
+| Mercado Pago | — | 0,99% (0,79–0,89% com volume) |
+| Stark Bank | — | ~R$ 0,50 fixo — **fonte de 2022, confirmar** |
+
+A faixa gratuita cobre exatamente o que o bot faz hoje (BR Code estático) e para onde a API de Pagamentos começa. **Não se paga pelo PIX; paga-se por saber que o PIX aconteceu.**
+
+**Cooperativas:** Sicoob e Sicredi anunciam isenção de PIX para PJ, variando por cooperativa e pacote. Se a paróquia já tem conta numa delas, o recebimento direto de hoje provavelmente custa R$ 0. Há projeto no Senado isentando doações a entidades sem fins lucrativos — encontrado como **aprovação em comissão (2023)**, não lei sancionada; não confiar sem checar.
+
+**Custo da opção (B)**, 500 devoluções/mês (dízimo médio é hipótese — confirmar o real):
+
+| Dízimo médio | 1% | 1,19% | R$ 0,50 fixo |
+|---|---|---|---|
+| R$ 30 | R$ 150/mês | R$ 179/mês | R$ 250/mês |
+| R$ 50 | R$ 250/mês | R$ 298/mês | R$ 250/mês |
+| R$ 100 | R$ 500/mês | R$ 595/mês | R$ 250/mês |
+
+Comparação: o bot inteiro custa **R$ 35/mês**. A tarifa seria 5 a 15× isso. A partir de ~R$ 50 de dízimo médio, tarifa fixa passa a ganhar da percentual.
+
+O acréscimo de **R$ 2,49** que o Dizify oferece antes da cobrança ("despesas administrativas") é onde essa tarifa volta para alguém. Nosso bot poderia fazer igual — decisão pastoral, não técnica.
+
+#### O que NÃO foi verificado
+
+⚠️ **A documentação oficial da Meta está bloqueada pelo proxy da sessão.** Tudo acima vem de fontes secundárias. Três dúvidas decidem se (A) é viável:
+
+1. A Meta exige configuração de pagamento aprovada na conta?
+2. Ela valida que o código é dinâmico de verdade (emitido por PSP)?
+3. Entidade religiosa é elegível?
+
+Descartado: o botão `COPY_CODE` de template existe, mas é restrito a templates de cupom/autenticação — não serve para PIX.
+
+#### A sonda
+
+`testarPixNativo('<numero>')`, no editor do Apps Script. Monta um `order_details` com o BR Code que o bot já gera, envia pelo `Utils._post` de sempre (para valer a conferência do BL-32 e o contador do BL-25) e imprime a resposta crua da Meta. Responde as três dúvidas com um envio, e custa menos que qualquer conversa comercial com PSP — **tem que vir antes dela**.
+
+Junto veio `tipoDaChavePix()`: o card exige `key_type` e o Odoo guarda só a chave. Desempata CPF de celular pelo dígito verificador — classificar por tamanho chamaria todo celular sem `+` de CPF, e a Meta recusaria sem explicar. Coberto no harness.
+
+**Aceite:** rodar a sonda e registrar aqui o veredito. Se a Meta aceitar, (A) vira item de implementação; se recusar por elegibilidade, (A) morre e (B) passa a depender das tarifas acima.
 
 ---
 

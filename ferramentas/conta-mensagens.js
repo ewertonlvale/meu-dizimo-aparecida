@@ -95,7 +95,8 @@ function montarContexto(cenario) {
   // forma de alcançá-los sem tocar nos arquivos do projeto.
   const ARQUIVOS = [
     'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
-    'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs'
+    'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
+    'TestePixNativo.gs'
   ];
   const fontes = ARQUIVOS
     .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
@@ -103,7 +104,7 @@ function montarContexto(cenario) {
 
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
-             'DevolucaoHandler, ComprovanteHandler, ESTADOS });',
+             'DevolucaoHandler, ComprovanteHandler, ESTADOS, tipoDaChavePix });',
     ctx,
     { filename: 'bot.gs' }
   );
@@ -430,6 +431,36 @@ for (const r of REGRAS_DE_BOTAO) {
   const erro = enviadas.length ? r.confere(enviadas) : 'nenhuma mensagem enviada';
   if (erro) falhas++;
   console.log(`${erro ? '❌' : '✅'} ${r.nome}${erro ? ' — ' + erro : ''}`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔑 tipoDaChavePix — o key_type que o card de pagamento exige\n');
+
+// 11 dígitos é ambíguo: CPF e celular brasileiro têm o mesmo tamanho. Uma
+// primeira versão classificava por tamanho e chamava TODO celular guardado sem
+// o '+' de CPF — a Meta recusaria o card sem dizer por quê. O desempate é o
+// dígito verificador, e estes casos guardam isso.
+const CHAVES = [
+  ['pix@paroquia.org',                      'EMAIL', 'e-mail'],
+  ['+5586988521231',                        'PHONE', 'telefone com +'],
+  ['39580525000189',                        'CNPJ',  '14 dígitos'],
+  ['11144477735',                           'CPF',   'CPF com DV válido'],
+  ['111.444.777-35',                        'CPF',   'CPF pontuado'],
+  ['86988521231',                           'PHONE', 'celular sem + (DV não fecha)'],
+  ['11987654321',                           'PHONE', 'celular de SP sem +'],
+  ['e7b8c9d0-1234-5678-9abc-def012345678',  'EVP',   'chave aleatória'],
+  ['',                                      'null',  'vazio'],
+  ['abc',                                   'null',  'lixo']
+];
+
+{
+  const ctx = montarContexto({ dizimista: null, temAvatar: false, flowLigado: false });
+  for (const [chave, esperado, oQue] of CHAVES) {
+    const obtido = String(ctx.tipoDaChavePix(chave));
+    const ok = obtido === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(30)} → ${obtido}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
 }
 
 console.log('\n' + '─'.repeat(64));
