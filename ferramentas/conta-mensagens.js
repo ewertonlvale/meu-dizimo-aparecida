@@ -153,7 +153,12 @@ function montarContexto(cenario) {
     enviarSimples:      (to, t)         => registra('texto',  t),
     enviarComBotaoMenu: (to, t)         => registra('texto',  t),
     enviarConfirmar:    (to, t)         => registra('botoes', t),
-    enviarMenu:         (to, t, botoes) => registra('menu', t + ' [' + (botoes || []).map(b => b.id).join(', ') + ']'),
+    // O tipo distingue `menu` de `menu+imagem`: é a diferença entre a entrada
+    // de 2 mensagens e a de 1 (A12), e sem isso nenhum teste veria a economia.
+    enviarMenu: (to, t, botoes, opcoes = {}) => registra(
+      opcoes.imagemId ? 'menu+imagem' : 'menu',
+      t + ' [' + (botoes || []).map(b => b.id).join(', ') + ']'
+    ),
     enviarLista:        (to, t)         => registra('lista',  t),
     // Indicador de digitação: NÃO é mensagem. Registrado à parte justamente
     // para o teste provar que ele não entra na conta.
@@ -185,6 +190,8 @@ function montarContexto(cenario) {
 
   Object.assign(mod.MediaService, {
     enviarImagemFixa:   (to, id, legenda)  => registra('imagem+legenda', legenda),
+    // Sem avatar no Odoo não há id — é o que faz o A12 cair no caminho antigo.
+    mediaIdDoAvatar:    () => (cenario.temAvatar ? 'MEDIA_ID' : null),
     enviarImagemBase64: (to, b64, caption) => { registra('imagem+legenda', caption); return {}; },
     baixarArquivo:      () => ({ base64: 'BASE64DOCOMPROVANTE' })
   });
@@ -275,28 +282,30 @@ const CENARIOS = [
   {
     nome: 'Primeiro contato — número NOVO, formulário ligado',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true },
-    roda: ctx => { ctx.MenuHandler.boasVindas('55'); ctx.MenuHandler.entrada('55'); },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
     esperado: 2,
-    porque: 'boas-vindas (imagem com legenda) + o formulário. Eram 4.'
+    porque: 'boas-vindas + formulário. O A12 não vale aqui: se a mensagem de ' +
+            'flow aceita cabeçalho de imagem, ninguém testou (sonda S10).'
   },
   {
     nome: 'Primeiro contato — número NOVO, formulário desligado',
     cenario: { dizimista: null, temAvatar: true, flowLigado: false },
-    roda: ctx => { ctx.MenuHandler.boasVindas('55'); ctx.MenuHandler.entrada('55'); },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
     esperado: 2,
     porque: 'boas-vindas + a primeira pergunta do cadastro por conversa'
   },
   {
     nome: 'Primeiro contato — número JÁ CADASTRADO',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
-    roda: ctx => { ctx.MenuHandler.boasVindas('55'); ctx.MenuHandler.entrada('55'); },
-    esperado: 2,
-    porque: 'boas-vindas + menu de 3 opções. Eram 4, com identificação no meio.'
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 1,
+    porque: 'A12: avatar, boas-vindas e os 3 botões num balão só. Eram 4, ' +
+            'depois 2. Toda pessoa passa por aqui, uma vez.'
   },
   {
     nome: 'Primeiro contato — sem avatar no Odoo',
     cenario: { dizimista: DIZIMISTA, temAvatar: false, flowLigado: true },
-    roda: ctx => { ctx.MenuHandler.boasVindas('55'); ctx.MenuHandler.entrada('55'); },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
     esperado: 2,
     porque: 'texto simples no lugar da imagem — continua sendo uma mensagem'
   },
@@ -482,6 +491,25 @@ const REGRAS_DE_BOTAO = [
 // As fusões do BL-37 só valem se NADA sair da tela. Cada regra abaixo guarda
 // uma informação que antes tinha mensagem própria e agora divide espaço.
 const REGRAS_DE_CONTEUDO = [
+  {
+    nome: 'A entrada única carrega imagem, saudação e os 3 botões',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    confere: msgs => {
+      // Fundir três coisas num balão é fácil de desfazer por acidente: some a
+      // imagem e ninguém nota, porque a mensagem continua chegando.
+      const m = msgs.find(x => x.tipo === 'menu+imagem');
+      if (!m) return 'a entrada não saiu com cabeçalho de imagem';
+      if (!m.texto.includes('Cidinha')) return 'a Cidinha não se apresenta';
+      if (!m.texto.includes('Maria')) return 'a pessoa não é chamada pelo nome';
+      // Dois "olá" no mesmo balão foi o motivo de `_textoBoasVindasDizimista`
+      // existir; se voltarem, é porque alguém prefixou em vez de trocar.
+      if ((m.texto.match(/Olá/g) || []).length > 1) return 'dois "olá" no mesmo balão';
+      const faltam = ['btn_devolver_dizimo', 'btn_oferta', 'btn_outras_opcoes']
+        .filter(b => !m.texto.includes(b));
+      return faltam.length ? `faltou botão: ${faltam.join(', ')}` : null;
+    }
+  },
   {
     nome: 'O card carrega os dados de pagamento inteiros',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },

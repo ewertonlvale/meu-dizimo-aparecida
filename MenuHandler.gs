@@ -268,6 +268,22 @@ const MenuHandler = {
   },
 
   /**
+   * Boas-vindas de quem JÁ é dizimista e escreve ao bot pela primeira vez —
+   * em geral quem a secretaria cadastrou no Odoo e recebeu o lembrete.
+   *
+   * Separado de `_textoBoasVindas` porque aquele fala em "seu cadastro", e
+   * para esta pessoa o cadastro já existe. Aqui a apresentação e a saudação
+   * são a MESMA frase: prefixar uma na outra daria dois "olá" seguidos.
+   * @private
+   */
+  _textoBoasVindasDizimista(nome) {
+    return `👋 *Olá, ${nome}!* Sou a Cidinha, assistente virtual da Pastoral ` +
+           'do Dízimo 💛\n\n' +
+           '🙏 *Que alegria ter você por aqui!*\n\n' +
+           'Como posso te ajudar hoje?';
+  },
+
+  /**
    * Boas-vindas do primeiro contato — UMA mensagem.
    *
    * Eram duas: a imagem com uma legenda curta e, logo depois, um texto com o
@@ -293,6 +309,55 @@ const MenuHandler = {
     }
 
     Utils.enviarSimples(from, this._textoBoasVindas());
+  },
+
+  /**
+   * O primeiro contato inteiro — boas-vindas e próximo passo.
+   *
+   * BL-41 · A12 — POR QUE UMA MENSAGEM, E POR QUE SÓ PARA QUEM JÁ É DIZIMISTA.
+   * A entrada custava duas: o avatar com a legenda de boas-vindas e, logo
+   * depois, o menu. A sonda S1 confirmou no aparelho que mensagem de BOTÕES
+   * renderiza cabeçalho de imagem — então, para quem já é dizimista, a imagem,
+   * o texto e os botões cabem num balão só. Toda pessoa passa por aqui, uma
+   * vez: é a economia mais barata do projeto.
+   *
+   * Para NÚMERO NOVO continuam sendo duas. O próximo passo ali é o formulário
+   * (`interactive.type = 'flow'`), e se ele aceita cabeçalho de imagem ninguém
+   * testou — a sonda S1 respondeu sobre botões, não sobre flow. Encurtar esse
+   * caminho no escuro arriscaria a mensagem de quem chega pela primeira vez,
+   * que é justamente quem não pode tropeçar. Fica para a sonda S10.
+   *
+   * Sem imagem disponível, cai nas duas mensagens de sempre. A entrada não
+   * pode depender de uma imagem para acontecer.
+   */
+  primeiroContato(from) {
+    let dizimista;
+    try {
+      dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+    } catch (e) {
+      // Sem saber quem é, não dá para montar a mensagem única. O caminho de
+      // sempre pelo menos cumprimenta e oferece um menu.
+      console.warn('⚠️ [Primeiro contato] Odoo indisponível:', e.message);
+      this.boasVindas(from);
+      this.entrada(from, undefined);
+      return;
+    }
+
+    if (dizimista) {
+      const imagemId = MediaService.mediaIdDoAvatar();
+      if (imagemId) {
+        const nome = dizimista.x_name || 'Dizimista';
+        this.menuDizimista(from, dizimista, null, {
+          imagemId,
+          texto: this._textoBoasVindasDizimista(nome)
+        });
+        console.log('✅ [A12] Primeiro contato em UMA mensagem');
+        return;
+      }
+    }
+
+    this.boasVindas(from);
+    this.entrada(from, dizimista);
   },
 
   /**
@@ -422,16 +487,24 @@ const MenuHandler = {
     );
   },
 
-  menuDizimista(from, dizimista, aviso) {
+  menuDizimista(from, dizimista, aviso, opcoes = {}) {
     StateManager.setEstado(from, ESTADOS.MENU);
 
     const nome = (dizimista && dizimista.x_name) || 'Dizimista';
 
-    Utils.enviarMenu(from,
-      (aviso ? aviso + '\n\n' : '') + `Olá, *${nome}*! Como posso te ajudar hoje?`,
-      this.botoesDizimista(),
-      { header: '💛 Pastoral do Dízimo' }
-    );
+    // Com imagem no cabeçalho, o título em texto perde o lugar — `header` é um
+    // só. Não é perda: a arte do avatar já diz "Pastoral do Dízimo".
+    const cabecalho = opcoes.imagemId
+      ? { imagemId: opcoes.imagemId }
+      : { header: '💛 Pastoral do Dízimo' };
+
+    // `opcoes.texto` troca o corpo inteiro, em vez de só prefixar. O primeiro
+    // contato precisa disso: prefixar as boas-vindas deixaria dois "olá" no
+    // mesmo balão — o da Cidinha se apresentando e o "Olá, Fulano" daqui.
+    const corpo = opcoes.texto ||
+      ((aviso ? aviso + '\n\n' : '') + `Olá, *${nome}*! Como posso te ajudar hoje?`);
+
+    Utils.enviarMenu(from, corpo, this.botoesDizimista(), cabecalho);
   }
 
 };
