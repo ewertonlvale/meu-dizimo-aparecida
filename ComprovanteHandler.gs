@@ -269,6 +269,73 @@ const ComprovanteHandler = {
   },
 
   /**
+   * Comprovante de uma OFERTA (BL-41).
+   *
+   * Diferente do dízimo em dois pontos que importam:
+   *   - pode não haver dizimista, e isso é normal — a comunidade vem da
+   *     escolha da pessoa, e o telefone fica no registro para a secretaria
+   *     conseguir falar com quem ofertou;
+   *   - o valor informado prevalece sobre o que o OCR leu. A pessoa disse
+   *     quanto ia ofertar; se o OCR discordar, quem erra é o OCR (BL-14), e
+   *     não faz sentido gravar um valor que ninguém escolheu.
+   * @private
+   */
+  _tratarResultadoOferta(from, resultado, blocoDados) {
+    const comunidadeId = StateManager.getCampo(from, 'ofertaComunidadeId');
+    const valorEscolhido = StateManager.getCampo(from, 'ofertaValor');
+    const dizimistaId = StateManager.getCampo(from, 'ofertaDizimistaId') || null;
+
+    const dados = Object.assign({}, resultado.dados);
+    if (valorEscolhido) dados.valor = valorEscolhido;
+
+    // O bloco exibido tem de refletir o que será GRAVADO. Montado antes desta
+    // correção, ele mostraria o valor do OCR enquanto o Odoo receberia o valor
+    // escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00 e não teria
+    // como saber qual dos dois vale.
+    blocoDados = this._blocoDados(dados);
+
+    let chaveEsperada = null;
+    try {
+      const com = OdooService.buscarDadosPagamentoComunidade({ x_studio_comunidade: [comunidadeId] });
+      chaveEsperada = com && com.x_studio_chave_pix;
+    } catch (e) {
+      console.warn('⚠️ [Oferta] Não obtive a chave da comunidade:', e.message);
+    }
+    const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+
+    let id = null;
+    try {
+      id = OdooService.registrarDevolucao(
+        dizimistaId, dados, resultado.arquivoOriginalBase64,
+        resultado.tipo === 'pdf' ? 'pdf' : 'imagem', conf.motivo,
+        { comunidadeId: comunidadeId, tipo: 'oferta', telefoneOfertante: from }
+      );
+    } catch (e) {
+      console.error('❌ [Oferta] Falha ao registrar:', e.message);
+    }
+
+    if (!id) {
+      // MANTÉM o estado, para a pessoa reenviar sem refazer o fluxo.
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Não consegui registrar sua oferta agora.*\n\n' + blocoDados +
+        'Li o comprovante, mas houve uma falha ao salvar — ele *ainda não foi ' +
+        'registrado*. Por favor, reenvie em alguns minutos ou fale com a ' +
+        'secretaria informando os dados acima.\n\nPeço desculpas pelo transtorno. 🙏'
+      );
+      return;
+    }
+
+    StateManager.limparDados(from);
+    Utils.enviarComBotaoMenu(from,
+      '🎁 *Oferta recebida!*\n\n' + blocoDados +
+      (conf.conferido
+        ? 'Sua oferta foi registrada e será confirmada em breve.'
+        : 'Sua oferta foi registrada e passará por *conferência da secretaria*.') +
+      '\n\n🙏 Que Deus abençoe sua generosidade!'
+    );
+  },
+
+  /**
    * Monta o resumo do que o OCR leu. Vai prefixado à mensagem de resultado
    * (BL-37) — não é enviado por conta própria.
    * @private
@@ -348,6 +415,14 @@ const ComprovanteHandler = {
     // alguém percebe um valor errado. Só vê junto com o desfecho, em vez de
     // antes dele.
     const blocoDados = this._blocoDados(dados);
+
+    // ===== CONTEXTO DE OFERTA (BL-41) =====
+    // Precisa vir ANTES da busca por dizimista: a oferta pode ser de quem o bot
+    // nunca viu, e o caminho normal responderia "não encontrei seu cadastro" —
+    // depois de a pessoa já ter pagado.
+    if (StateManager.getCampo(from, 'ofertaComunidadeId')) {
+      return this._tratarResultadoOferta(from, resultado, blocoDados);
+    }
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
     const lote = StateManager.getCampo(from, 'devolucaoLote');

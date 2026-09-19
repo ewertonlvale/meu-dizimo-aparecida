@@ -67,6 +67,7 @@
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
+| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | 🔄 **Em execução agendada** — fila abaixo, trilha A automática |
 
 ---
 
@@ -618,6 +619,108 @@ Se for cobrado como mensagem de serviço, anula o ganho inteiro e a decisão pas
 **Sonda pronta:** `testarPixNativoPago()`, depois de `testarPixNativo()`. Rodar `verificarConsumoMensagens()` antes e depois — se o contador de serviço subir, é cobrado. Atenção à janela de 24h: uma recusa pode ser só isso, não a ausência do recurso.
 
 **Aceite:** decidir, com o número medido, se o pedido é fechado ou fica pendente.
+
+---
+
+### BL-41 — Oferta como contribuição própria 🟠 (G) — 🔄 **em execução agendada desde 19/09/2026**
+
+**Origem:** comparação com o app Dizify, que separa dízimo de oferta. Decidido com o usuário em 19/09: oferta **vai para a comunidade**, **não exige cadastro**, e o registro usa **campo novo** em `x_devolucao` (não modelo separado).
+
+#### A decisão estrutural (opção 1, confirmada)
+
+`x_studio_comunidade` é hoje `related` a `x_studio_dizimista.x_studio_comunidade`, **stored e readonly**. Sem dizimista, a oferta gravaria sem comunidade — e a comunidade é o que diz para qual conta o dinheiro foi, e por onde os relatórios filtram.
+
+Três saídas foram avaliadas:
+
+1. **Tornar `x_studio_comunidade` gravável** ← escolhida. Modelo honesto: a oferta tem comunidade, ela só não chega por uma pessoa. Só 2 pontos de escrita a ajustar, e nenhuma das 6 consultas muda de nome.
+2. Segundo campo `x_studio_comunidade_oferta` — sem migração, mas empurra um `coalesce` para toda consulta futura, para sempre.
+3. "Dizimista fantasma" por comunidade — **rejeitada**: `buscarDizimistaPorWhatsapp` acharia o registro e trataria a pessoa como cadastrada (menu de dizimista, lembrete mensal, contagem do relatório). Mesma classe de erro do BL-39.
+
+**Feito agora porque todos os dados do Odoo são de teste.** Depois de 500 dizimistas reais, é outro animal.
+
+#### Como o código chega antes do schema
+
+O BL-26 já resolveu isso: `OdooService.campoExiste('x_devolucao', 'x_studio_conferencia_pix')`. Mesma técnica aqui — **todo código desta fila pergunta ao Odoo se o campo existe antes de usá-lo e degrada sozinho**. Assim a trilha A é mergeada e publicada sem depender da migração, e o comportamento novo liga quando a migração acontecer.
+
+#### 🔄 TRILHA A — automática (execução de hora em hora, a partir das 04:01 de Brasília)
+
+Cada execução trabalha **quantos itens conseguir**, em ordem, deixando o harness verde a cada commit. Marque aqui ao concluir.
+
+Se um item exigir decisão que não está escrita aqui: **não chute — pule**, registre uma linha `⏭️ PULADO (execução automática):` com a pergunta e as opções, e siga para o próximo.
+
+- [x] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). ✅ 19/09 — contexto da comunidade vai no campo de organização, dentro do cartão, para o caminho continuar em 1 mensagem; texto antigo mantido como reserva se a Meta recusar
+- [x] **A2.** `SetupCamposOferta.gs`. ✅ 19/09 — 4 funções separadas por risco: `conferirMigracaoOferta()` (só lê) → `criarCamposOferta()` (aditivo) → `tornarComunidadeGravavel()` (⚠️ travado por `MODO_TESTE`, mede a contagem antes e depois) → `backfillTipoContribuicao()`
+- [x] **A3.** `registrarDevolucao` exige comunidade e grava tipo + telefone. ✅ 19/09 — precisou de `campoGravavel()` novo: `campoExiste` não bastava, porque `x_studio_comunidade` já existe e só muda de readonly para gravável; escrever antes da migração faria o Odoo recusar a gravação INTEIRA
+- [x] **A4.** Gerador de massa preenche comunidade e tipo. ✅ 19/09 — o comentário antigo ("comunidade NÃO é gravada: é related", BL-05) virou o oposto depois da migração; gera só `dizimo`, porque massa fictícia de oferta enganaria quem for conferir o relatório por tipo
+- [x] **A5.** Leitura filtrada. ✅ 19/09 — helper `_comTipo()`, com o padrão decidido POR FUNÇÃO e justificado no código:
+      `devolucoesDoMes` e `buscarDevolucoesDizimista` → só `dizimo` (senão quem ofertou leva "você já devolveu este mês");
+      `listarDevolucoesPorPeriodo` → `dizimo` por padrão, aceita `'oferta'` e `null`;
+      `buscarDevolucoesPendentes` e `buscarDevolucaoDetalhada` → **não filtram** (comprovante de oferta também precisa de conferência), mas passam a trazer o campo para a tela dizer o que é.
+      7 regras no harness, incluindo a de que **antes da migração não filtra** — filtrar por campo inexistente derrubaria o `search_read` inteiro
+- [x] **A6.** Menu novo + submenu em lista. ✅ 19/09 — `btn_oferta` também no menu de quem NÃO é cadastrado, já que oferta não exige cadastro. Para não subir botão morto, o `OfertaHandler` foi junto, pelo caminho de conversa (comunidade → valor → card do BL-40)
+- [x] **A7.** `ferramentas/flow-oferta.json`. ✅ 19/09 — Dropdown de comunidade + valor; passou no `valida-flow.js`. Os ids do Dropdown vão como **string**: id numérico é recusado na renderização, sem erro no envio
+- [x] **A8.** `FlowHandler` da oferta. ✅ 19/09 — `TOKEN_OFERTA`, `_processarOferta` (revalida no servidor, porque a validação do Flow roda no cliente), `enviarFlowOferta`, estado `AGUARDANDO_FLOW_OFERTA`. ⚠️ Depende da Script Property **`FLOW_ID_OFERTA`** — sem ela a oferta segue pela conversa, sem quebrar
+- [x] **A9.** Handler de oferta. ✅ 19/09 — feito junto do A6 para não existir botão sem destino. Caminho de conversa completo; o formulário (A7/A8) entra por cima
+- [x] **A10.** "Convidar alguém". ✅ 19/09 — link em texto, não botão: mensagem interativa é *ou* botões *ou* URL, nunca as duas, e este caminho já custa 2 mensagens. ⚠️ Depende da Script Property nova **`WHATSAPP_NUMERO_EXIBICAO`** (o número do bot, formato 5586988521231) — sem ela o convite sai sem link clicável. Não dá para derivar do `PHONE_ID`, que é o id interno da Meta
+- [x] **A11.** `FLUXOS.md`: seção 5b com o fluxo da oferta, contagens e o custo do submenu. ✅ 19/09
+
+#### ⏸️ BLOQUEADO — depende de sonda
+
+- [ ] **A12.** Entrada com cabeçalho de imagem (boas-vindas + menu em 1 mensagem). **Não fazer** antes de S1: sem o resultado, não se sabe se a entrada melhora para 1 mensagem ou piora para 3
+
+#### 👤 TRILHA B — só você consegue fazer
+
+- [ ] **S1.** Sondar cabeçalho de **imagem** em mensagem de botões (lista só aceita cabeçalho de texto — disso há certeza; de botões, não)
+- [ ] **S2.** No editor do Apps Script, nesta ordem: `conferirMigracaoOferta()` (anote quantas devoluções têm comunidade) → `criarCamposOferta()` → `MODO_TESTE='true'` → `tornarComunidadeGravavel()` (ele mesmo compara a contagem e grita se divergir) → `conferirMigracaoOferta()` de novo. Único passo irreversível
+- [ ] **S3.** `backfillTipoContribuicao()` — sem ele, os registros antigos ficam com tipo nulo e somem dos relatórios quando o filtro entrar
+- [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
+- [ ] **S5.** `clasp push` + republicar o deployment
+- [ ] **S7.** Publicar `ferramentas/flow-oferta.json` no WhatsApp Manager e guardar o id em **`FLOW_ID_OFERTA`** (sem ela, a oferta usa a conversa)
+- [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
+
+#### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
+
+**Concluídos:** A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11 — **a TRILHA A inteira**, menos o A12, que está bloqueado de propósito.
+
+**O A9 foi adiantado** para junto do A6: subir o botão de Oferta sem destino deixaria um caminho morto em produção até a execução seguinte.
+
+**Nada foi pulado por falta de decisão.**
+
+**Três coisas que o harness pegou e valem a sua atenção:**
+
+1. `devolucoesDoMes` estava stubada no harness, então o filtro por tipo não era exercitado. **Terceira vez** nesta sessão que um stub esconde justamente a lógica sob teste (antes: `criarDizimista`/BL-39 e `registrarDevolucao`/A3). Ficou um comentário no harness listando o que não pode ser stubado.
+2. A oferta exibia o valor do OCR e gravava o valor escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00. Corrigido: a mensagem mostra o que foi gravado.
+3. `campoExiste` não bastava para a comunidade, porque ela **já existe** e só muda de readonly para gravável. Escrever antes da migração faria o Odoo recusar a gravação inteira e a devolução se perderia. Daí o `campoGravavel()` novo.
+
+**Aguardando PR:** tudo. Esta execução não tem as ferramentas do GitHub, então os 9 commits estão no branch `claude/ecstatic-edison-ea2b5t`, sem PR aberto.
+
+**Nada foi enviado para `staging`.**
+
+---
+
+#### As 12 chamadas do item A5
+
+| Função | Pontos de chamada | O que quebra sem filtro |
+|---|---|---|
+| `devolucoesDoMes` | `DevolucaoHandler:78, 194` | Aviso de duplicata dispara errado: quem ofertou levaria "você já devolveu este mês" |
+| `buscarDevolucoesDizimista` | `DevolucaoHandler:412, 469` | Histórico e a linha "última devolução" misturam oferta com dízimo |
+| `listarDevolucoesPorPeriodo` | `RelatorioHandler:427, 432` · `TesteRelatorio:115, 290, 346` | **Relatório do coordenador soma oferta como dízimo** |
+| `buscarDevolucoesPendentes` | `RelatorioHandler:789` | Fila de conferência mistura os dois |
+| `buscarDevolucaoDetalhada` | `RelatorioHandler:866` | Tela de detalhe não diz o que é |
+| `atualizarStatusDevolucao` | `RelatorioHandler:998, 1032` | Funciona, mas o log precisa registrar o tipo |
+
+⚠️ O item do relatório é o mais grave da fila: número errado não falha, só mente.
+
+#### Contagem esperada
+
+| Jornada | Mensagens |
+|---|---|
+| Dízimo, cadastrado | 2 (não muda) |
+| Oferta, cadastrado | 3 (formulário + card + resultado) |
+| Oferta, anônimo | 3 (o formulário já traz a comunidade) |
+| Contato Pastoral | 2 (submenu + cartão) |
+
+**Aceite:** oferta registrada com comunidade e sem dizimista; relatórios separando os dois; nenhuma devolução gravando sem comunidade.
 
 ---
 

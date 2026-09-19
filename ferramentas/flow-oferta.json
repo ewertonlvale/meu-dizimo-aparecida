@@ -1,0 +1,75 @@
+{
+  "version": "7.1",
+  "screens": [
+    {
+      "id": "OFERTA",
+      "title": "Oferta",
+      "terminal": true,
+      "data": {
+        "comunidades": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id":    { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "1", "title": "Matriz" },
+            { "id": "2", "title": "São José" }
+          ]
+        },
+        "comunidade_padrao": {
+          "type": "string",
+          "__example__": "1"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form_oferta",
+            "init-values": {
+              "comunidade": "${data.comunidade_padrao}"
+            },
+            "children": [
+              {
+                "type": "TextSubheading",
+                "text": "Sua oferta"
+              },
+              {
+                "type": "Dropdown",
+                "name": "comunidade",
+                "label": "Comunidade",
+                "required": true,
+                "data-source": "${data.comunidades}",
+                "helper-text": "Para qual comunidade vai a sua oferta"
+              },
+              {
+                "type": "TextInput",
+                "name": "valor",
+                "label": "Valor (R$)",
+                "input-type": "number",
+                "required": true,
+                "helper-text": "Só o valor. Ofereça o que sentir no coração."
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "comunidade": "${form.comunidade}",
+                    "valor": "${form.valor}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

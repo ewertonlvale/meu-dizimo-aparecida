@@ -83,6 +83,25 @@ const Router = {
 
       const estado = StateManager.getEstado(from);
 
+      // ── BL-41: o submenu "Outras opções" ──────────────────────────────────
+      // Roteia por id, não por estado: estes itens são sempre válidos, e uma
+      // lista antiga na conversa continua funcionando.
+      if (itemId && itemId.indexOf('opt_') === 0) {
+        switch (itemId) {
+          case 'opt_membro':    CadastroHandler.iniciarCadastroMembro(from); return;
+          case 'opt_historico': DevolucaoHandler.exibirHistorico(from);      return;
+          case 'opt_contato':   MenuHandler.infoSecretaria(from);            return;
+          case 'opt_convidar':  MenuHandler.convidar(from);                  return;
+          default:              MenuHandler.menuPrincipal(from);             return;
+        }
+      }
+
+      // ── BL-41: comunidade escolhida para a oferta ─────────────────────────
+      if (itemId && itemId.indexOf('ofc_') === 0) {
+        OfertaHandler.processarComunidade(from, itemId, itemTitle);
+        return;
+      }
+
       // ── Família: seleção de quem devolver / de quem é o histórico ──────────
       if (itemId && itemId.indexOf('fam_') === 0) {
         DevolucaoHandler.processarSelecaoFamilia(from, itemId);
@@ -232,6 +251,13 @@ const Router = {
       case 'btn_dev_prosseguir':     DevolucaoHandler.prosseguirAposAviso(from); break;
       case 'btn_minhas_devolucoes':  DevolucaoHandler.exibirHistorico(from);    break;
 
+      // --- Oferta (BL-41) ---
+      case 'btn_oferta':             OfertaHandler.iniciar(from);           break;
+      case 'ofv_10':
+      case 'ofv_20':
+      case 'ofv_outro':              OfertaHandler.processarBotaoValor(from, buttonId); break;
+      case 'btn_outras_opcoes':      MenuHandler.menuOutrasOpcoes(from);    break;
+
       // --- Geral ---
       case 'btn_secretaria':         MenuHandler.infoSecretaria(from);  break;
       case 'btn_menu':               MenuHandler.menuPrincipal(from);   break;
@@ -360,6 +386,11 @@ const Router = {
     }
 
     switch (estado) {
+      // ── Oferta (BL-41): valor digitado em "Outro valor" ───────────────────
+      case ESTADOS.AGUARDANDO_VALOR_OFERTA:
+        OfertaHandler.processarValorDigitado(from, texto);
+        break;
+
       // ── Relatório v2 ──────────────────────────────────────────────────────
       case ESTADOS.AGUARDANDO_CODIGO_RELATORIO:
         RelatorioHandler.handleAuthCode(from, texto);
@@ -398,7 +429,8 @@ const Router = {
     if (estado === ESTADOS.AGUARDANDO_FOTO_PERFIL) {
       CadastroHandler.processarFotoPerfil(from, message.image);
     } else if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
-               estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
+               estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA ||
+               estado === ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA) {
       // BL-37: o `message.id` vai junto porque é ele que o indicador de
       // "digitando" precisa marcar como lido — o aviso de progresso que
       // substituiu a mensagem "⏳ Analisando comprovante...".
@@ -417,7 +449,8 @@ const Router = {
     const estado = StateManager.getEstado(from);
 
     if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
-        estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
+        estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA ||
+        estado === ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA) {
       ComprovanteHandler.processar(from, message.document, message.id);
     } else {
       MenuHandler.erro(from, 'Não estou esperando um documento agora. Digite *menu* para voltar.');

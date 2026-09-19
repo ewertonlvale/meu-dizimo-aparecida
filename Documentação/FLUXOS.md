@@ -24,6 +24,9 @@ o bot envia, não quantas trocas acontecem.
 | Adicionar membro por conversa | **14** | raro |
 | Adicionar membro por formulário | **4** | raro |
 | **Devolução do dízimo** | **2** | **a mais frequente** |
+| Oferta (por formulário) | **3** | ocasional |
+| Oferta (por conversa, sem cadastro) | **4** | ocasional |
+| Contato Pastoral (pelo submenu) | **2** | ocasional |
 | Lembrete mensal (template) | **1** | uma vez por mês, por pessoa |
 | Relatório do coordenador | 4 a 12 | poucas pessoas |
 
@@ -353,6 +356,72 @@ conjunto diferente do menu principal. O harness compara as três.
 
 A resposta do formulário é **mensagem recebida — não é cobrada**. Os 8 campos
 chegam de graça.
+
+---
+
+## 5b. Oferta — o primeiro fluxo sem cadastro (BL-41)
+
+A oferta é contribuição avulsa: recolhida na missa, sem valor mensal e **sem
+exigir cadastro**. É o único caminho do bot que atende quem ele nunca viu.
+
+### O que ela compartilha com o dízimo, e o que não
+
+| | Dízimo | Oferta |
+|---|---|---|
+| Valor | do cadastro | a pessoa informa |
+| Comunidade | do cadastro | a pessoa escolhe |
+| Precisa ser dizimista | sim | **não** |
+| Pagamento | card do BL-40 | o mesmo |
+| Comprovante e OCR | sim | o mesmo |
+| Onde grava | `x_devolucao` | `x_devolucao`, com `tipo = oferta` |
+
+### Por formulário: 3 mensagens
+
+```mermaid
+sequenceDiagram
+    participant P as Pessoa
+    participant B as Bot
+    P->>B: toca "🎁 Oferta"
+    B->>P: 1. Formulário: comunidade + valor
+    Note over P: dizimista já recebe a comunidade selecionada
+    B->>P: 2. Card de pagamento
+    P->>B: envia o comprovante
+    B->>P: 3. Dados do OCR + confirmação
+```
+
+Sem o formulário são 4 para quem não é cadastrado (a comunidade vira uma lista
+à parte) e 3 para quem é, já que a comunidade dele é conhecida.
+
+### O valor informado vence o do OCR
+
+A pessoa disse quanto ia ofertar. Se o OCR ler outro número, quem erra é o
+OCR — a extração de valor é reconhecidamente frágil (**BL-14**) — e não faz
+sentido gravar um valor que ninguém escolheu. A mensagem de confirmação mostra
+o valor gravado, não o lido, para não existirem dois números na tela sem a
+pessoa saber qual vale.
+
+### Onde a oferta NÃO aparece
+
+Nos relatórios de dízimo. As seis consultas a `x_devolucao` passaram a decidir
+por tipo, e o padrão de cada uma está justificado no código:
+
+- **aviso de duplicata** e **histórico** → só dízimo. Quem ofertou não pode
+  levar "você já devolveu este mês" e desistir de devolver.
+- **relatório do coordenador** → só dízimo por padrão; aceita `'oferta'` e o
+  consolidado dos dois.
+- **fila de conferência da secretaria** → os dois, porque comprovante de oferta
+  também precisa ser conferido.
+
+### O menu que a oferta mudou
+
+Os três botões passaram a ser `[💰 Dízimo] [🎁 Oferta] [⋯ Outras opções]`, e o
+que sobrou foi para uma lista: adicionar membro, histórico, contato pastoral e
+convidar alguém.
+
+A lista custa uma mensagem a mais — **mas só para quem entra nela**. Dízimo e
+oferta seguem a um toque, e são eles que se repetem. O submenu é usado algumas
+dezenas de vezes por mês, contra 500 devoluções: a conta dá cerca de **R$ 1 a 2
+por mês**, e em troca 500 pessoas economizam um toque no caminho que importa.
 
 ---
 

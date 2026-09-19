@@ -40,6 +40,9 @@ const FlowHandler = {
   /** Prefixo do flow_token do Flow de membro da família. */
   TOKEN_MEMBRO: 'membro:',
 
+  /** BL-41: prefixo do formulário de OFERTA. */
+  TOKEN_OFERTA: 'oferta:',
+
   // ==========================================================================
   // ENTRADA
   // ==========================================================================
@@ -64,6 +67,11 @@ const FlowHandler = {
 
     if (token.indexOf(this.TOKEN_CADASTRO) === 0) {
       this._processarCadastro(from, resposta);
+      return;
+    }
+
+    if (token.indexOf(this.TOKEN_OFERTA) === 0) {
+      this._processarOferta(from, resposta);
       return;
     }
 
@@ -455,6 +463,130 @@ const FlowHandler = {
    * @param {Object} dados - Sessão já montada por `iniciarCadastroMembro`
    * @returns {boolean} true se o Flow foi enviado.
    */
+  /**
+   * Resposta do formulário de OFERTA: comunidade + valor numa submissão.
+   *
+   * Substitui duas mensagens da conversa (a lista de comunidades e a pergunta
+   * do valor) por uma. E para quem já é dizimista a comunidade chega
+   * pré-selecionada, então sobra confirmar.
+   * @private
+   */
+  _processarOferta(from, resposta) {
+    const comunidadeId = parseInt(resposta.comunidade, 10);
+    const valor        = Utils.parseValorBR(resposta.valor);
+
+    const erros = [];
+    if (!comunidadeId) erros.push('Comunidade não reconhecida');
+    if (!valor || valor <= 0) erros.push('Valor da oferta inválido');
+
+    if (erros.length) {
+      // A validação do Flow roda no cliente, então o servidor não pode confiar
+      // nela. Sem endpoint não dá para devolver o erro para dentro do
+      // formulário — ele já fechou —, então o conserto é por conversa.
+      console.warn('⚠️ [Flow] Oferta recusada:', erros.join(' | '));
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Não consegui aproveitar o formulário.*\n\n' +
+        erros.map(e => `• ${e}`).join('\n') +
+        '\n\nVamos tentar pelo menu, passo a passo. 💛'
+      );
+      OfertaHandler.iniciar(from);
+      return;
+    }
+
+    // O nome da comunidade não vem do formulário (o Dropdown devolve só o id),
+    // e é ele que aparece na mensagem de pagamento.
+    let nome = '';
+    try {
+      const c = OdooService.searchRead('x_comunidade', ['x_name'],
+        [['id', '=', comunidadeId]], { limit: 1 });
+      nome = (c && c[0] && c[0].x_name) || '';
+    } catch (e) {
+      console.warn('⚠️ [Flow] Não li o nome da comunidade:', e.message);
+    }
+
+    StateManager.salvarMultiplosCampos(from, {
+      ofertaComunidadeId:   comunidadeId,
+      ofertaComunidadeNome: nome,
+      ofertaValor:          valor
+    });
+
+    console.log(`✅ [Flow] Oferta de ${from} montada em 1 execução — enviando pagamento`);
+    OfertaHandler.enviarPagamentoDaSessao(from);
+  },
+
+  /**
+   * Manda o formulário de oferta. Devolve false quando não dá — e aí o
+   * `OfertaHandler` segue pela conversa, que continua inteira.
+   *
+   * @param {Object} [dados] - `{ comunidadePadrao }` para pré-selecionar a
+   *   comunidade de quem já é dizimista.
+   */
+  enviarFlowOferta(from, dados = {}) {
+    const props  = PropertiesService.getScriptProperties();
+    const flowId = props.getProperty('FLOW_ID_OFERTA');
+
+    if (!flowId) {
+      console.log('ℹ️ [Flow] FLOW_ID_OFERTA não configurado — oferta segue pela conversa');
+      return false;
+    }
+    if (props.getProperty('FLOW_CADASTRO_ATIVO') !== 'true') {
+      console.log('ℹ️ [Flow] FLOW_CADASTRO_ATIVO não está "true" — oferta segue pela conversa');
+      return false;
+    }
+
+    let comunidades = [];
+    try {
+      comunidades = (OdooService.listarComunidades() || []).map(c => ({
+        // O Dropdown do Flow espera id e title como STRING. Um id numérico
+        // é recusado na renderização, sem erro no envio.
+        id:    String(c.id),
+        title: String(c.x_name || '').substring(0, 30)
+      }));
+    } catch (e) {
+      console.warn('⚠️ [Flow] Não listei comunidades:', e.message);
+    }
+
+    if (!comunidades.length) {
+      console.log('ℹ️ [Flow] Sem comunidades — oferta segue pela conversa');
+      return false;
+    }
+
+    const resposta = Utils._post({
+      messaging_product: 'whatsapp',
+      recipient_type:    'individual',
+      to:                from,
+      type:              'interactive',
+      interactive: {
+        type:   'flow',
+        header: { type: 'text', text: '🎁 Oferta' },
+        body:   { text: 'Escolha a comunidade e o valor da sua oferta. 💛' },
+        footer: { text: 'Com carinho, Cidinha 💛' },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+            flow_token:  `${this.TOKEN_OFERTA}${from}:${Date.now()}`,
+            flow_id:     flowId,
+            flow_cta:    'Fazer oferta',
+            flow_action: 'navigate',
+            mode:        props.getProperty('FLOW_MODO_CADASTRO') || 'published',
+            flow_action_payload: {
+              screen: 'OFERTA',
+              data: {
+                comunidades:       comunidades,
+                comunidade_padrao: String(dados.comunidadePadrao || comunidades[0].id)
+              }
+            }
+          }
+        }
+      }
+    }, { rotulo: 'Flow oferta' });
+
+    const ok = !!resposta && resposta.getResponseCode() === 200;
+    if (ok) StateManager.setEstado(from, ESTADOS.AGUARDANDO_FLOW_OFERTA);
+    return ok;
+  },
+
   enviarFlowMembro(from, dados) {
     const props  = PropertiesService.getScriptProperties();
     const flowId = props.getProperty('FLOW_ID_MEMBRO');

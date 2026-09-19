@@ -40,6 +40,7 @@ const RAIZ = path.join(__dirname, '..');
 
 let enviadas = [];
 let gratis   = [];   // sinais que NÃO são mensagens cobradas
+let consultas = [];  // domínios enviados ao Odoo, para conferir os filtros
 const registra = (tipo, texto) => enviadas.push({ tipo, texto: String(texto || '') });
 
 function montarContexto(cenario) {
@@ -64,7 +65,12 @@ function montarContexto(cenario) {
       registra('flow', 'formulário de cadastro');
       return true;
     },
-    enviarFlowMembro: () => false
+    enviarFlowMembro: () => false,
+    enviarFlowOferta: () => {
+      if (!cenario.flowOfertaLigado) return false;
+      registra('flow', 'formulário de oferta');
+      return true;
+    }
   };
 
   const ctx = {
@@ -80,7 +86,13 @@ function montarContexto(cenario) {
       validarComprovante: () => ({ ehComprovante: true })
     },
     console: { log() {}, warn() {}, error() {} },
-    Utilities: { sleep() {}, base64Encode: () => 'BASE64' },
+    Utilities: {
+      sleep() {},
+      base64Encode: () => 'BASE64',
+      // `registrarDevolucao` usa formatDate para a data de hoje. Só o formato
+      // yyyy-MM-dd é usado no projeto, então o stub cobre esse caso.
+      formatDate: (d, _tz, _fmt) => new Date(d).toISOString().slice(0, 10)
+    },
     Logger: { log() {} },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
@@ -96,7 +108,7 @@ function montarContexto(cenario) {
   const ARQUIVOS = [
     'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
     'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
-    'TestePixNativo.gs'
+    'OfertaHandler.gs', 'TestePixNativo.gs'
   ];
   const fontes = ARQUIVOS
     .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
@@ -104,7 +116,7 @@ function montarContexto(cenario) {
 
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
-             'DevolucaoHandler, ComprovanteHandler, ESTADOS });',
+             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, ESTADOS });',
     ctx,
     { filename: 'bot.gs' }
   );
@@ -129,6 +141,11 @@ function montarContexto(cenario) {
     // passar pelos `enviar*`. Sem interceptar aqui ele não seria contado — e o
     // fluxo que mais importa ficaria fora da conta.
     _post: (payload) => {
+      if (payload.type === 'contacts') {
+        registra('contato', JSON.stringify(payload.contacts));
+        const ok = cenario.contatoAceito !== false;
+        return { getResponseCode: () => (ok ? 200 : 400), getContentText: () => '' };
+      }
       const card = payload.interactive && payload.interactive.type === 'order_details';
       registra(card ? 'card-pix' : 'outro', card
         ? payload.interactive.body.text
@@ -150,12 +167,41 @@ function montarContexto(cenario) {
   Object.assign(mod.OdooService, {
     searchRead: (modelo, campos, dominio) => {
       if (cenario.odooForaDoAr) throw new Error('connection refused (simulado)');
+      consultas.push({ modelo, campos, dominio });
+      // BL-41: com `campoTipoExiste`, o harness simula o Odoo DEPOIS da
+      // migração. Sem isso, `_comTipo` nunca acrescenta o filtro e as regras
+      // abaixo passariam sem testar nada.
+      if (modelo === 'ir.model.fields') {
+        const nome = (dominio || []).find(d => d[0] === 'name');
+        const quer = nome && nome[2];
+        if (quer === 'x_studio_tipo_contribuicao' || quer === 'x_studio_telefone_ofertante') {
+          return cenario.camposNovos ? [{ id: 1, related: false, readonly: false }] : [];
+        }
+        if (quer === 'x_studio_comunidade') {
+          return cenario.comunidadeGravavel
+            ? [{ id: 2, related: false, readonly: false }]
+            : [{ id: 2, related: 'x_studio_dizimista.x_studio_comunidade', readonly: true }];
+        }
+        return [];
+      }
       if (modelo === 'x_dizimista') {
         const porTelefone = (dominio || []).some(d => d[0] === 'x_studio_partner_phone');
         if (porTelefone) return cenario.dizimista ? [cenario.dizimista] : [];
+        // Busca por id — é como `registrarDevolucao` descobre a comunidade.
+        const porId = (dominio || []).some(d => d[0] === 'id');
+        if (porId) return cenario.dizimistaNoOdoo !== undefined
+          ? (cenario.dizimistaNoOdoo ? [cenario.dizimistaNoOdoo] : [])
+          : (cenario.dizimista ? [cenario.dizimista] : []);
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
-      if (modelo === 'x_devolucao') return cenario.devolucoes || [];
+      if (modelo === 'x_devolucao') {
+        // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
+        // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
+        // com histórico também dispararia o aviso de duplicata, e o teste
+        // passaria a medir outro caminho sem ninguém perceber.
+        const porPeriodo = (dominio || []).some(d => d[0] === 'x_studio_data_da_devolucao');
+        return (porPeriodo ? cenario.devolucoesDoMes : cenario.devolucoes) || [];
+      }
       return [];
     },
     create: () => 99,
@@ -166,9 +212,19 @@ function montarContexto(cenario) {
       x_studio_banco:         'Banco do Brasil',
       x_studio_titular_conta: 'Paróquia N. S. da Conceição Aparecida'
     }),
-    devolucoesDoMes:    () => cenario.devolucoesDoMes || [],
-    registrarDevolucao: () => 123,
+    contatosDoDizimista: () => ({
+      comunidade: 'São José',
+      contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '5586988521231' }]
+    }),
     salvarFotoDizimista: () => {}
+    // `devolucoesDoMes`, `buscarDevolucoesDizimista`, `listarDevolucoesPorPeriodo`
+    // e `buscarDevolucoesPendentes` NÃO são trocadas: é nelas que vive o filtro
+    // por tipo do BL-41 (A5). Stub aqui esconderia exatamente o que precisa ser
+    // testado — foi o que aconteceu com `criarDizimista` (BL-39) e
+    // `registrarDevolucao` (A3), e é a terceira vez que este erro aparece.
+    // `registrarDevolucao` NÃO é trocado de propósito: é nele que vive a guarda
+    // do BL-41 contra devolução sem comunidade. Um stub a esconderia — foi o que
+    // aconteceu com `criarDizimista` e o BL-39 antes desta mudança.
   });
 
   return mod;
@@ -267,6 +323,15 @@ const CENARIOS = [
     porque: 'sem o balão, o "⏳ Analisando..." volta — silêncio de segundos parece travamento'
   },
   {
+    nome: 'Comprovante de OFERTA de quem não é cadastrado',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true,
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    esperado: 1,
+    porque: 'registra sem dizimista. O caminho normal responderia "não encontrei seu cadastro" DEPOIS de a pessoa ter pagado'
+  },
+  {
     nome: 'Formulário antigo respondido por quem JÁ é dizimista (BL-39)',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.CadastroHandler.finalizar('55'),
@@ -279,6 +344,56 @@ const CENARIOS = [
     roda: ctx => ctx.CadastroHandler.finalizar('55'),
     esperado: 1,
     porque: 'antes eram 2 até devolver: esta + a do menu, depois do toque em "🔙 Menu"'
+  },
+  {
+    nome: 'Contato Pastoral — cartão nativo',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    esperado: 1,
+    porque: 'cartão com "Conversar". Antes era texto com o número para copiar — mesma 1 mensagem'
+  },
+  {
+    nome: 'Contato Pastoral — cartão recusado (rede de segurança)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, contatoAceito: false },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    esperado: 2,
+    porque: 'volta ao texto. Quem pediu ajuda não pode ficar sem contato nenhum'
+  },
+  {
+    nome: 'Oferta de quem JÁ é dizimista — não pergunta a comunidade',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'o cadastro já respondeu a comunidade; vai direto ao valor'
+  },
+  {
+    nome: 'Oferta de quem NÃO é cadastrado — pergunta a comunidade',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'oferta não exige cadastro — é o primeiro fluxo do bot nessa condição'
+  },
+  {
+    nome: 'Oferta — valor escolhido no botão leva ao pagamento',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               sessao: { ofertaComunidadeId: 1, ofertaComunidadeNome: 'Matriz' } },
+    roda: ctx => ctx.OfertaHandler.processarBotaoValor('55', 'ofv_20'),
+    esperado: 1,
+    porque: 'card nativo do BL-40, igual ao dízimo'
+  },
+  {
+    nome: 'Oferta com o formulário ligado — 2 perguntas viram 1',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, flowOfertaLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'comunidade e valor numa submissão, e a comunidade já vem selecionada'
+  },
+  {
+    nome: 'Submenu "Outras opções"',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuOutrasOpcoes('55'),
+    esperado: 1,
+    porque: 'lista, porque 4 destinos não cabem em 3 botões. Custa só a quem entra'
   },
   {
     nome: 'Menu principal de quem já é dizimista',
@@ -300,9 +415,17 @@ const REGRAS_DE_BOTAO = [
     roda: ctx => ctx.MenuHandler.menuDizimista('55', DIZIMISTA),
     confere: msgs => {
       const ids = (msgs[0].texto.match(/\[(.*)\]/) || [, ''])[1];
-      const esperado = 'btn_devolver_dizimo, btn_adicionar_membro, btn_secretaria';
+      const esperado = 'btn_devolver_dizimo, btn_oferta, btn_outras_opcoes';
       return ids === esperado ? null : `botões "${ids}", esperado "${esperado}"`;
     }
+  },
+  {
+    nome: 'Quem NÃO é dizimista também vê o botão de Oferta',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
+    confere: msgs => msgs[0].texto.includes('btn_oferta')
+      ? null
+      : 'oferta não exige cadastro, mas sumiu do menu de quem não é cadastrado'
   },
   {
     nome: 'Menu de quem não é dizimista não oferece "Já sou Dizimista"',
@@ -398,7 +521,7 @@ const REGRAS_DE_CONTEUDO = [
     confere: msgs => {
       const t = msgs[msgs.length - 1].texto;
       if (!t.includes('Cadastro realizado')) return 'a mensagem de sucesso não saiu';
-      const faltam = ['btn_devolver_dizimo', 'btn_adicionar_membro', 'btn_secretaria']
+      const faltam = ['btn_devolver_dizimo', 'btn_oferta', 'btn_outras_opcoes']
         .filter(b => !t.includes(b));
       return faltam.length ? `faltou o botão: ${faltam.join(', ')}` : null;
     }
@@ -416,6 +539,32 @@ const REGRAS_DE_CONTEUDO = [
     confere: msgs => {
       const ids = msgs.map(m => (m.texto.match(/\[(.*)\]/) || [, ''])[1]);
       return ids.every(x => x === ids[0]) ? null : `conjuntos diferentes: ${ids.join(' | ')}`;
+    }
+  },
+  {
+    nome: 'O cartão de contato leva nome, número e a comunidade',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      const faltam = ['João da Silva', '+5586988521231', 'São José']
+        .filter(t => !c.texto.includes(t));
+      return faltam.length ? `faltou no cartão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'A oferta grava o valor ESCOLHIDO, não o que o OCR leu',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true,
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      // O OCR devolve 50 no stub; a pessoa escolheu 20. Vale o que ela disse —
+      // a extração de valor é reconhecidamente frágil (BL-14).
+      const t = msgs[msgs.length - 1].texto;
+      if (!t.includes('Oferta recebida')) return 'não confirmou a oferta';
+      return t.includes('20,00') ? null : 'gravou o valor do OCR, não o escolhido';
     }
   },
   {
@@ -441,6 +590,7 @@ console.log('\n📊 Mensagens enviadas por entrada no bot\n' + '─'.repeat(64))
 for (const c of CENARIOS) {
   enviadas = [];
   gratis   = [];
+  consultas = [];
   const ctx = montarContexto(c.cenario);
   c.roda(ctx);
 
@@ -460,6 +610,7 @@ console.log('🔘 Botões dos menus\n');
 for (const r of REGRAS_DE_BOTAO) {
   enviadas = [];
   gratis   = [];
+  consultas = [];
   const ctx = montarContexto(r.cenario);
   r.roda(ctx);
   const erro = enviadas.length ? r.confere(enviadas) : 'nenhuma mensagem enviada';
@@ -498,11 +649,156 @@ const CHAVES = [
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('☎️  _e164 — o número que faz o botão "Conversar" funcionar\n');
+
+// O Odoo guarda telefone em formatos variados: com máscara, sem DDI, com
+// espaços. O cartão de contato precisa de E.164, e um número mal formado não
+// falha — só gera um botão "Conversar" que não abre conversa nenhuma.
+const TELEFONES = [
+  ['5586988521231',    '+5586988521231', 'já com DDI'],
+  ['86988521231',      '+5586988521231', 'sem DDI (11 dígitos)'],
+  ['(86) 98852-1231',  '+5586988521231', 'com máscara'],
+  ['86 3221-1234',     '+558632211234',  'fixo, 10 dígitos'],
+  ['+55 86 98852-1231','+5586988521231', 'já em E.164'],
+  ['',                 '',               'vazio']
+];
+
+{
+  const ctx = montarContexto({ dizimista: null, temAvatar: false, flowLigado: false });
+  for (const [entrada, esperado, oQue] of TELEFONES) {
+    const obtido = ctx.Utils._e164(entrada);
+    const ok = obtido === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(24)} ${JSON.stringify(entrada).padEnd(22)} → ${obtido || '(vazio)'}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧾 Filtro por tipo de contribuição (BL-41 · A5)\n');
+
+// Depois que a oferta passou a morar no mesmo modelo do dízimo, toda consulta a
+// x_devolucao devolve os dois. Não existe default bom para todas — e errar aqui
+// NÃO FALHA, só faz o número do coordenador mentir. Daí as regras.
+const filtroTipo = dominio =>
+  (dominio || []).filter(d => d[0] === 'x_studio_tipo_contribuicao').map(d => d[2])[0] || null;
+
+const FILTROS = [
+  {
+    nome: 'Aviso de duplicata olha só dízimo',
+    porque: 'quem ofertou não pode levar "você já devolveu este mês"',
+    roda: ctx => ctx.OdooService.devolucoesDoMes(7),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Histórico do dizimista olha só dízimo',
+    porque: 'a linha "sua última devolução" vive dentro do fluxo de dízimo',
+    roda: ctx => ctx.OdooService.buscarDevolucoesDizimista(7),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Relatório do coordenador olha só dízimo por padrão',
+    porque: 'somar oferta no total do dízimo faz os números da paróquia mentirem',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30'),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Relatório aceita pedir oferta explicitamente',
+    porque: 'sem isso não haveria como a paróquia ver o que arrecadou em ofertas',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30', 'oferta'),
+    espera: 'oferta'
+  },
+  {
+    nome: 'Relatório aceita o consolidado dos dois',
+    porque: 'null = sem filtro',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30', null),
+    espera: null
+  },
+  {
+    nome: 'Fila de conferência NÃO filtra',
+    porque: 'comprovante de oferta também precisa ser conferido pela secretaria',
+    roda: ctx => ctx.OdooService.buscarDevolucoesPendentes(1),
+    espera: null
+  }
+];
+
+for (const f of FILTROS) {
+  consultas = [];
+  const ctx = montarContexto({ dizimista: DIZIMISTA, camposNovos: true });
+  let errFiltro = ''; try { f.roda(ctx); } catch (e) { errFiltro = e.message; }
+  const dev = consultas.filter(c => c.modelo === 'x_devolucao').pop();
+  const obtido = dev ? filtroTipo(dev.dominio) : 'NENHUMA CONSULTA';
+  const ok = obtido === f.espera;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} ${f.nome}`);
+  console.log(`   ${f.porque}${ok ? '' : `\n   ⚠️ filtro esperado ${f.espera}, veio ${obtido}${errFiltro ? ' — ' + errFiltro : ''}`}`);
+}
+
+// E a trava que impede o filtro de derrubar tudo antes da migração.
+{
+  consultas = [];
+  const ctx = montarContexto({ dizimista: DIZIMISTA, camposNovos: false });
+  ctx.OdooService.devolucoesDoMes(7);
+  const dev = consultas.filter(c => c.modelo === 'x_devolucao').pop();
+  const semFiltro = dev && filtroTipo(dev.dominio) === null;
+  if (!semFiltro) falhas++;
+  console.log(`${semFiltro ? '✅' : '❌'} Antes da migração, NÃO filtra`);
+  console.log('   o campo ainda não existe; filtrar por ele faria o search_read inteiro falhar');
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🏛️  registrarDevolucao — a comunidade é obrigatória (BL-41)\n');
+
+// Antes da migração, a comunidade era espelhada do dizimista e o bot nunca a
+// gravava. Depois, quem não gravar deixa o campo vazio EM SILÊNCIO: nada falha,
+// e a linha some dos relatórios do coordenador. Por isso é erro, não omissão.
+const GRAVACAO = [
+  {
+    nome: 'Dízimo: herda a comunidade do dizimista',
+    cenario: { dizimista: DIZIMISTA },
+    roda: ctx => ctx.OdooService.registrarDevolucao(7, { valor: 50, data: '12/08/2026' }),
+    espera: 'ok'
+  },
+  {
+    nome: 'Oferta sem dizimista, com comunidade informada',
+    cenario: { dizimista: null },
+    roda: ctx => ctx.OdooService.registrarDevolucao(null, { valor: 20 }, null, 'imagem', '',
+      { comunidadeId: 3, tipo: 'oferta', telefoneOfertante: '5586988521231' }),
+    espera: 'ok'
+  },
+  {
+    nome: 'Oferta SEM comunidade → recusa, em vez de gravar linha órfã',
+    cenario: { dizimista: null },
+    roda: ctx => ctx.OdooService.registrarDevolucao(null, { valor: 20 }, null, 'imagem', '',
+      { tipo: 'oferta' }),
+    espera: 'erro'
+  },
+  {
+    nome: 'Dizimista sem comunidade no Odoo → recusa',
+    cenario: { dizimista: DIZIMISTA, dizimistaNoOdoo: { id: 7, x_studio_comunidade: false } },
+    roda: ctx => ctx.OdooService.registrarDevolucao(7, { valor: 50 }),
+    espera: 'erro'
+  }
+];
+
+for (const g of GRAVACAO) {
+  enviadas = [];
+  gratis   = [];
+  const ctx = montarContexto(g.cenario);
+  let obtido;
+  let motivo = '';
+  try { g.roda(ctx); obtido = 'ok'; } catch (e) { obtido = 'erro'; motivo = e.message; }
+  const ok = obtido === g.espera;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} ${g.nome}${ok ? '' : `  (esperado ${g.espera}, veio ${obtido}: ${motivo})`}`);
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('🧩 Conteúdo que não pode se perder nas fusões\n');
 
 for (const r of REGRAS_DE_CONTEUDO) {
   enviadas = [];
   gratis   = [];
+  consultas = [];
   const ctx = montarContexto(r.cenario);
   r.roda(ctx);
   const erro = enviadas.length ? r.confere(enviadas, ctx) : 'nenhuma mensagem enviada';

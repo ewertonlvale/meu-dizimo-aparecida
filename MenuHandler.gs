@@ -49,7 +49,10 @@ const MenuHandler = {
     Utils.enviarMenu(from,
       'Como posso te ajudar hoje?',
       [
+        // BL-41: oferta NÃO exige cadastro, então precisa estar visível aqui —
+        // é a razão de este menu voltar a existir para número novo.
         { id: 'btn_ser_dizimista', title: '💛 Ser Dizimista'   },
+        { id: 'btn_oferta',        title: '🎁 Oferta'          },
         { id: 'btn_secretaria',    title: '📞 Contato Pastoral' }
       ],
       { header: '💛 Pastoral do Dízimo' }
@@ -147,6 +150,32 @@ const MenuHandler = {
       return this._enviarContatoGeral(from,
         `Ainda não há um contato da pastoral cadastrado${comunidadeNome ? ` para *${comunidadeNome}*` : ''}.`);
     }
+
+    // BL-41 (A1): cartão de contato nativo, com "Conversar" e "Salvar contato".
+    //
+    // Antes ia um texto com o número formatado, e a pessoa tinha de copiar ou
+    // digitar para falar com a pastoral. O cartão resolve num toque e custa a
+    // MESMA mensagem.
+    //
+    // O contexto (de que comunidade é) vai dentro do cartão, no campo de
+    // organização — e não numa mensagem anterior. Fosse numa mensagem própria,
+    // este caminho passaria de 1 para 2 mensagens só para dizer o óbvio.
+    const org = comunidadeNome
+      ? `Pastoral do Dízimo · ${comunidadeNome}`
+      : 'Pastoral do Dízimo';
+
+    const enviou = Utils.enviarContatos(from, contatos.map(c => ({
+      nome:     c.nome,
+      whatsapp: c.whatsapp,
+      cargo:    org
+    })));
+
+    if (enviou) return;
+
+    // Rede de segurança: cartão recusado pela Meta (formato de número
+    // inesperado no Odoo, política, indisponibilidade). Sem isto a pessoa
+    // ficaria sem contato nenhum — e é justamente quem pediu ajuda.
+    console.warn('⚠️ [Pastoral] Cartão de contato não saiu; enviando como texto');
 
     let msg = '📞 *Pastoral do Dízimo*\n';
     if (comunidadeNome) msg += `Comunidade: *${comunidadeNome}*\n`;
@@ -304,6 +333,37 @@ const MenuHandler = {
   },
 
   /**
+   * Convite para outro paroquiano (BL-41 · A10).
+   *
+   * POR QUE LINK EM TEXTO, E NÃO BOTÃO.
+   * O WhatsApp tem botão de URL (`cta_url`), mas uma mensagem interativa é *ou*
+   * de botões de resposta *ou* de botão de URL — nunca as duas. Um botão de
+   * convite exigiria mensagem própria, e este caminho já custa duas (submenu +
+   * esta). O link em texto o WhatsApp transforma em link sozinho, e a pessoa
+   * usa o "encaminhar" dele, que é o que realmente espalha.
+   */
+  convidar(from) {
+    let numero = '';
+    try {
+      numero = getConfig().WHATSAPP_NUMERO_EXIBICAO || '';
+    } catch (e) { /* segue sem o link */ }
+
+    const link = numero
+      ? `https://wa.me/${String(numero).replace(/\D/g, '')}`
+      : '';
+
+    let msg = '💛 *Convide alguém da paróquia*\n\n' +
+              'Se conhece alguém que gostaria de contribuir com o dízimo ou com ' +
+              'uma oferta, é só encaminhar esta mensagem. 🙏\n\n';
+
+    msg += link
+      ? `👉 ${link}\n\n_Toque e pressione esta mensagem para encaminhar._`
+      : '_Peça à secretaria o contato do nosso WhatsApp para compartilhar._';
+
+    Utils.enviarComBotaoMenu(from, msg);
+  },
+
+  /**
    * Menu de quem já é dizimista.
    *
    * Três botões é o máximo que o WhatsApp aceita, então o histórico não cabe
@@ -327,10 +387,39 @@ const MenuHandler = {
    */
   botoesDizimista() {
     return [
-      { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
-      { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },
-      { id: 'btn_secretaria',       title: '📞 Contato Pastoral' }
+      { id: 'btn_devolver_dizimo', title: '💰 Dízimo'          },
+      { id: 'btn_oferta',          title: '🎁 Oferta'          },
+      { id: 'btn_outras_opcoes',   title: '⋯ Outras opções'    }
     ];
+  },
+
+  /**
+   * O que não coube nos 3 botões.
+   *
+   * BL-41 — POR QUE LISTA, E POR QUE ISSO É BARATO.
+   * São 4 destinos e o WhatsApp aceita 3 botões, então aqui é lista
+   * obrigatoriamente. Ela custa uma mensagem a mais — mas só para quem entra:
+   * dízimo e oferta continuam a um toque, e são eles que se repetem. O submenu
+   * é usado por quem vai adicionar membro ou ver histórico, algumas dezenas de
+   * vezes por mês contra 500 devoluções.
+   */
+  menuOutrasOpcoes(from) {
+    StateManager.setEstado(from, ESTADOS.MENU);
+
+    Utils.enviarLista(from,
+      'O que você gostaria de fazer?',
+      [{
+        title: 'Mais opções',
+        rows: [
+          { id: 'opt_membro',    title: '➕ Adicionar membro', description: 'Cadastrar alguém da sua família' },
+          { id: 'opt_historico', title: '📊 Meu histórico',    description: 'Suas devoluções anteriores'      },
+          { id: 'opt_contato',   title: '📞 Contato Pastoral', description: 'Falar com a sua comunidade'      },
+          { id: 'opt_convidar',  title: '💛 Convidar alguém',  description: 'Compartilhar o bot da paróquia'  },
+          { id: 'opt_menu',      title: '🔙 Menu',             description: 'Voltar ao início'                }
+        ]
+      }],
+      { textoBotao: 'Ver opções' }
+    );
   },
 
   menuDizimista(from, dizimista, aviso) {
