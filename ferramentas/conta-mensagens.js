@@ -164,6 +164,7 @@ function montarContexto(cenario) {
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
              'DevolucaoHandler, ComprovanteHandler, OfertaHandler, Router, ESTADOS, ' +
+             'statusDaDevolucao, ' +
              'alertaDoador, exigeConferencia });',
     ctx,
     { filename: 'bot.gs' }
@@ -275,7 +276,13 @@ function montarContexto(cenario) {
       }
       return [];
     },
-    create: () => 99,
+    // O cenário pode espiar o que foi gravado. Sem isso, um campo calculado
+    // — como o status do BL-51 — não tem como ser conferido: o stub devolvia
+    // um id e jogava os dados fora.
+    create: (modelo, dados) => {
+      if (cenario.aoCriar) cenario.aoCriar(modelo, dados);
+      return 99;
+    },
     buscarParametros:               () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
     listarComunidades:              () => [{ id: 1, x_name: 'Matriz' }],
     buscarDadosPagamentoComunidade: () => ({
@@ -1743,6 +1750,50 @@ console.log('🧾 Conferência do comprovante — BL-46\n');
   if (err.length) falhas++;
   console.log(`${err.length ? '❌' : '✅'} Só os graves avisam a pessoa` +
               (err.length ? ` — errou em: ${err.join(', ')}` : ''));
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📌 O status com que a devolução nasce — BL-51\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A linha do meio é a que não pode sumir. Marcar 'Rejeitado' o que não foi
+// LIDO rejeitaria pagamento legítimo em massa: o comprovante do Nubank sem
+// chave no destino é o caso mais comum que existe (BL-49), e ali não se sabe
+// de nada. Ausência de informação não é prova de erro.
+{
+  const ctx = montarContexto({ dizimista: DIZIMISTA });
+
+  const casos = [
+    ['ok',                  'Confirmado', 'tudo confere'],
+    ['divergente',          'Rejeitado',  'chave de outra conta'],
+    ['tudo_divergente',     'Rejeitado',  'nome e banco divergem'],
+    ['titular_divergente',  'Rejeitado',  'nome lido diverge'],
+    ['banco_divergente',    'Rejeitado',  'banco lido diverge'],
+    ['ausente',             'Pendente',   'não deu para ler a chave'],
+    ['sem_referencia',      'Pendente',   'a comunidade não tem chave cadastrada'],
+    ['codigo_que_nao_existe', 'Pendente', 'código desconhecido não condena ninguém']
+  ];
+
+  for (const [codigo, esperado, nome] of casos) {
+    const r = ctx.statusDaDevolucao(codigo);
+    const ok = r === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${codigo.padEnd(21)} → ${esperado.padEnd(10)} (${nome})` +
+                (ok ? '' : `  — veio ${r}`));
+  }
+
+  // E o status precisa chegar ao Odoo, não só existir na função.
+  consultas = [];
+  let gravado = null;
+  const ctx2 = montarContexto({
+    dizimista: DIZIMISTA,
+    aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados.x_studio_status; }
+  });
+  ctx2.OdooService.registrarDevolucao(1, { valor: 50 }, null, 'imagem', 'divergente');
+  const ok = gravado === 'Rejeitado';
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} O status chega ao registro no Odoo` +
+              (ok ? '' : ` — gravou ${JSON.stringify(gravado)}`));
 }
 
 console.log('\n' + '─'.repeat(64));

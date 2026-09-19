@@ -838,7 +838,9 @@ const OdooService = {
       x_studio_dizimista:            dizimistaId || false,
       x_studio_data_da_devolucao:    dataOdoo,
       x_studio_value:                dadosAnalise?.valor || 0,
-      x_studio_status:               'Pendente',
+      // BL-51: o status nasce da conferência. Era sempre 'Pendente', e o
+      // coordenador decidia tudo — inclusive o que o bot já sabia responder.
+      x_studio_status:               statusDaDevolucao(conferencia),
       x_studio_tipo_comprovante:     tipoComprovante
     };
 
