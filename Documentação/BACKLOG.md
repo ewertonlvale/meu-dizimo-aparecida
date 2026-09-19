@@ -703,7 +703,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
 - [x] **S7.** ✅ 19/09 — formulário de oferta publicado e `FLOW_ID_OFERTA` configurado. Republicado depois da correção da comunidade pré-selecionada
 - [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
-- [ ] **S10.** Rodar uma sonda de cabeçalho de imagem em mensagem de **flow** (`interactive.type = 'flow'`), para fechar a outra metade do A12: a entrada de **número novo**, de 2 → 1. Mesmo método da S1 — braço de controle e conferência no aparelho, porque aceitar não é entregar
+- [ ] **S10.** Rodar `testarCabecalhoFlow()` (TesteCabecalhoFlow.gs) — cabeçalho de imagem em mensagem de **flow**, para fechar a outra metade do A12: a entrada de **número novo**, de 2 → 1. Manda DOIS formulários: um com cabeçalho de imagem e um com o de texto que roda hoje. **Conferir no aparelho.** ⚠️ Os formulários são funcionais: preencher cria cadastro. Para só ver o cabeçalho, não tocar neles
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
