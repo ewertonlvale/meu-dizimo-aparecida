@@ -50,6 +50,16 @@ const CAMPOS_OFERTA = [
     name:  'x_studio_telefone_ofertante',
     label: 'Telefone do Ofertante',
     ttype: 'char'
+  },
+  {
+    // Acrescentado em 19/09: a oferta passou a pedir o nome de quem oferta.
+    // Sem ele, uma oferta de não cadastrado chegava à secretaria como um
+    // telefone solto. `criarCamposOferta()` é idempotente — rodar de novo só
+    // cria o que falta.
+    model: 'x_devolucao',
+    name:  'x_studio_nome_ofertante',
+    label: 'Nome do Ofertante',
+    ttype: 'char'
   }
 ];
 

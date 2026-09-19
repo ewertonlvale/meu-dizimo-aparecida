@@ -25,7 +25,7 @@ o bot envia, não quantas trocas acontecem.
 | Adicionar membro por formulário | **4** | raro |
 | **Devolução do dízimo** | **2** | **a mais frequente** |
 | Oferta (por formulário) | **3** | ocasional |
-| Oferta (por conversa, sem cadastro) | **4** | ocasional |
+| Oferta (por conversa, sem cadastro) | **5** | ocasional |
 | Contato Pastoral (pelo submenu) | **2** | ocasional |
 | Lembrete mensal (template) | **1** | uma vez por mês, por pessoa |
 | Relatório do coordenador | 4 a 12 | poucas pessoas |
@@ -369,7 +369,7 @@ exigir cadastro**. É o único caminho do bot que atende quem ele nunca viu.
 | | Dízimo | Oferta |
 |---|---|---|
 | Valor | do cadastro | a pessoa informa |
-| Comunidade | do cadastro | a pessoa escolhe |
+| Comunidade | do cadastro | **a pessoa escolhe, sempre** |
 | Precisa ser dizimista | sim | **não** |
 | Pagamento | card do BL-40 | o mesmo |
 | Comprovante e OCR | sim | o mesmo |
@@ -389,8 +389,25 @@ sequenceDiagram
     B->>P: 3. Dados do OCR + confirmação
 ```
 
-Sem o formulário são 4 para quem não é cadastrado (a comunidade vira uma lista
-à parte) e 3 para quem é, já que a comunidade dele é conhecida.
+### A comunidade do cadastro é sugestão, não resposta
+
+A pessoa pertence a uma comunidade, mas **pode ofertar para outra** — numa
+festa, numa capela que visitou, numa obra específica. Por isso a pergunta é
+feita a todo mundo; para quem é dizimista ela só chega pré-selecionada, com
+"Sua comunidade" marcado na lista.
+
+### O nome
+
+Quem não é cadastrado informa o nome. Sem ele, a oferta chega à secretaria como
+um telefone solto, e ela não tem como saber de quem é sem ligar. Vai para
+`x_studio_nome_ofertante` **e** para a descrição do registro — que é o que
+aparece na lista do Odoo.
+
+Quem é dizimista não é perguntado: o nome vem do cadastro, e no formulário
+chega preenchido para conferir.
+
+Sem o formulário, a conversa custa 5 mensagens para não cadastrado (comunidade,
+nome, valor, card, resultado) e 4 para dizimista.
 
 ### O valor informado vence o do OCR
 

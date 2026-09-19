@@ -386,7 +386,11 @@ const Router = {
     }
 
     switch (estado) {
-      // ── Oferta (BL-41): valor digitado em "Outro valor" ───────────────────
+      // ── Oferta (BL-41) ────────────────────────────────────────────────────
+      case ESTADOS.AGUARDANDO_NOME_OFERTA:
+        OfertaHandler.processarNome(from, texto);
+        break;
+
       case ESTADOS.AGUARDANDO_VALOR_OFERTA:
         OfertaHandler.processarValorDigitado(from, texto);
         break;

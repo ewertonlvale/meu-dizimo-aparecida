@@ -735,7 +735,11 @@ const OdooService = {
     const aviso = (CONFERENCIA[conferencia] || {}).avisoRegistro || '';
 
     const rotulo = (extras.tipo === 'oferta') ? 'Oferta' : 'Devolução';
-    let descricao = `${rotulo} de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
+    // O nome entra na descrição porque é ela que aparece na LISTA do Odoo.
+    // Uma oferta de não cadastrado sem nome chega à secretaria como um
+    // telefone solto, e ela não tem como saber de quem é sem abrir o registro.
+    const de = extras.nomeOfertante ? ` de ${extras.nomeOfertante}` : '';
+    let descricao = `${rotulo}${de} - R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
     if (aviso) descricao += ` — ${aviso}`;
 
     const tipo = extras.tipo || 'dizimo';
@@ -794,6 +798,10 @@ const OdooService = {
 
     if (extras.telefoneOfertante && this.campoExiste('x_devolucao', 'x_studio_telefone_ofertante')) {
       dados.x_studio_telefone_ofertante = String(extras.telefoneOfertante);
+    }
+
+    if (extras.nomeOfertante && this.campoExiste('x_devolucao', 'x_studio_nome_ofertante')) {
+      dados.x_studio_nome_ofertante = String(extras.nomeOfertante);
     }
 
     if (conferencia && this._temCampoConferenciaPix()) {

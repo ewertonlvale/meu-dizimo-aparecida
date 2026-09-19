@@ -692,6 +692,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [ ] **S5b.** ⚠️ **Republicar o deployment** — o `doPost` mudou (portão de bloqueio do BL-36, roteamento da oferta). Sem isto, nada do fluxo novo responde no WhatsApp
 - [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
 - [ ] **S7.** Publicar `ferramentas/flow-oferta.json` no WhatsApp Manager e guardar o id em **`FLOW_ID_OFERTA`** (sem ela, a oferta usa a conversa)
+- [ ] **S9.** Rodar `criarCamposOferta()` de novo — o campo `x_studio_nome_ofertante` foi acrescentado em 19/09. É idempotente: só cria o que falta
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC

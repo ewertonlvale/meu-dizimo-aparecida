@@ -49,6 +49,7 @@ const ESTADOS = {
   // Oferta NÃO exige cadastro, então estes estados valem também para número
   // desconhecido — são os primeiros do bot nessa condição.
   AGUARDANDO_COMUNIDADE_OFERTA:  'AGUARDANDO_COMUNIDADE_OFERTA',
+  AGUARDANDO_NOME_OFERTA:        'AGUARDANDO_NOME_OFERTA',
   AGUARDANDO_VALOR_OFERTA:       'AGUARDANDO_VALOR_OFERTA',
   AGUARDANDO_COMPROVANTE_OFERTA: 'AGUARDANDO_COMPROVANTE_OFERTA',
   AGUARDANDO_FLOW_OFERTA:        'AGUARDANDO_FLOW_OFERTA',
