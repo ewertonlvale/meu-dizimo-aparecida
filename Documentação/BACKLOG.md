@@ -79,6 +79,7 @@
 | BL-48 | BR Code levava a chave PIX com máscara, fora da especificação | 🔴 | P | ✅ Concluído (19/09) — CPF/CNPJ em dígitos, telefone em E.164. O BL-40 passou porque foi testado com e-mail |
 | BL-49 | A chave extraída podia ser o CNPJ da instituição, no rodapé | 🔴 | P | ✅ Concluído (19/09) — busca ancorada no bloco de quem recebeu. 6 layouts reais viraram teste |
 | BL-50 | Exibir quem recebeu, e oferecer a pastoral quando não confere | 🟠 | P | ✅ Concluído (19/09) — nome, chave, banco e valor no resumo; qualquer campo lido que divirja avisa |
+| BL-51 | Devolução nascia sempre Pendente, mesmo quando o bot já sabia | 🟠 | P | ✅ Concluído (19/09) — Confirmado, Rejeitado ou Pendente conforme a conferência |
 
 ---
 

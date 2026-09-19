@@ -177,6 +177,36 @@ const CONFERENCIA = {
 };
 
 /**
+ * O status com que a devolução nasce no Odoo, conforme a conferência (BL-51).
+ *
+ * Três desfechos, e o do meio é o que não pode sumir:
+ *
+ *   'Confirmado'  a chave, o nome e o banco conferem. Nada a decidir.
+ *   'Rejeitado'   algum dado LIDO diverge. É o mesmo critério que avisa a
+ *                 pessoa — e ela já foi avisada de que um agente da pastoral
+ *                 vai analisar, então o registro precisa estar achável.
+ *   'Pendente'    não deu para ler o que seria comparado. Continua como antes:
+ *                 entra na fila do coordenador, que confirma ou rejeita.
+ *
+ * A TERCEIRA LINHA É O PONTO. Marcar 'Rejeitado' o que não foi lido rejeitaria
+ * pagamento legítimo em massa: o comprovante do Nubank sem chave no destino é
+ * o caso mais comum que existe (BL-49), e ali não se sabe de nada. Ausência de
+ * informação não é prova de erro.
+ *
+ * ⚠️ 'Confirmado' aqui quer dizer "o comprovante bate com o cadastro" — não
+ *    que o dinheiro caiu na conta. Quem quiser a conferência financeira
+ *    continua tendo o extrato; isto é conferência de comprovante.
+ *
+ * @param {string} codigo - Valor de x_studio_conferencia_pix
+ * @returns {string} 'Confirmado' | 'Rejeitado' | 'Pendente'
+ */
+function statusDaDevolucao(codigo) {
+  if (codigo === 'ok')          return 'Confirmado';
+  if (alertaDoador(codigo))     return 'Rejeitado';
+  return 'Pendente';
+}
+
+/**
  * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
  *
  * Bem mais restrito que `exigeConferencia`. Ali o custo de errar é um olhar
