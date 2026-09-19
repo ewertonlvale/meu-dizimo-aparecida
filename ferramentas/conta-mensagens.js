@@ -168,6 +168,13 @@ function montarContexto(cenario) {
 const DIZIMISTA = { id: 7, x_name: 'Maria', x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] };
 const COMPROVANTE = { id: 'media123', mime_type: 'image/jpeg', sha256: 'abc' };
 
+// Sessão de um cadastro já preenchido, pronto para o "✅ Confirmar" do resumo.
+const CADASTRO_PRONTO = {
+  nome: 'Thalles da Silva', nomeUsual: 'Thalles', whatsapp: '55',
+  dataNascimento: '15/03/1990', endereco: 'Rua A, 1', valorMensal: 50,
+  comunidadeId: 1, notificacaoAtiva: true, diaPreferido: 15
+};
+
 const CENARIOS = [
   {
     nome: 'Primeiro contato — número NOVO, formulário ligado',
@@ -245,6 +252,13 @@ const CENARIOS = [
     roda: ctx => ctx.CadastroHandler.finalizar('55'),
     esperado: 1,
     porque: 'o aviso vai junto do menu, numa mensagem só — e nada foi duplicado'
+  },
+  {
+    nome: 'Cadastro concluído — a confirmação já é o menu',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, dadosCadastro: CADASTRO_PRONTO },
+    roda: ctx => ctx.CadastroHandler.finalizar('55'),
+    esperado: 1,
+    porque: 'antes eram 2 até devolver: esta + a do menu, depois do toque em "🔙 Menu"'
   },
   {
     nome: 'Menu principal de quem já é dizimista',
@@ -340,6 +354,33 @@ const REGRAS_DE_CONTEUDO = [
       const legenda = (msgs.find(m => m.tipo === 'imagem+legenda') || {}).texto || '';
       return legenda.includes('última devolução') && legenda.includes('histórico')
         ? null : 'a linha do histórico sumiu da mensagem de pagamento';
+    }
+  },
+  {
+    nome: 'A confirmação do cadastro oferece devolver o dízimo na hora',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, dadosCadastro: CADASTRO_PRONTO },
+    roda: ctx => ctx.CadastroHandler.finalizar('55'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (!t.includes('Cadastro realizado')) return 'a mensagem de sucesso não saiu';
+      const faltam = ['btn_devolver_dizimo', 'btn_adicionar_membro', 'btn_secretaria']
+        .filter(b => !t.includes(b));
+      return faltam.length ? `faltou o botão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'As três telas de dizimista mostram os MESMOS botões',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, dadosCadastro: CADASTRO_PRONTO },
+    roda: ctx => {
+      // Menu, fim do cadastro e fim do cadastro de membro. Se um dia divergirem,
+      // é aqui que aparece — foi o que aconteceu antes do BL-38, quando o menu
+      // de "já sou dizimista" tinha botões diferentes do menu principal.
+      ctx.MenuHandler.menuDizimista('55', DIZIMISTA);
+      ctx.CadastroHandler.finalizar('55');
+    },
+    confere: msgs => {
+      const ids = msgs.map(m => (m.texto.match(/\[(.*)\]/) || [, ''])[1]);
+      return ids.every(x => x === ids[0]) ? null : `conjuntos diferentes: ${ids.join(' | ')}`;
     }
   },
   {
