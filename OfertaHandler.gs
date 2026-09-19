@@ -57,10 +57,32 @@ const OfertaHandler = {
         ofertaNome:           dizimista.x_name || '',
         ofertaDizimistaId:    dizimista.id
       });
-      return this._pedirValor(from);
     }
 
+    // BL-41 (A7/A8): o formulário resolve comunidade e valor numa submissão —
+    // 2 mensagens da conversa viram 1. Para quem é dizimista, a comunidade já
+    // chega selecionada e sobra confirmar.
+    //
+    // Devolve false com o interruptor desligado, sem FLOW_ID_OFERTA, sem
+    // comunidade ativa ou se a Meta recusar. Em todos esses casos a conversa
+    // abaixo continua valendo: ela NÃO é legado esperando remoção.
+    if (FlowHandler.enviarFlowOferta(from, { comunidadePadrao: comunidadeId })) {
+      console.log(`🎁 [Oferta] ${from} recebeu o formulário — conversa em espera`);
+      return;
+    }
+
+    if (comunidadeId) return this._pedirValor(from);
     this._pedirComunidade(from);
+  },
+
+  /**
+   * Manda o pagamento com o que já está na sessão. É por aqui que o
+   * `FlowHandler` entra depois de o formulário devolver comunidade e valor.
+   */
+  enviarPagamentoDaSessao(from) {
+    const valor = StateManager.getCampo(from, 'ofertaValor');
+    if (!valor) return this._pedirValor(from);
+    this._enviarPagamento(from, valor);
   },
 
   // ==========================================================================

@@ -66,7 +66,11 @@ function montarContexto(cenario) {
       return true;
     },
     enviarFlowMembro: () => false,
-    enviarFlowOferta: () => false
+    enviarFlowOferta: () => {
+      if (!cenario.flowOfertaLigado) return false;
+      registra('flow', 'formulário de oferta');
+      return true;
+    }
   };
 
   const ctx = {
@@ -376,6 +380,13 @@ const CENARIOS = [
     roda: ctx => ctx.OfertaHandler.processarBotaoValor('55', 'ofv_20'),
     esperado: 1,
     porque: 'card nativo do BL-40, igual ao dízimo'
+  },
+  {
+    nome: 'Oferta com o formulário ligado — 2 perguntas viram 1',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, flowOfertaLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'comunidade e valor numa submissão, e a comunidade já vem selecionada'
   },
   {
     nome: 'Submenu "Outras opções"',
