@@ -724,6 +724,47 @@ const Utils = {
      * @param {string} chave
    * @returns {string|null} CPF | CNPJ | PHONE | EMAIL | EVP
    */
+  /**
+   * A chave PIX na forma que a especificação do BACEN exige (BL-48).
+   *
+   * O Odoo guarda a chave como a pessoa digitou — `160.740.093-68`,
+   * `(86) 98852-1231` — e isso é bom para ler na tela. Mas no BR Code e no
+   * card de pagamento a chave é DADO, não texto: o campo 01 de um CPF tem de
+   * ter 11 dígitos, e um telefone vai em E.164 com o `+`.
+   *
+   * Mandando a máscara junto, o BR Code sai fora do padrão e o banco de quem
+   * paga pode recusar o copia-e-cola — sem dizer por quê. Só quem tem chave de
+   * e-mail escapava, e foi com uma dessas que o BL-40 foi testado.
+   *
+   * @param {string} chave
+   * @returns {string} A chave canônica, ou a original quando não há o que fazer
+   */
+  chavePixCanonica(chave) {
+    const bruta = String(chave || '').trim();
+    if (!bruta) return '';
+
+    switch (this.tipoDaChavePix(bruta)) {
+      case 'CPF':
+      case 'CNPJ':
+        return bruta.replace(/\D/g, '');
+
+      case 'PHONE': {
+        // E.164 com o '+', como o BACEN pede. `_e164` já resolve o DDI.
+        const e = this._e164(bruta);
+        return e || bruta;
+      }
+
+      case 'EMAIL':
+        return bruta.toLowerCase();
+
+      // Aleatória (EVP): 32 hexadecimais com hífens, já canônica. Minúscula
+      // por convenção, e nada mais — mexer numa chave que não se reconhece é
+      // pior que deixá-la passar.
+      default:
+        return bruta;
+    }
+  },
+
   tipoDaChavePix(chave) {
     const c = String(chave || '').trim();
     if (!c) return null;
