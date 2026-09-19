@@ -521,9 +521,9 @@ const FlowHandler = {
    * Manda o formulário de oferta. Devolve false quando não dá — e aí o
    * `OfertaHandler` segue pela conversa, que continua inteira.
    *
-   * @param {Object} [dados] - `{ comunidadePadrao, nomePadrao }` para
-   *   pré-preencher o formulário de quem já é dizimista. São sugestões: ele
-   *   pode ofertar para outra comunidade.
+   * @param {Object} [dados] - `{ nomePadrao }` para pré-preencher o nome de
+   *   quem já é dizimista. A comunidade NÃO é pré-preenchida: ver o comentário
+   *   no `flow_action_payload`.
    */
   enviarFlowOferta(from, dados = {}) {
     const props  = PropertiesService.getScriptProperties();
@@ -577,11 +577,19 @@ const FlowHandler = {
             flow_action_payload: {
               screen: 'OFERTA',
               data: {
-                comunidades:       comunidades,
-                // Sugestões, não respostas: a pessoa pode ofertar para outra
-                // comunidade, e conferir o nome antes de enviar.
-                comunidade_padrao: String(dados.comunidadePadrao || comunidades[0].id),
-                nome_padrao:       String(dados.nomePadrao || '')
+                comunidades: comunidades,
+                // A COMUNIDADE NÃO VEM PRÉ-SELECIONADA, de propósito.
+                //
+                // A versão anterior caía em `comunidades[0].id` quando não havia
+                // sugestão — ou seja, quem NÃO é cadastrado recebia a primeira
+                // comunidade da lista já marcada. Arbitrária, e é ela que decide
+                // para onde o dinheiro vai: quem não reparasse ofertaria para a
+                // comunidade errada sem nunca saber.
+                //
+                // Nem para o dizimista: a dele é onde ele se cadastrou, não
+                // necessariamente para onde quer ofertar. Um campo obrigatório
+                // vazio obriga a escolha; um preenchido convida a ignorar.
+                nome_padrao: String(dados.nomePadrao || '')
               }
             }
           }

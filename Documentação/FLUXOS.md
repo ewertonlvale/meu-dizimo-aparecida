@@ -389,12 +389,24 @@ sequenceDiagram
     B->>P: 3. Dados do OCR + confirmação
 ```
 
-### A comunidade do cadastro é sugestão, não resposta
+### A comunidade é sempre escolhida, nunca pré-selecionada
 
 A pessoa pertence a uma comunidade, mas **pode ofertar para outra** — numa
-festa, numa capela que visitou, numa obra específica. Por isso a pergunta é
-feita a todo mundo; para quem é dizimista ela só chega pré-selecionada, com
-"Sua comunidade" marcado na lista.
+festa, numa capela que visitou, numa obra específica. E como é a comunidade que
+decide **para onde o dinheiro vai**, nenhuma vem marcada.
+
+Nem para o dizimista: a dele é onde se cadastrou, não necessariamente para onde
+quer ofertar. Um campo obrigatório vazio obriga a escolha; um preenchido convida
+a ignorar.
+
+⚠️ A primeira versão do formulário caía em `comunidades[0].id` quando não havia
+sugestão — ou seja, **quem não era cadastrado recebia a primeira comunidade da
+lista já marcada**, arbitrária. Quem não reparasse ofertaria para a comunidade
+errada sem nunca saber. O `valida-flow.js` ganhou uma regra para isso (a única
+que não vem de recusa da Meta, e sim de decisão do projeto).
+
+Na conversa, a comunidade do dizimista aparece com "Sua comunidade" na
+descrição da linha — marcação, não seleção: ele ainda precisa tocar.
 
 ### O nome
 

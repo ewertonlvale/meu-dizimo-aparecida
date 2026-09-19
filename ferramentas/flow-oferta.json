@@ -11,18 +11,24 @@
           "items": {
             "type": "object",
             "properties": {
-              "id":    { "type": "string" },
-              "title": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
             }
           },
           "__example__": [
-            { "id": "1", "title": "Matriz" },
-            { "id": "2", "title": "São José" }
+            {
+              "id": "1",
+              "title": "Matriz"
+            },
+            {
+              "id": "2",
+              "title": "São José"
+            }
           ]
-        },
-        "comunidade_padrao": {
-          "type": "string",
-          "__example__": "1"
         },
         "nome_padrao": {
           "type": "string",
@@ -36,7 +42,6 @@
             "type": "Form",
             "name": "form_oferta",
             "init-values": {
-              "comunidade": "${data.comunidade_padrao}",
               "nome": "${data.nome_padrao}"
             },
             "children": [

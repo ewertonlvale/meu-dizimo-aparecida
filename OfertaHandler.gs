@@ -48,11 +48,13 @@ const OfertaHandler = {
     const rel = dizimista && dizimista.x_studio_comunidade;
     const comunidadeId = Array.isArray(rel) ? rel[0] : rel;
 
-    // A comunidade do cadastro é SUGESTÃO, não resposta.
+    // A comunidade é sempre ESCOLHIDA, nunca pré-selecionada.
     //
     // A pessoa pertence a uma comunidade, mas pode ofertar para outra — numa
-    // festa, numa capela que visitou, numa obra específica. Por isso a pergunta
-    // é feita a todo mundo; para quem é dizimista ela só chega pré-selecionada.
+    // festa, numa capela que visitou, numa obra específica. E como é a
+    // comunidade que decide para onde o dinheiro vai, deixar uma marcada
+    // convida a passar batido. A do cadastro fica guardada só para aparecer
+    // como "Sua comunidade" na lista da conversa — marcação, não seleção.
     if (comunidadeId) {
       StateManager.salvarMultiplosCampos(from, {
         ofertaComunidadeId:   comunidadeId,
@@ -70,8 +72,7 @@ const OfertaHandler = {
     // comunidade ativa ou se a Meta recusar. Em todos esses casos a conversa
     // abaixo continua valendo: ela NÃO é legado esperando remoção.
     if (FlowHandler.enviarFlowOferta(from, {
-          comunidadePadrao: comunidadeId,
-          nomePadrao:       (dizimista && dizimista.x_name) || ''
+          nomePadrao: (dizimista && dizimista.x_name) || ''
         })) {
       console.log(`🎁 [Oferta] ${from} recebeu o formulário — conversa em espera`);
       return;
