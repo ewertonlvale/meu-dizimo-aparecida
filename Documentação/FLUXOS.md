@@ -18,7 +18,8 @@ o bot envia, não quantas trocas acontecem.
 
 | Fluxo | Mensagens do bot | Frequência esperada |
 |---|---|---|
-| Primeiro contato (boas-vindas + próximo passo) | **2** | uma vez por pessoa |
+| Primeiro contato — quem **já é dizimista** | **1** | uma vez por pessoa |
+| Primeiro contato — número **novo** | **2** | uma vez por pessoa |
 | Cadastro por conversa | **19** | uma vez por pessoa |
 | Cadastro por formulário (Flow) | **4** | uma vez por pessoa |
 | Adicionar membro por conversa | **14** | raro |
@@ -54,12 +55,12 @@ harness os cubra.
 ```mermaid
 flowchart TD
     A([Mensagem recebida]) --> B{Primeiro contato?}
-    B -- sim --> C["Boas-vindas<br/><b>1 mensagem</b>"]
-    C --> T{O número já é dizimista?}
+    B -- sim --> T{O número já é dizimista?}
     B -- não --> D{Tipo da mensagem}
 
-    T -- não --> J
-    T -- sim --> U["Menu do dizimista<br/><b>1 mensagem</b>"]
+    T -- não --> C["Boas-vindas<br/><b>1 mensagem</b>"]
+    C --> J
+    T -- sim --> U["Avatar + boas-vindas + 3 botões<br/>num balão só (A12)<br/><b>1 mensagem</b>"]
 
     D -- texto/menu --> E["Menu, decidido pelo número<br/>1 mensagem"]
     D -- botão --> F[Roteia por id]

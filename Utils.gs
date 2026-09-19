@@ -981,7 +981,15 @@ const Utils = {
       }
     };
 
-    if (opcoes.header) {
+    // Cabeçalho de IMAGEM (BL-41 · A12). Confirmado no aparelho pela sonda S1:
+    // mensagem de BOTÕES renderiza a imagem em cima do texto. A de LISTA não —
+    // por isso `enviarLista`, logo abaixo, continua só com cabeçalho de texto.
+    //
+    // A imagem tem precedência sobre o texto porque `header` é um só e os dois
+    // não cabem juntos: quem passa os dois quer a imagem.
+    if (opcoes.imagemId) {
+      payload.interactive.header = { type: 'image', image: { id: opcoes.imagemId } };
+    } else if (opcoes.header) {
       payload.interactive.header = { type: 'text', text: opcoes.header };
     }
 

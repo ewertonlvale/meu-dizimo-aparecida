@@ -317,24 +317,27 @@ function _processarMensagemWebhook(message) {
   // separadas. Ver `_mensagemForaDeOrdem`.
   if (_mensagemForaDeOrdem(from, message)) return;
 
-  // Primeiro contato: boas-vindas (UMA mensagem) e já o próximo passo, decidido
-  // pelo número.
+  // Primeiro contato: boas-vindas e já o próximo passo, decidido pelo número.
   if (StateManager.ehPrimeiroContato(from)) {
-    MenuHandler.boasVindas(from);
 
     // Quando a primeira mensagem já traz uma intenção — o botão "Devolver
     // agora" do lembrete, ou um botão de uma conversa anterior —, ela vale mais
     // que qualquer menu. É o caso de quem a secretaria cadastrou no Odoo e que
     // nunca escreveu ao bot: o lembrete chega, a pessoa toca, e esta é a
     // primeira mensagem dela. Mandar o menu aqui custaria um toque a mais.
+    //
+    // Aqui as boas-vindas vão SOZINHAS, e não pelo caminho do A12: não há menu
+    // a fundir com elas, porque quem manda no próximo passo é a intenção.
     if (message.type === 'interactive' || message.type === 'button') {
+      MenuHandler.boasVindas(from);
       Router.rotear(from, message);
       return;
     }
 
-    // "oi", "bom dia", uma foto solta: nada a rotear. `entrada` leva ao
-    // formulário ou ao menu do dizimista, conforme o número.
-    MenuHandler.entrada(from);
+    // "oi", "bom dia", uma foto solta: nada a rotear. `primeiroContato` junta
+    // boas-vindas e menu num balão só quando dá (BL-41 · A12) e cai nas duas
+    // mensagens de sempre quando não.
+    MenuHandler.primeiroContato(from);
     return;
   }
 

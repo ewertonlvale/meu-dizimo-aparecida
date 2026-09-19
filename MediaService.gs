@@ -206,6 +206,39 @@ const MediaService = {
   },
 
   /**
+   * Media ID do avatar, pronto para usar como cabeçalho — SEM enviar mensagem.
+   *
+   * `enviarImagemFixa` sobe e envia num passo só, o que serve para a imagem
+   * que É a mensagem. O cabeçalho de imagem (BL-41 · A12) precisa do id antes
+   * de montar o payload, porque ele vai DENTRO da mensagem de botões.
+   *
+   * Devolve null em qualquer tropeço — sem avatar no Odoo, sem Odoo, falha no
+   * upload. Quem chama cai no caminho sem imagem: a entrada não pode depender
+   * de uma imagem para acontecer.
+   *
+   * @returns {string|null}
+   */
+  mediaIdDoAvatar() {
+    try {
+      const parametros = OdooService.buscarParametros();
+      if (!parametros || !parametros.x_studio_avatar) return null;
+
+      const base64 = parametros.x_studio_avatar;
+
+      // Mesmas travas de `enviarImagemFixa`: digital da imagem e validade.
+      const emCache = this._mediaIdEmCache('avatar', base64);
+      if (emCache) return emCache;
+
+      const id = this.subirImagem(base64);
+      if (id) this._guardarMediaId('avatar', base64, id);
+      return id;
+    } catch (e) {
+      console.warn('⚠️ Não consegui o media ID do avatar:', e.message);
+      return null;
+    }
+  },
+
+  /**
    * Media ID guardado para esta imagem, ou null se não houver, se a imagem
    * mudou, ou se já passou da validade.
    * @private

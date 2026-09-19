@@ -679,13 +679,22 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **A10.** "Convidar alguém". ✅ 19/09 — link em texto, não botão: mensagem interativa é *ou* botões *ou* URL, nunca as duas, e este caminho já custa 2 mensagens. ⚠️ Depende da Script Property nova **`WHATSAPP_NUMERO_EXIBICAO`** (o número do bot, formato 5586988521231) — sem ela o convite sai sem link clicável. Não dá para derivar do `PHONE_ID`, que é o id interno da Meta
 - [x] **A11.** `FLUXOS.md`: seção 5b com o fluxo da oferta, contagens e o custo do submenu. ✅ 19/09
 
-#### ⏸️ BLOQUEADO — depende de sonda
+#### ✅ DESBLOQUEADO PELA S1
 
-- [ ] **A12.** Entrada com cabeçalho de imagem (boas-vindas + menu em 1 mensagem). **Não fazer** antes de S1: sem o resultado, não se sabe se a entrada melhora para 1 mensagem ou piora para 3
+- [x] **A12.** Entrada com cabeçalho de imagem. ✅ 19/09 — **quem já é dizimista recebe UMA mensagem**: avatar, boas-vindas e os 3 botões no mesmo balão. Era 2; antes do BL-38, 4. Toda pessoa passa por aqui, uma vez.
+  - **Metade, e de propósito.** Para **número novo** continuam 2. O próximo passo ali é o formulário (`interactive.type = 'flow'`), e a S1 respondeu sobre mensagem de **botões**, não sobre flow. Encurtar no escuro arriscaria a mensagem de quem chega pela primeira vez — justamente quem não pode tropeçar. Ver **S10**.
+  - Sem avatar no Odoo, ou com o Odoo fora do ar, cai nas 2 de sempre. A entrada não pode depender de uma imagem para acontecer.
+  - Quando a primeira mensagem já traz intenção (o botão do lembrete), as boas-vindas seguem sozinhas: não há menu a fundir, porque quem manda no próximo passo é a intenção.
 
 #### 👤 TRILHA B — só você consegue fazer
 
-- [ ] **S1.** Rodar `testarCabecalhoImagem()` (TesteCabecalhoImagem.gs). Manda DUAS mensagens: a de teste, com cabeçalho de imagem, e uma de controle sem cabeçalho — sem o controle, uma falha de token ou de janela de 24 h seria lida como "imagem não suportada" e mataria o A12 à toa. **Conferir no aparelho**: aceitar o envio e renderizar são coisas diferentes (foi o que aconteceu com o card PIX do BL-40)
+- [x] **S1.** ✅ **19/09, 11:19 — mensagem de BOTÕES renderiza cabeçalho de imagem.** Confirmado no aparelho: as 3 chegaram, a do meio com a imagem em cima do texto e dos botões. **A12 desbloqueado e implementado.**
+  - Foram **quatro rodadas**, e as três primeiras não responderam nada — vale registrar por quê, porque o padrão se repete:
+    1. `NUMERO_TESTE is not defined` — a sonda usava uma constante de `Tests.gs`, que o `.claspignore` corta. Existia no repositório, nunca no Apps Script
+    2. só o controle chegou. A sonda lia `media_id_avatar` cru, pulando as travas de `MediaService._mediaIdEmCache` — um id vencido é aceito com HTTP 200 e descartado na entrega, e eu teria lido isso como "cabeçalho recusado", matando o A12 pelo motivo errado
+    3. `comImagem is not defined` — definição apagada num refactor meu
+  - **A lição de método:** `HTTP 200` com `wamid` não é entrega. A Meta aceita e descarta em silêncio; `Webhook.gs:149` loga o motivo real quando o webhook chega. Todo teste de renderização se decide no aparelho.
+  - A sonda ficou com 4 braços: `GET /<media-id>` (síncrono, não gasta mensagem), a imagem sozinha, os botões com cabeçalho e os botões sem. Sem o braço da imagem sozinha, "a 2 não chegou" tem duas causas e nenhuma forma de separá-las.
 - [x] **S2.** ✅ **Migração feita em 19/09, 09:23.** `x_studio_comunidade` (id 8310) deixou de ser `related` e virou gravável. **Contagem preservada: 5150 → 5150** — os valores sobreviveram, que era a única dúvida real do passo. Campos criados: `x_studio_tipo_contribuicao` (id 8797) e `x_studio_telefone_ofertante` (id 8799)
 - [x] **S3.** ✅ **Backfill feito em 19/09, 09:27** — 15 registros marcados como `dizimo`, e a varredura final voltou 0 pendentes. (Os ~5.150 restantes eram massa de teste, apagada pelo usuário entre o passo 2 e este.) O sucesso da gravação **confirma que as opções do selection foram criadas certo** via `selection_ids` — parte que não dava para testar fora do Odoo
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
@@ -694,11 +703,12 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
 - [x] **S7.** ✅ 19/09 — formulário de oferta publicado e `FLOW_ID_OFERTA` configurado. Republicado depois da correção da comunidade pré-selecionada
 - [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
+- [ ] **S10.** Rodar uma sonda de cabeçalho de imagem em mensagem de **flow** (`interactive.type = 'flow'`), para fechar a outra metade do A12: a entrada de **número novo**, de 2 → 1. Mesmo método da S1 — braço de controle e conferência no aparelho, porque aceitar não é entregar
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
-**Concluídos:** A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11 — **a TRILHA A inteira**, menos o A12, que está bloqueado de propósito.
+**Concluídos:** A1 a A12 — **a TRILHA A inteira.** O A12 está feito na metade que a sonda S1 provou (quem já é dizimista); a de número novo espera a **S10**.
 
 **O A9 foi adiantado** para junto do A6: subir o botão de Oferta sem destino deixaria um caminho morto em produção até a execução seguinte.
 
@@ -724,7 +734,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 | Item | Motivo |
 |---|---|
-| **A12** (BL-41) | depende da sonda **S1** — cabeçalho de imagem em mensagem de botões |
+| ~~**A12**~~ (BL-41) | ✅ feito em 19/09, depois da S1. Metade de número novo pendente em **S10** |
 | **BL-34** | depende de dado de uso que não existe |
 | **BL-36 parte 2** (bloqueio automático) | depende de meses de `listarSuspeitos()` com tráfego real. É decisão sobre dado, não código |
 | **BL-17** (uid Odoo dedicado) | administração no Odoo |
@@ -752,7 +762,7 @@ Migração do Odoo feita e conferida (5150 → 5150), campos criados, formulári
 
 **O que ficou aberto**, e não depende de código:
 
-- **S1** — sonda do cabeçalho de imagem, que desbloqueia o **A12** (entrada de 2 → 1 mensagem)
+- ~~**S1**~~ ✅ 19/09 — respondida em 4 rodadas. **A12 implementado** para quem já é dizimista; a metade de número novo virou **S10**
 - **S4** — custo do `order_status` (BL-40). **Só agora faz sentido medir**: antes do BL-42 o contador estava zerado
 - **S6** — `WHATSAPP_NUMERO_EXIBICAO`, para o link do convite sair clicável
 
