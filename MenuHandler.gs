@@ -148,6 +148,32 @@ const MenuHandler = {
         `Ainda não há um contato da pastoral cadastrado${comunidadeNome ? ` para *${comunidadeNome}*` : ''}.`);
     }
 
+    // BL-41 (A1): cartão de contato nativo, com "Conversar" e "Salvar contato".
+    //
+    // Antes ia um texto com o número formatado, e a pessoa tinha de copiar ou
+    // digitar para falar com a pastoral. O cartão resolve num toque e custa a
+    // MESMA mensagem.
+    //
+    // O contexto (de que comunidade é) vai dentro do cartão, no campo de
+    // organização — e não numa mensagem anterior. Fosse numa mensagem própria,
+    // este caminho passaria de 1 para 2 mensagens só para dizer o óbvio.
+    const org = comunidadeNome
+      ? `Pastoral do Dízimo · ${comunidadeNome}`
+      : 'Pastoral do Dízimo';
+
+    const enviou = Utils.enviarContatos(from, contatos.map(c => ({
+      nome:     c.nome,
+      whatsapp: c.whatsapp,
+      cargo:    org
+    })));
+
+    if (enviou) return;
+
+    // Rede de segurança: cartão recusado pela Meta (formato de número
+    // inesperado no Odoo, política, indisponibilidade). Sem isto a pessoa
+    // ficaria sem contato nenhum — e é justamente quem pediu ajuda.
+    console.warn('⚠️ [Pastoral] Cartão de contato não saiu; enviando como texto');
+
     let msg = '📞 *Pastoral do Dízimo*\n';
     if (comunidadeNome) msg += `Comunidade: *${comunidadeNome}*\n`;
     msg += `\nFale com ${contatos.length > 1 ? 'uma destas pessoas' : 'o responsável'}:\n`;

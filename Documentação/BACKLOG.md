@@ -648,7 +648,7 @@ Cada execução trabalha **quantos itens conseguir**, em ordem, deixando o harne
 
 Se um item exigir decisão que não está escrita aqui: **não chute — pule**, registre uma linha `⏭️ PULADO (execução automática):` com a pergunta e as opções, e siga para o próximo.
 
-- [ ] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). Independente de tudo; ganho imediato, mesma 1 mensagem
+- [x] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). ✅ 19/09 — contexto da comunidade vai no campo de organização, dentro do cartão, para o caminho continuar em 1 mensagem; texto antigo mantido como reserva se a Meta recusar
 - [ ] **A2.** Script de criação dos campos no Odoo (`SetupCamposOferta.gs`), no padrão idempotente de `SetupCamposFamilia.gs`, **com modo de conferência** que lista o que mudaria sem gravar
 - [ ] **A3.** `OdooService.registrarDevolucao`: exige comunidade (lança erro se vazia), grava `tipo_contribuicao` e `telefone_ofertante` — atrás de `campoExiste`
 - [ ] **A4.** `FerramentasTeste.gs:166`: gerador de massa preenche os campos novos

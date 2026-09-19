@@ -129,6 +129,11 @@ function montarContexto(cenario) {
     // passar pelos `enviar*`. Sem interceptar aqui ele não seria contado — e o
     // fluxo que mais importa ficaria fora da conta.
     _post: (payload) => {
+      if (payload.type === 'contacts') {
+        registra('contato', JSON.stringify(payload.contacts));
+        const ok = cenario.contatoAceito !== false;
+        return { getResponseCode: () => (ok ? 200 : 400), getContentText: () => '' };
+      }
       const card = payload.interactive && payload.interactive.type === 'order_details';
       registra(card ? 'card-pix' : 'outro', card
         ? payload.interactive.body.text
@@ -165,6 +170,10 @@ function montarContexto(cenario) {
       x_studio_chave_pix:     'pix@paroquia.org',
       x_studio_banco:         'Banco do Brasil',
       x_studio_titular_conta: 'Paróquia N. S. da Conceição Aparecida'
+    }),
+    contatosDoDizimista: () => ({
+      comunidade: 'São José',
+      contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '5586988521231' }]
     }),
     devolucoesDoMes:    () => cenario.devolucoesDoMes || [],
     registrarDevolucao: () => 123,
@@ -279,6 +288,20 @@ const CENARIOS = [
     roda: ctx => ctx.CadastroHandler.finalizar('55'),
     esperado: 1,
     porque: 'antes eram 2 até devolver: esta + a do menu, depois do toque em "🔙 Menu"'
+  },
+  {
+    nome: 'Contato Pastoral — cartão nativo',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    esperado: 1,
+    porque: 'cartão com "Conversar". Antes era texto com o número para copiar — mesma 1 mensagem'
+  },
+  {
+    nome: 'Contato Pastoral — cartão recusado (rede de segurança)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, contatoAceito: false },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    esperado: 2,
+    porque: 'volta ao texto. Quem pediu ajuda não pode ficar sem contato nenhum'
   },
   {
     nome: 'Menu principal de quem já é dizimista',
@@ -419,6 +442,18 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
+    nome: 'O cartão de contato leva nome, número e a comunidade',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      const faltam = ['João da Silva', '+5586988521231', 'São José']
+        .filter(t => !c.texto.includes(t));
+      return faltam.length ? `faltou no cartão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
     nome: 'Reserva: legenda longa demais não derruba os dados de pagamento',
     cenario: {
       dizimista: { id: 7, x_name: 'M'.repeat(400), x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] },
@@ -494,6 +529,31 @@ const CHAVES = [
     const ok = obtido === esperado;
     if (!ok) falhas++;
     console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(30)} → ${obtido}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('☎️  _e164 — o número que faz o botão "Conversar" funcionar\n');
+
+// O Odoo guarda telefone em formatos variados: com máscara, sem DDI, com
+// espaços. O cartão de contato precisa de E.164, e um número mal formado não
+// falha — só gera um botão "Conversar" que não abre conversa nenhuma.
+const TELEFONES = [
+  ['5586988521231',    '+5586988521231', 'já com DDI'],
+  ['86988521231',      '+5586988521231', 'sem DDI (11 dígitos)'],
+  ['(86) 98852-1231',  '+5586988521231', 'com máscara'],
+  ['86 3221-1234',     '+558632211234',  'fixo, 10 dígitos'],
+  ['+55 86 98852-1231','+5586988521231', 'já em E.164'],
+  ['',                 '',               'vazio']
+];
+
+{
+  const ctx = montarContexto({ dizimista: null, temAvatar: false, flowLigado: false });
+  for (const [entrada, esperado, oQue] of TELEFONES) {
+    const obtido = ctx.Utils._e164(entrada);
+    const ok = obtido === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(24)} ${JSON.stringify(entrada).padEnd(22)} → ${obtido || '(vazio)'}${ok ? '' : `  (esperado ${esperado})`}`);
   }
 }
 

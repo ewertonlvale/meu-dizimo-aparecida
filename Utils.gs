@@ -735,6 +735,79 @@ const Utils = {
   },
 
   /**
+   * Envia um ou mais CARTÕES DE CONTATO nativos do WhatsApp.
+   *
+   * BL-41 (A1) — POR QUE ISTO SUBSTITUI O TEXTO COM O NÚMERO.
+   * Antes o bot mandava "• João da Silva — (86) 98852-1231" e a pessoa tinha
+   * de copiar ou digitar o número para falar com a pastoral. O cartão nativo
+   * traz "Conversar" e "Salvar contato": um toque. **Custa a mesma mensagem.**
+   *
+   * Vários contatos cabem numa mensagem só — comunidade com dois responsáveis
+   * não gasta duas.
+   *
+   * ⚠️ O cartão NÃO tem corpo de texto. Quem precisar dizer algo junto (de que
+   * comunidade é, uma bênção) manda isso na mensagem anterior, ou aceita que o
+   * cartão vá sozinho. É o motivo de `_enviarContatos` manter um texto curto
+   * antes: sem ele, a pessoa recebe um contato solto sem saber por quê.
+   *
+   * @param {string} to - Destinatário
+   * @param {Array<{nome: string, whatsapp: string, email?: string, cargo?: string}>} contatos
+   * @returns {boolean} false se não havia contato válido para enviar
+   */
+  enviarContatos(to, contatos) {
+    const validos = (contatos || []).filter(c => c && c.whatsapp);
+    if (!validos.length) return false;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type:    'individual',
+      to,
+      type: 'contacts',
+      contacts: validos.map(c => {
+        const nome = String(c.nome || 'Pastoral do Dízimo').trim();
+        // `formatted_name` é o único campo de nome obrigatório; os demais são
+        // opcionais mas a Meta recusa o cartão se não vier ao menos um deles
+        // além do formatado. `first_name` cobre isso sem inventar sobrenome.
+        const partes = nome.split(/\s+/);
+        const contato = {
+          name: {
+            formatted_name: nome,
+            first_name:     partes[0]
+          },
+          phones: [{
+            phone: this._e164(c.whatsapp),
+            type:  'CELL',
+            wa_id: String(c.whatsapp).replace(/\D/g, '')
+          }]
+        };
+        if (partes.length > 1) contato.name.last_name = partes.slice(1).join(' ');
+        if (c.email) contato.emails = [{ email: c.email, type: 'WORK' }];
+        if (c.cargo) contato.org    = { company: c.cargo };
+        return contato;
+      })
+    };
+
+    const resposta = this._post(payload, { rotulo: 'Cartão de contato' });
+    const ok = !!resposta && resposta.getResponseCode() === 200;
+    if (!ok) console.warn('⚠️ [Contatos] Cartão recusado pela Meta');
+    return ok;
+  },
+
+  /**
+   * Número no formato E.164 (+5586988521231), que é o que o cartão de contato
+   * espera para o botão "Conversar" funcionar. O Odoo guarda em formatos
+   * variados — com máscara, sem DDI, com espaços.
+   * @private
+   */
+  _e164(numero) {
+    const d = String(numero || '').replace(/\D/g, '');
+    if (!d) return '';
+    // Sem DDI: números brasileiros têm 10 (fixo) ou 11 (celular) dígitos com
+    // DDD. Acima disso já vem com o 55 na frente.
+    return d.length <= 11 ? `+55${d}` : `+${d}`;
+  },
+
+  /**
    * Envia mensagem de texto simples.
    * @param {string} to    - Número do destinatário
    * @param {string} texto - Corpo da mensagem
