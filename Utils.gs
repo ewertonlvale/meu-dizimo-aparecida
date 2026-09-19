@@ -874,10 +874,17 @@ const Utils = {
             formatted_name: nome,
             first_name:     partes[0]
           },
+          // `wa_id` sai do MESMO E.164 que o `phone`, e não do valor cru.
+          //
+          // Montá-lo com um `replace(/\D/g,'')` no que veio do Odoo perdia o
+          // código do país: no formato padrão do cadastro, `(86) 9 8877-7332`
+          // vira `86988777332`, e o WhatsApp lê o `86` como China (+86). O
+          // cartão chegava com o país errado e o botão "Conversar" apontava
+          // para um número que não existe.
           phones: [{
             phone: this._e164(c.whatsapp),
             type:  'CELL',
-            wa_id: String(c.whatsapp).replace(/\D/g, '')
+            wa_id: this._e164(c.whatsapp).replace('+', '')
           }]
         };
         if (partes.length > 1) contato.name.last_name = partes.slice(1).join(' ');
