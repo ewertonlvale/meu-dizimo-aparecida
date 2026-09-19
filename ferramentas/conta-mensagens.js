@@ -1496,66 +1496,91 @@ console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
 }
 
 console.log('\n' + '─'.repeat(64));
-console.log('🏦 Quem RECEBEU, nos formatos que os bancos usam — BL-46\n');
+console.log('🏦 Comprovantes REAIS, um por layout de banco — BL-49\n');
 
 // ─────────────────────────────────────────────────────────────────────────
-// Num comprovante aparecem dois nomes e dois bancos: o de quem paga e o de
-// quem recebe. `_extrairBanco` devolvia o PRIMEIRO do texto — que é o app de
-// quem pagou, no topo da tela. Comparar aquilo com a conta da paróquia
-// reprovaria quase todo comprovante legítimo.
+// Transcrições de comprovantes que chegaram de verdade. Cada um quebrou algo
+// diferente, e é por isso que estão todos aqui em vez de um exemplo genérico:
 //
-// Cada caso abaixo é um layout diferente. O último é o que importa mais: um
-// layout que não reconhecemos precisa devolver `null`, e não um palpite.
+//   Nubank sem chave no destino  → o CNPJ do RODAPÉ virava a chave. Como
+//                                  divergência avisa a pessoa (BL-46), isso
+//                                  era acusação falsa contra quem pagou certo.
+//   Banco do Brasil              → Agência e Conta empurram a Chave Pix para
+//                                  fora da janela; e a chave vem sem pontuação
+//                                  ("08070690356"), numa linha separada do
+//                                  rótulo.
+//   Inter empresas               → o rótulo "Quem recebeu" tem duas palavras e
+//                                  só letras: saía como se fosse o nome.
+//   Nubank em geral              → "Nome THALLES BOITEUX VALE" sem dois-pontos
+//                                  deixava o rótulo colado no nome.
 {
   const V = extratoresDoVision();
+  const COMPROVANTES = [
+  { nome: 'Nubank — Destino sem Chave Pix (o do CNPJ do rodapé)',
+    texto: ['Comprovante de transferência','24 JUL 2026 - 17:01:03','Valor R$ 32,00',
+      'Tipo de transferência Pix','ID da transação E18236120202607242000s19bb9e8416',
+      'Destino','Nome THALLES BOITEUX VALE','CPF ***.706.903-**','Instituição BANCO INTER',
+      'Origem','Nome Marlice Martins Soares','Instituição NU PAGAMENTOS - IP','CPF ***.431.643-**',
+      'Nu Pagamentos S.A. - Instituição de Pagamento','CNPJ 18.236.120/0001-58',
+      'ID da transação:','E18236120202607242000s19bb9e8416'].join('\n'),
+    chave: null, nomeRec: 'THALLES BOITEUX VALE', banco: 'Inter' },
 
-  const casos = [
-    {
-      nome: 'Nubank — "Destino" depois de "Origem"',
-      texto: [
-        'Comprovante de transferência', 'Nubank', 'R$ 150,00',
-        'Origem', 'JOAO CARLOS FERREIRA', 'CPF 123.456.789-00', 'Nubank',
-        'Destino', 'PAROQUIA N S DA CONCEICAO APARECIDA',
-        'Instituição: Banco do Brasil', 'Chave Pix: pix@paroquia.org'
-      ].join('\n'),
-      esperaNome: 'PAROQUIA N S DA CONCEICAO APARECIDA',
-      esperaBanco: 'Banco do Brasil'
-    },
-    {
-      nome: 'Itaú — rótulo e nome na mesma linha',
-      texto: [
-        'Itaú', 'Pix enviado', 'Valor: R$ 80,00',
-        'Para: Paroquia Nossa Senhora da Conceicao', 'Banco do Brasil',
-        'De: Maria Souza'
-      ].join('\n'),
-      esperaNome: 'Paroquia Nossa Senhora da Conceicao',
-      esperaBanco: 'Banco do Brasil'
-    },
-    {
-      nome: 'Caixa — "Beneficiário" e o banco de quem paga vindo antes',
-      texto: [
-        'CAIXA', 'Comprovante PIX', 'Pagador: ANA LIMA', 'Caixa', 'R$ 50,00',
-        'Beneficiário', 'PAROQUIA N. S. CONCEICAO', 'Sicredi'
-      ].join('\n'),
-      esperaNome: 'PAROQUIA N. S. CONCEICAO',
-      esperaBanco: 'Sicredi'
-    },
-    {
-      nome: 'layout desconhecido devolve null, não um palpite',
-      texto: 'PIX REALIZADO\nR$ 100,00\n05/09/2026\nAutenticação 883722',
-      esperaNome: null,
-      esperaBanco: null
-    }
-  ];
+  { nome: 'Itaú — Para, com Chave Pix de telefone',
+    texto: ['itaú','Comprovante de Pix','R$ 10,00','Realizado em 24/07/2026 às 09:34:12',
+      'De','MARIA PERPETUO S F FERREIRA','CPF: ***.043.053-**','Instituição: ITAÚ UNIBANCO S.A',
+      'Para','ROSINEIDE DOS ANJOS COSTA RODR','CPF: ***316233**',
+      'Instituição: CAIXA ECONOMICA FEDERAL','Chave Pix: +5586999913204',
+      'Dados da transação','Autenticação:','195315132778695F24DCE340A974E33775078','ID da transação:',
+      'E60701190202607241233DY5HUNVR4GW'].join('\n'),
+    chave: '+5586999913204', nomeRec: 'ROSINEIDE DOS ANJOS COSTA RODR', banco: 'Caixa' },
 
-  for (const c of casos) {
+  { nome: 'Nubank — Destino COM Chave Pix',
+    texto: ['Comprovante de transferência','24 JUL 2026 - 09:48:10','Valor R$ 20,00',
+      'Tipo de transferência Pix','ID da transação E18236120202607241247s1626e2ac1e',
+      'Destino','Nome ROSINEIDE DOS ANJOS COSTA RODRIGUES','CPF ***.316.233-**',
+      'Instituição CAIXA ECONOMICA FEDERAL','Chave Pix +5586999913204',
+      'Origem','Nome Marcia Adriana da Silva Santos','Instituição NU PAGAMENTOS - IP',
+      'CNPJ 18.236.120/0001-58'].join('\n'),
+    chave: '+5586999913204', nomeRec: 'ROSINEIDE DOS ANJOS COSTA RODRIGUES', banco: 'Caixa' },
+
+  { nome: 'Banco do Brasil — Agência e Conta antes da Chave Pix',
+    texto: ['Comprovante BB','R$ 64,00','18/07/2026 às 10:23:50','Pix Enviado',
+      'Recebedor','Thalles Boiteux Vale','CPF','***.706.903-**','Agência','0001','Conta','331033577',
+      'Instituição','00416968 BANCO INTER','Tipo de conta','Conta Corrente','Chave Pix','08070690356',
+      'Pagador','Andressa Suellem da Silva','CPF','***.840.533-**','Agência','5602-2',
+      'Instituição','00000000 BCO DO BRASIL S.A.'].join('\n'),
+    chave: '08070690356', nomeRec: 'Thalles Boiteux Vale', banco: 'Inter' },
+
+  { nome: 'Inter empresas — Quem recebeu / Quem pagou',
+    texto: ['inter empresas','Pix enviado','R$ 64,00','Sobre a transação',
+      'Data da transação Quarta-feira, 15/07/2026','Horário 19h50',
+      'ID da transação E00416968202607152249MMIICzeJuat',
+      'Quem recebeu','Nome Thalles Boiteux Vale','CPF/CNPJ ***.706.903-**',
+      'Instituição BANCO INTER','Chave Pix 080.706.903-56',
+      'Quem pagou','Nome CLAUDENIRA VIVEIROS','CPF/CNPJ 54.169.161/0001-32',
+      'Instituição BANCO INTER'].join('\n'),
+    chave: '080.706.903-56', nomeRec: 'Thalles Boiteux Vale', banco: 'Inter' },
+
+  { nome: 'Nubank — Destino com Agência e Conta (bloco longo)',
+    texto: ['Comprovante de transferência','13 JUL 2026 - 09:58:31','Valor R$ 32,00',
+      'Tipo de transferência Pix','ID da transação E18236120202607131258s08d669ae21',
+      'Destino','Nome Thalles Boiteux Vale','CPF ***.706.903-**','Instituição BANCO INTER',
+      'Agência 0001','Conta 33103357-7','Tipo de conta Conta corrente',
+      'Origem','Nome Maria das Mercês Soares Dias','Instituição NU PAGAMENTOS - IP',
+      'CNPJ 18.236.120/0001-58'].join('\n'),
+    chave: null, nomeRec: 'Thalles Boiteux Vale', banco: 'Inter' }
+];
+
+  for (const c of COMPROVANTES) {
+    const k = V._extrairChavePix(c.texto);
     const r = V._extrairRecebedor(c.texto);
     const errs = [];
-    if (r.nome !== c.esperaNome)   errs.push(`nome: "${r.nome}"`);
-    if (r.banco !== c.esperaBanco) errs.push(`banco: "${r.banco}"`);
+    if (k !== c.chave)        errs.push(`chave: ${JSON.stringify(k)}`);
+    if (r.nome !== c.nomeRec) errs.push(`nome: ${JSON.stringify(r.nome)}`);
+    if (r.banco !== c.banco)  errs.push(`banco: ${JSON.stringify(r.banco)}`);
     if (errs.length) falhas++;
     console.log(`${errs.length ? '❌' : '✅'} ${c.nome}` +
-                (errs.length ? ` — ${errs.join(', ')}` : ''));
+                (errs.length ? `\n     ${errs.join('  ')}` : ''));
   }
 }
 
@@ -1601,7 +1626,7 @@ console.log('🔑 A chave PIX no BR Code vai sem máscara — BL-48\n');
               (ok ? '' : ` — máscara: ${temMascara}, campo certo: ${temLimpa}`));
 }
 
-console.log('\n' + '─'.repeat(64));
+console.log('─'.repeat(64));
 console.log('🧾 Conferência do comprovante — BL-46\n');
 
 // ─────────────────────────────────────────────────────────────────────────
