@@ -239,28 +239,6 @@ const MediaService = {
   },
 
   /**
-   * URL pública do avatar, para cabeçalho de mensagem de FLOW (BL-41 · A12).
-   *
-   * POR QUE URL, E NÃO O MEDIA ID.
-   * A sonda S10 encontrou uma assimetria que não está documentada em lugar
-   * visível: mensagem de BOTÕES aceita `image.id`; a de FLOW recusa o mesmo id
-   * com `(#131008) header image must contain link` e só aceita `image.link`.
-   *
-   * A URL tem de ser pública — a `lookaside.fbsbx.com` devolvida pelo
-   * `GET /<media-id>` exige Bearer token, então a Meta não a buscaria.
-   *
-   * `AVATAR_URL` aceita uma lista separada por vírgula (a sonda testa várias);
-   * aqui vale a primeira, que é a que a sonda confirmou.
-   *
-   * @returns {string|null}
-   */
-  urlDoAvatar() {
-    const bruto = PropertiesService.getScriptProperties().getProperty('AVATAR_URL');
-    if (!bruto) return null;
-    return String(bruto).split(',')[0].trim() || null;
-  },
-
-  /**
    * Media ID guardado para esta imagem, ou null se não houver, se a imagem
    * mudou, ou se já passou da validade.
    * @private

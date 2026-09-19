@@ -57,8 +57,8 @@ flowchart TD
     B -- sim --> T{O número já é dizimista?}
     B -- não --> D{Tipo da mensagem}
 
-    T -- não --> C["Avatar + boas-vindas + formulário<br/>num balão só (A12)<br/><b>1 mensagem</b>"]
-    C --> N2([Aguarda o formulário])
+    T -- não --> C["Avatar + boas-vindas + 3 botões<br/>num balão só (A12)<br/><b>1 mensagem</b>"]
+    C --> I
     T -- sim --> U["Avatar + boas-vindas + 3 botões<br/>num balão só (A12)<br/><b>1 mensagem</b>"]
 
     D -- texto/menu --> E["Menu, decidido pelo número<br/>1 mensagem"]

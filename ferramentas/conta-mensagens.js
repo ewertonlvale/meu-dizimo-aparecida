@@ -79,13 +79,9 @@ function montarContexto(cenario) {
   };
 
   const FlowHandler = {
-    // O tipo distingue o formulário que carrega as boas-vindas do que não
-    // carrega: é a diferença entre a entrada de número novo em 1 mensagem e
-    // em 2 (A12), e sem isso nenhum teste veria a economia.
-    enviarFlowCadastro: (from, opcoes = {}) => {
+    enviarFlowCadastro: () => {
       if (!cenario.flowLigado) return false;
-      registra(opcoes.imagemUrl ? 'flow+imagem' : 'flow',
-               opcoes.texto || 'formulário de cadastro');
+      registra('flow', 'formulário de cadastro');
       return true;
     },
     enviarFlowMembro: () => false,
@@ -196,13 +192,6 @@ function montarContexto(cenario) {
     enviarImagemFixa:   (to, id, legenda)  => registra('imagem+legenda', legenda),
     // Sem avatar no Odoo não há id — é o que faz o A12 cair no caminho antigo.
     mediaIdDoAvatar:    () => (cenario.temAvatar ? 'MEDIA_ID' : null),
-    // Sem AVATAR_URL não há cabeçalho no flow — e a entrada de número novo
-    // volta a custar 2. O cenário controla as duas pontas separadamente
-    // porque elas falham por motivos diferentes: uma é o avatar no Odoo, a
-    // outra é uma Script Property que alguém precisa configurar.
-    urlDoAvatar:        () => (cenario.temUrlAvatar === false
-                                ? null
-                                : 'https://exemplo/avatar.png'),
     enviarImagemBase64: (to, b64, caption) => { registra('imagem+legenda', caption); return {}; },
     baixarArquivo:      () => ({ base64: 'BASE64DOCOMPROVANTE' })
   });
@@ -291,34 +280,29 @@ const CADASTRO_PRONTO = {
 
 const CENARIOS = [
   {
-    nome: 'Primeiro contato — número NOVO, formulário ligado',
+    nome: 'Primeiro contato — número NOVO vê as TRÊS portas',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.primeiroContato('55'),
     esperado: 1,
-    porque: 'A12 completo: avatar, boas-vindas e o formulário num balão só. ' +
-            'Eram 4, depois 2. No flow o cabeçalho vai por URL, não por id.'
+    porque: 'A12: avatar, boas-vindas e os 3 botões num balão só. Cadastro ' +
+            'custa mais uma, uma vez na vida; oferta e contato deixam de ser ' +
+            'invisíveis para quem chega.'
   },
   {
-    nome: 'Primeiro contato — número NOVO, sem AVATAR_URL configurada',
-    cenario: { dizimista: null, temAvatar: true, flowLigado: true, temUrlAvatar: false },
-    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
-    esperado: 2,
-    porque: 'sem URL pública não há cabeçalho no flow — volta às 2 de sempre'
-  },
-  {
-    nome: 'Primeiro contato — número NOVO, com URL mas formulário desligado',
+    nome: 'Entrada de número novo NÃO depende do formulário',
     cenario: { dizimista: null, temAvatar: true, flowLigado: false },
     roda: ctx => ctx.MenuHandler.primeiroContato('55'),
-    esperado: 2,
-    porque: 'as boas-vindas iam DENTRO do formulário; sem ele, são ditas ' +
-            'antes da conversa — a pessoa não pode começar sem ser cumprimentada'
+    esperado: 1,
+    porque: 'o menu não é um flow: com o formulário desligado a entrada é a ' +
+            'mesma. Antes o interruptor do flow mexia na 1ª mensagem.'
   },
   {
-    nome: 'Primeiro contato — número NOVO, formulário desligado',
-    cenario: { dizimista: null, temAvatar: true, flowLigado: false },
-    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
-    esperado: 2,
-    porque: 'boas-vindas + a primeira pergunta do cadastro por conversa'
+    nome: 'Quem toca "Ser Dizimista" recebe o formulário',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.CadastroHandler.iniciar('55', null),
+    esperado: 1,
+    porque: 'a mensagem a mais que o menu custa a quem quer cadastro — uma ' +
+            'vez na vida, e só para quem escolhe esse caminho'
   },
   {
     nome: 'Primeiro contato — número JÁ CADASTRADO',
@@ -518,20 +502,20 @@ const REGRAS_DE_BOTAO = [
 // uma informação que antes tinha mensagem própria e agora divide espaço.
 const REGRAS_DE_CONTEUDO = [
   {
-    nome: 'A entrada única de número NOVO apresenta a Cidinha e convida ao cadastro',
+    nome: 'A entrada de número NOVO mostra as três portas, não só o cadastro',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.primeiroContato('55'),
     confere: msgs => {
-      const m = msgs.find(x => x.tipo === 'flow+imagem');
-      if (!m) return 'o formulário não saiu com cabeçalho de imagem';
-      // Fundir as boas-vindas no formulário é fácil de desfazer sem perceber:
-      // o formulário continua chegando, só que mudo. Quem nunca falou com o
-      // bot abriria um cadastro sem saber quem está pedindo os dados.
+      const m = msgs.find(x => x.tipo === 'menu+imagem');
+      if (!m) return 'a entrada não saiu com cabeçalho de imagem';
       if (!m.texto.includes('Cidinha')) return 'a Cidinha não se apresenta';
       if (!m.texto.includes('Bem-vindo')) return 'faltou a boas-vindas';
-      return m.texto.toLowerCase().includes('dados')
-        ? null
-        : 'não convida a preencher os dados';
+      // A regra que motivou esta tela: oferta não exige cadastro, e o contato
+      // da pastoral não exige nada. Se sobrar só o cadastro, quem chega para
+      // ofertar volta ao beco sem saída que isto veio corrigir.
+      const faltam = ['btn_ser_dizimista', 'btn_oferta', 'btn_secretaria']
+        .filter(b => !m.texto.includes(b));
+      return faltam.length ? `faltou porta: ${faltam.join(', ')}` : null;
     }
   },
   {

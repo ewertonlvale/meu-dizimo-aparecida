@@ -681,13 +681,13 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 #### ✅ DESBLOQUEADO PELA S1
 
-- [x] **A12.** Entrada com cabeçalho de imagem. ✅ 19/09 — **COMPLETO: todo primeiro contato cabe em UMA mensagem.** Era 2; antes do BL-38, 4. Toda pessoa passa por aqui, uma vez.
-  - **Dizimista** (sonda S1): mensagem de botões, cabeçalho por `image.id` — avatar, boas-vindas e os 3 botões num balão.
-  - **Número novo** (sonda S10): mensagem de flow, cabeçalho por `image.link` — avatar, boas-vindas e o formulário num balão.
-  - **A assimetria, que é o achado do dia:** botões aceitam `image.id`; flow recusa o mesmo id com `(#131008) header image must contain link` e exige URL pública; lista só aceita texto. Não está documentado em lugar visível.
-  - A URL vem da Script Property `AVATAR_URL` (o avatar está em `docs/avatar.png`, servido pelo GitHub Pages a partir do `staging`). Sem ela, a entrada de número novo volta a 2 — e o harness cobre esse caminho.
-  - Outros caminhos de reserva cobertos: sem avatar no Odoo, Odoo fora do ar, formulário desligado. Neste último as boas-vindas são ditas antes da conversa, porque iam dentro do formulário que não saiu.
-  - Quando a primeira mensagem já traz intenção (o botão do lembrete), as boas-vindas seguem sozinhas: não há o que fundir, porque quem manda no próximo passo é a intenção.
+- [x] **A12.** Entrada com cabeçalho de imagem. ✅ 19/09 — **todo primeiro contato cabe em UMA mensagem.** Era 2; antes do BL-38, 4.
+  - **Dizimista** (sonda S1): avatar, boas-vindas e os 3 botões do menu do dizimista num balão.
+  - **Número novo**: avatar, boas-vindas e os 3 botões de `menuPrincipal` — **Ser Dizimista / Oferta / Contato Pastoral**.
+  - **A decisão que mudou no caminho.** Primeiro a entrada de número novo mandava o formulário direto, com cabeçalho de imagem por link (sonda S10). Era o caminho mais curto até o cadastro — e o **único visível**: quem só queria ofertar, ou falar com a pastoral, chegava num beco sem saída. `menuPrincipal` existe exatamente para isso e só aparecia depois. Trocado por decisão do usuário: cadastro custa 1 mensagem a mais, uma vez por pessoa; oferta e contato deixam de ser invisíveis. **Oferta não exige cadastro — esconder isso de quem chega perde a oferta inteira, não uma mensagem.**
+  - O cabeçalho de imagem no flow foi removido junto, por não ter mais chamador. A descoberta continua registrada na sonda S10 e aqui.
+  - Caminhos de reserva: sem avatar no Odoo e Odoo fora do ar voltam a 2 mensagens. A entrada não depende mais do interruptor do formulário — o menu não é um flow.
+  - Quando a primeira mensagem já traz intenção (o botão do lembrete), as boas-vindas seguem sozinhas: não há o que fundir.
 
 #### 👤 TRILHA B — só você consegue fazer
 
