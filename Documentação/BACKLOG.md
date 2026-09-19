@@ -66,7 +66,7 @@
 | BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
-| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟡 | ? | 🔬 Sonda pronta — `testarPixNativo()`. Decisão depende do resultado |
+| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Sonda passou (19/09)** — a Meta aceita o nosso código, sem PSP. Opção A liberada; falta provar que o código pago funciona |
 
 ---
 
@@ -503,7 +503,7 @@ A verificação e a gravação ficam dentro de um `LockService.getScriptLock()`.
 
 ---
 
-### BL-40 — Card de pagamento nativo do WhatsApp 🟡 (tamanho depende do resultado) — 🔬 **sonda pronta, aguardando execução**
+### BL-40 — Card de pagamento nativo do WhatsApp 🟠 (M) — ✅ **sonda passou em 19/09/2026**
 **Arquivos:** `TestePixNativo.gs` (sonda) · eventualmente `DevolucaoHandler.gs` e `MediaService.gs`
 **Origem:** teste do app concorrente **Dizify**, 19/09 — ele mostra um card de pagamento com botão nativo **Copiar código Pix**.
 
@@ -567,7 +567,30 @@ Descartado: o botão `COPY_CODE` de template existe, mas é restrito a templates
 
 Junto veio `tipoDaChavePix()`: o card exige `key_type` e o Odoo guarda só a chave. Desempata CPF de celular pelo dígito verificador — classificar por tamanho chamaria todo celular sem `+` de CPF, e a Meta recusaria sem explicar. Coberto no harness.
 
-**Aceite:** rodar a sonda e registrar aqui o veredito. Se a Meta aceitar, (A) vira item de implementação; se recusar por elegibilidade, (A) morre e (B) passa a depender das tarifas acima.
+#### ✅ VEREDITO DA SONDA — 19/09/2026
+
+**A Meta aceitou.** HTTP 200 e o card renderizou no aparelho, com o botão nativo **Copiar código Pix**, usando o BR Code que o bot já gera — **sem PSP, sem onboarding de pagamentos, sem intermediário**.
+
+As três dúvidas, respondidas de uma vez:
+
+1. ~~A Meta exige configuração de pagamento aprovada?~~ **Não** — a conta atual, sem nenhum setup de pagamentos, enviou e renderizou.
+2. ~~Ela valida se o código é dinâmico de verdade?~~ **Não** — o campo se chama `pix_dynamic_code`, mas aceitou um BR Code estático gerado localmente.
+3. ~~Entidade religiosa é elegível?~~ **Pergunta sem efeito**, já que não há processo de habilitação envolvido.
+
+**Consequência:** a opção (A) está liberada e é gratuita. A opção (B) — PSP, R$ 150–500/mês — continua sendo a única forma de ter conciliação automática, e agora é uma decisão puramente econômica, desacoplada do botão.
+
+#### ⚠️ O que a sonda NÃO provou
+
+Ela provou que a **mensagem** é aceita e o card **renderiza**. Não provou que o código copiado **paga**. São coisas diferentes: a Meta não valida o conteúdo do BR Code, então um payload malformado renderizaria igual e só falharia no app do banco.
+
+**Antes de implementar:** copiar o código do card e colar no app do banco, conferindo se resolve para a conta da comunidade e com o valor certo. É o mesmo BR Code que o bot já manda hoje como texto, então a expectativa é que funcione — mas "expectativa" não é teste.
+
+#### Decisões que a implementação precisa resolver
+
+- **O QR Code some?** O card substituiria a imagem do QR + o copia-e-cola (2 mensagens → 1, devolução de 3 → 2). Mas quem paga de outra tela perde o QR escaneável. O BL-37 já tinha marcado o QR como "o único corte com perda, e pequena" — agora a perda seria em troca de um botão nativo, que é melhor que o copia-e-cola cru.
+- **`order_status`.** O card é enviado com `order.status: "pending"`. A API tem mensagens de `order_status` para fechar o pedido; sem elas, o pedido pode ficar pendente para sempre no WhatsApp da pessoa. Vale sondar se dá para marcar como pago quando o comprovante é confirmado — seria um fechamento visual, e talvez outra mensagem cobrada.
+
+**Aceite:** devolução em 2 mensagens, com o código do card comprovadamente pagável no app do banco.
 
 ---
 
