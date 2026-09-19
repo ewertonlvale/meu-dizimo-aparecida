@@ -813,6 +813,43 @@ const CadastroHandler = {
     Utils.enviarComBotaoMenu(from,
       '❌ *Cadastro cancelado.*\n\nSe mudar de ideia, é só nos chamar! 💛'
     );
+  },
+
+  /**
+   * O botão "Corrigir" da tela de confirmação (BL-45).
+   *
+   * Ele CANCELAVA o cadastro: a pessoa via um dado errado, tocava em corrigir
+   * e perdia tudo o que tinha preenchido — sete campos — sem aviso nenhum. O
+   * botão dizia uma coisa e fazia outra.
+   *
+   * Agora o formulário volta com o que ela já digitou. Só a comunidade é
+   * escolhida de novo (ver `FlowHandler._dadosPreenchidos`).
+   *
+   * A sessão é MANTIDA de propósito: é dela que saem os valores. Quem fecha o
+   * formulário sem enviar continua com o cadastro em aberto, e a sessão
+   * expira sozinha como sempre.
+   */
+  corrigir(from) {
+    const dados = StateManager.getDadosTemporarios(from) || {};
+
+    if (dados.cadastrandoMembro) {
+      // O formulário de membro tem outro id e outros campos; preenchê-lo é
+      // trabalho à parte. Enquanto não existe, o passo a passo do familiar
+      // ainda é um caminho — e não custa os 19 do cadastro.
+      if (FlowHandler.enviarFlowMembro(from, dados)) return;
+    } else if (FlowHandler.enviarFlowCadastro(from, dados)) {
+      console.log(`✏️ [Cadastro] ${from} pediu correção — formulário reenviado preenchido`);
+      return;
+    }
+
+    // Sem formulário não há o que corrigir, e apagar o que a pessoa digitou
+    // seria repetir o problema que isto veio consertar. O cadastro fica em
+    // aberto; ela decide.
+    console.warn(`⚠️ [Cadastro] ${from} pediu correção, mas o formulário não saiu`);
+    MenuHandler.lembrarCadastroPendente(from,
+      '🙏 *Não consegui reabrir o formulário agora.*\n\n' +
+      'Seus dados continuam guardados. Tente de novo em alguns minutos, ou ' +
+      'fale com a pastoral da sua comunidade. 💛');
   }
 
 };

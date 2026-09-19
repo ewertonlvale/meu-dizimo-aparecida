@@ -73,6 +73,7 @@
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
 | BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
 | BL-44 | Cadastro e membro por conversa desligados: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
+| BL-45 | O botão "Corrigir" cancelava o cadastro e apagava os 7 campos | 🔴 | P | ✅ Concluído (19/09) — o formulário volta preenchido. ⚠️ **Exige republicar o Flow na Meta** |
 
 ---
 
@@ -749,6 +750,22 @@ publicar, quando a edição for sua. Não envia mensagem nem toca o Odoo.
 **Devolução e oferta ficaram de fora, por motivos diferentes.** A devolução não tem conversa alternativa: são 2 mensagens (QR com os dados na legenda + copia-e-cola) e ponto. Já a oferta **tem**, mas são **5 mensagens contra 3** — economia de 2, não de 15 — e desligá-la significa perder a oferta quando o formulário falhar. Cadastro pode esperar; oferta é um momento.
 
 **O `Router.gs` entrou no arnês.** Ficava de fora, e por isso o ramo que decide tudo isso não era executado por teste nenhum. Entraram quatro verificações: o lembrete, o interruptor devolvendo o caminho antigo, o formulário fora do ar sem rede, e uma regra de conteúdo que exige as duas saídas no lembrete — sem elas ele vira um muro.
+
+
+### BL-45 — O botão "Corrigir" cancelava o cadastro 🔴 (P) — ✅ concluído em 19/09/2026
+**Arquivos:** `ferramentas/flow-cadastro.json` · `FlowHandler.gs` (`_dadosPreenchidos`) · `CadastroHandler.gs` (`corrigir`) · `Router.gs`
+
+**O problema.** Na tela de confirmação, "❌ Corrigir" chamava `cancelar()`: apagava os **sete campos** preenchidos e mandava "Cadastro cancelado". A pessoa via um dado errado, tocava no botão que prometia consertar, e perdia tudo — sem aviso. O botão dizia uma coisa e fazia outra.
+
+**A correção.** O formulário volta **preenchido**. O padrão já existia no projeto: o formulário de oferta recebe o nome por `init-values` ligado a `${data.nome_padrao}`. O de cadastro ganhou sete campos assim.
+
+**A comunidade fica de fora, de propósito.** O Dropdown segue a **regra 6** do `valida-flow.js`, que nasceu quando a primeira comunidade vinha pré-selecionada e podia mandar o dinheiro de alguém para o lugar errado. Um valor inicial ali teria de existir também no PRIMEIRO envio, quando não há nada para preencher — e desde o BL-44 o formulário é o **único** caminho de entrada. Não é onde se experimenta. Quem corrige escolhe a comunidade de novo, um toque.
+
+**A armadilha da Meta.** Ela recusa a mensagem inteira se um campo declarado em `data` não vier, ou vier com o tipo errado: `valor_mensal` é `input-type: number`, e mandar `"150"` como texto derruba o envio. Todos os sete saem sempre, vazios no primeiro envio, e os numéricos saem como número. Três verificações cobrem isso — uma delas carrega o `FlowHandler` REAL num contexto próprio, porque no resto do arnês ele é stub.
+
+**O id do botão ficou como estava** (`btn_cancelar_cadastro`). Mensagens antigas na conversa ainda carregam esse valor; renomear faria elas pararem de responder.
+
+⚠️ **Exige republicar o Flow de cadastro na Meta** — o JSON mudou.
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
