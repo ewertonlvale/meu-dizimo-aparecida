@@ -104,7 +104,7 @@ function montarContexto(cenario) {
 
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
-             'DevolucaoHandler, ComprovanteHandler, ESTADOS, tipoDaChavePix });',
+             'DevolucaoHandler, ComprovanteHandler, ESTADOS });',
     ctx,
     { filename: 'bot.gs' }
   );
@@ -123,7 +123,19 @@ function montarContexto(cenario) {
       return cenario.digitandoFunciona !== false;
     },
     // A API do QR Code. `getContent` alimenta o base64Encode acima.
-    fetchComRetry: () => ({ getResponseCode: () => 200, getContent: () => 'qr', getContentText: () => '' })
+    fetchComRetry: () => ({ getResponseCode: () => 200, getContent: () => 'qr', getContentText: () => '' }),
+
+    // O card do BL-40 é montado no MediaService e vai direto pelo `_post`, sem
+    // passar pelos `enviar*`. Sem interceptar aqui ele não seria contado — e o
+    // fluxo que mais importa ficaria fora da conta.
+    _post: (payload) => {
+      const card = payload.interactive && payload.interactive.type === 'order_details';
+      registra(card ? 'card-pix' : 'outro', card
+        ? payload.interactive.body.text
+        : JSON.stringify(payload).slice(0, 80));
+      const aceita = cenario.cardAceito !== false;
+      return { getResponseCode: () => (aceita ? 200 : 400), getContentText: () => '' };
+    }
   });
   // formatarValor, formatarDataOdoo, variantesNumeroBR e o resto continuam reais.
 
@@ -230,8 +242,15 @@ const CENARIOS = [
     nome: 'Devolução — dados de pagamento (metade 1)',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
-    esperado: 2,
-    porque: 'QR com os dados na legenda + copia-e-cola sozinho. Eram 3.'
+    esperado: 1,
+    porque: 'card nativo: texto + botão "Copiar código Pix" juntos. Eram 3.'
+  },
+  {
+    nome: 'Devolução — card recusado pela Meta (rede de segurança)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, cardAceito: false },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    esperado: 3,
+    porque: 'volta ao QR + copia-e-cola. Custa 2 a mais, mas é a mensagem por onde o dinheiro passa'
   },
   {
     nome: 'Devolução — comprovante analisado (metade 2)',
@@ -299,19 +318,34 @@ const REGRAS_DE_BOTAO = [
 // uma informação que antes tinha mensagem própria e agora divide espaço.
 const REGRAS_DE_CONTEUDO = [
   {
-    nome: 'A legenda do QR carrega os dados de pagamento inteiros',
+    nome: 'O card carrega os dados de pagamento inteiros',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
     confere: msgs => {
-      const legenda = (msgs.find(m => m.tipo === 'imagem+legenda') || {}).texto || '';
+      const card = (msgs.find(m => m.tipo === 'card-pix') || {}).texto || '';
       const faltam = ['Banco do Brasil', 'Paróquia', 'pix@paroquia.org', 'comprovante']
-        .filter(t => !legenda.includes(t));
-      return faltam.length ? `faltou na legenda: ${faltam.join(', ')}` : null;
+        .filter(t => !card.includes(t));
+      return faltam.length ? `faltou no card: ${faltam.join(', ')}` : null;
     }
   },
   {
-    nome: 'O copia-e-cola continua sozinho e sem formatação',
-    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    nome: 'Card recusado → o caminho antigo entrega tudo, sem faltar nada',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, cardAceito: false },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: (msgs, ctx) => {
+      // A regra que não pode quebrar: se o card falhar, a pessoa AINDA tem
+      // como pagar. Dados de pagamento + BR Code intacto.
+      const tem = msgs.some(m => m.texto.includes('pix@paroquia.org') && m.texto.includes('DADOS PARA PAGAMENTO'));
+      if (!tem) return 'os dados de pagamento não chegaram';
+      const esperado = ctx.MediaService._gerarPayloadPix(
+        'pix@paroquia.org', DIZIMISTA.x_studio_value, 'Paróquia N. S. da Conceição Aparecida'
+      );
+      return msgs.some(m => m.texto === esperado) ? null : 'o BR Code de reserva não veio intacto';
+    }
+  },
+  {
+    nome: 'No caminho de reserva, o copia-e-cola segue sozinho e sem formatação',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, cardAceito: false },
     roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
     confere: (msgs, ctx) => {
       // Um toque longo → Copiar precisa levar EXATAMENTE o código EMV. Qualquer
@@ -352,8 +386,8 @@ const REGRAS_DE_CONTEUDO = [
     },
     roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
     confere: msgs => {
-      const legenda = (msgs.find(m => m.tipo === 'imagem+legenda') || {}).texto || '';
-      return legenda.includes('última devolução') && legenda.includes('histórico')
+      const card = (msgs.find(m => m.tipo === 'card-pix') || {}).texto || '';
+      return card.includes('última devolução') && card.includes('histórico')
         ? null : 'a linha do histórico sumiu da mensagem de pagamento';
     }
   },
@@ -385,10 +419,10 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
-    nome: 'Legenda longa demais não derruba os dados de pagamento',
+    nome: 'Reserva: legenda longa demais não derruba os dados de pagamento',
     cenario: {
       dizimista: { id: 7, x_name: 'M'.repeat(400), x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] },
-      temAvatar: true, flowLigado: true
+      temAvatar: true, flowLigado: true, cardAceito: false
     },
     roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
     confere: msgs => {
@@ -456,7 +490,7 @@ const CHAVES = [
 {
   const ctx = montarContexto({ dizimista: null, temAvatar: false, flowLigado: false });
   for (const [chave, esperado, oQue] of CHAVES) {
-    const obtido = String(ctx.tipoDaChavePix(chave));
+    const obtido = String(ctx.Utils.tipoDaChavePix(chave));
     const ok = obtido === esperado;
     if (!ok) falhas++;
     console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(30)} → ${obtido}${ok ? '' : `  (esperado ${esperado})`}`);

@@ -66,7 +66,7 @@
 | BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
-| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Sonda passou (19/09)** — a Meta aceita o nosso código, sem PSP. Opção A liberada; falta provar que o código pago funciona |
+| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
 
 ---
 
@@ -590,7 +590,34 @@ Ela provou que a **mensagem** é aceita e o card **renderiza**. Não provou que 
 - **O QR Code some?** O card substituiria a imagem do QR + o copia-e-cola (2 mensagens → 1, devolução de 3 → 2). Mas quem paga de outra tela perde o QR escaneável. O BL-37 já tinha marcado o QR como "o único corte com perda, e pequena" — agora a perda seria em troca de um botão nativo, que é melhor que o copia-e-cola cru.
 - **`order_status`.** O card é enviado com `order.status: "pending"`. A API tem mensagens de `order_status` para fechar o pedido; sem elas, o pedido pode ficar pendente para sempre no WhatsApp da pessoa. Vale sondar se dá para marcar como pago quando o comprovante é confirmado — seria um fechamento visual, e talvez outra mensagem cobrada.
 
-**Aceite:** devolução em 2 mensagens, com o código do card comprovadamente pagável no app do banco.
+#### ✅ IMPLEMENTADO — 19/09/2026
+
+O código do card foi colado num app de banco e **pagou corretamente**, para a conta da comunidade e com o valor certo. Era o que faltava: renderizar o card não é o mesmo que o código funcionar.
+
+- `MediaService.enviarCardPix()` monta e envia o `order_details`.
+- `DevolucaoHandler._entregarPagamento()` é o ponto único dos dois caminhos (individual e família): tenta o card e **cai no QR + copia-e-cola se a Meta recusar**. Esta é a mensagem por onde o dinheiro passa — nunca deixar a pessoa em `AGUARDANDO_COMPROVANTE` sem ter como pagar. O harness cobre os dois caminhos.
+- `Utils.tipoDaChavePix()` saiu da sonda e virou utilitário.
+
+**Decisão sobre o QR:** sai. Quem pagava lendo de outra tela perde a imagem; quem paga no próprio aparelho — a maioria — ganha um botão nativo, que nem depende de toque longo. Troca consciente.
+
+**Resultado:** devolução de **3 → 2 mensagens**. Com isso as 500 devoluções passam a caber **inteiras** na franquia de 1.000, e a conta mensal cai de R$ 35,00 para **R$ 17,50** — só o template do lembrete, que não tem franquia.
+
+#### 🔬 Aberto: quanto custa fechar o pedido (`order_status`)
+
+O card nasce `pending` e o WhatsApp cria um PEDIDO no aplicativo da pessoa. A API tem `order_status` para fechá-lo; sem isso, o pedido provavelmente fica pendente para sempre, mesmo depois de a pessoa pagar.
+
+O lugar certo de marcar como pago é **depois do OCR confirmar o comprovante**. A dúvida não é *quando* — é *quanto custa*:
+
+```
+Card (1) + resultado do OCR (1)                 = 2 mensagens ✅
+Card (1) + resultado (1) + order_status (1)     = 3 — o que já tínhamos
+```
+
+Se for cobrado como mensagem de serviço, anula o ganho inteiro e a decisão passa a ser deixar o pedido pendente mesmo.
+
+**Sonda pronta:** `testarPixNativoPago()`, depois de `testarPixNativo()`. Rodar `verificarConsumoMensagens()` antes e depois — se o contador de serviço subir, é cobrado. Atenção à janela de 24h: uma recusa pode ser só isso, não a ausência do recurso.
+
+**Aceite:** decidir, com o número medido, se o pedido é fechado ou fica pendente.
 
 ---
 

@@ -23,7 +23,7 @@ o bot envia, não quantas trocas acontecem.
 | Cadastro por formulário (Flow) | **4** | uma vez por pessoa |
 | Adicionar membro por conversa | **14** | raro |
 | Adicionar membro por formulário | **4** | raro |
-| **Devolução do dízimo** | **3** | **a mais frequente** |
+| **Devolução do dízimo** | **2** | **a mais frequente** |
 | Lembrete mensal (template) | **1** | uma vez por mês, por pessoa |
 | Relatório do coordenador | 4 a 12 | poucas pessoas |
 
@@ -208,37 +208,57 @@ sequenceDiagram
     B->>P: 6. "✅ Devolução registrada"
 ```
 
-### Como é: 3 mensagens
+### Como é: 2 mensagens
 
 ```mermaid
 sequenceDiagram
     participant P as Pessoa
     participant B as Bot
     P->>B: toca "Devolver dízimo"
-    B->>P: 1. QR Code, com os dados de pagamento NA LEGENDA
-    B->>P: 2. PIX copia-e-cola (sozinho, sem formatação)
+    B->>P: 1. Card nativo: dados + botão "Copiar código Pix"
     P->>B: envia o comprovante
     Note over B: balão "digitando…" — não é mensagem, não é cobrado
-    B->>P: 3. Dados do OCR + resultado, juntos
+    B->>P: 2. Dados do OCR + resultado, juntos
 ```
+
+O passo intermediário — QR numa mensagem, copia-e-cola noutra — caiu com o
+**BL-40**: o card `order_details` do WhatsApp carrega o texto **e** um botão
+nativo de copiar. Ver a seção logo abaixo.
 
 | # | O que era | O que virou | Perdeu algo? |
 |---|---|---|---|
 | 1+2 | Dados numa mensagem, QR noutra com legenda genérica | **Dados na legenda do QR** | Não. A legenda dizia "escaneie pelo app do banco" — o óbvio — enquanto uma mensagem cobrada carregava os dados |
-| 3 | PIX copia-e-cola | **Intocado** | — |
+| 3 | PIX copia-e-cola | **Virou o botão nativo do card** (BL-40) | Só o QR escaneável |
 | 4 | "⏳ Analisando comprovante..." | **Indicador de digitação** | Não. Melhora: balão vivo no lugar de linha parada, e de graça |
 | 5+6 | Dados do OCR, depois o resultado | **Uma mensagem só** | Não. O resultado já repetia valor e data |
 
 **6 → 3 mensagens.** Três fusões, zero informação removida da tela, e o QR Code
 — que a proposta original mandava cortar — continua lá.
 
-### Por que o copia-e-cola não foi fundido
+### O card nativo, e o que ele custou (BL-40)
 
-Ele é a única mensagem que existe para ser **copiada inteira**. Um toque longo →
-Copiar precisa levar exatamente o código EMV; qualquer texto em volta, ou um
-negrito envolvendo o código, entraria na cópia e o app do banco recusaria.
-Fundi-lo economizaria uma mensagem e quebraria o pagamento. O harness tem uma
-regra só para isso.
+O copia-e-cola era a única mensagem que existia para ser **copiada inteira**:
+um toque longo → Copiar precisava levar exatamente o código EMV, e qualquer
+texto em volta entraria na cópia e o banco recusaria. Fundi-lo por conta
+própria economizaria uma mensagem e quebraria o pagamento.
+
+O WhatsApp resolve isso de dentro: a mensagem `order_details` traz um **botão
+nativo "Copiar código Pix"**. Uma sonda (19/09) confirmou que a Meta aceita o
+BR Code que o próprio bot gera — **sem PSP, sem tarifa, dinheiro caindo direto
+na conta da comunidade**, apesar de o campo se chamar `pix_dynamic_code`.
+
+**O que se perdeu:** o QR Code escaneável. Quem pagava lendo de outra tela — um
+computador, ou alguém pagando pelo celular de outra pessoa — não tem mais a
+imagem. Foi uma troca consciente: quem paga no próprio aparelho, que é a
+maioria, ganha um botão que nem depende de toque longo.
+
+**O que NÃO mudou:** a conciliação. Saber que o pagamento aconteceu continua
+exigindo PSP (R$ 150–500/mês, ver BL-40), então o comprovante e o OCR ficam.
+
+**Rede de segurança:** esta é a mensagem por onde o dinheiro passa. Se a Meta
+recusar o card por qualquer motivo, o código cai sozinho no caminho antigo — QR
++ copia-e-cola —, que continua inteiro. Custa 2 mensagens a mais e é o preço
+certo a pagar. O harness cobre os dois caminhos.
 
 ### O indicador de digitação, e o que acontece se ele falhar
 
@@ -359,18 +379,23 @@ partir de 01/10/2026. Template não tem franquia — é cobrado desde o primeiro
 - Template: 500 × R$ 0,035 = **R$ 17,50**
 - **Total: R$ 87,50/mês** (R$ 1.050/ano)
 
-### Depois dos cortes (devolução de 3)
+### Depois dos cortes (devolução de 2)
 
 | Item | Contas | Mensagens |
 |---|---|---|
-| Devoluções | 500 × 3 | 1.500 |
+| Devoluções | 500 × 2 | 1.000 |
 | Lembretes | 500 × 1 | 500 |
 
-- Serviço: 1.500 − 1.000 = 500 × R$ 0,035 = **R$ 17,50**
+- Serviço: 1.000 − 1.000 de franquia = **R$ 0,00**
 - Template: **R$ 17,50**
-- **Total: R$ 35,00/mês** (R$ 420/ano)
+- **Total: R$ 17,50/mês** (R$ 210/ano)
 
-**A conta cai 60%.** O custo por pessoa por ano sai de R$ 2,10 para **R$ 0,84**.
+**A conta cai 80%.** O custo por pessoa por ano sai de R$ 2,10 para **R$ 0,42**.
+
+E acontece uma coisa melhor que economia: as 500 devoluções passam a caber
+**inteiras** na franquia de 1.000 mensagens de serviço. O que sobra na conta é
+só o template do lembrete — que não tem franquia e é o que traz a pessoa de
+volta.
 
 Repare onde a queda é desproporcional: as 500 devoluções passam a caber quase
 inteiras na franquia. Enquanto o total de serviço ficar perto de 1.000, cada
@@ -398,8 +423,9 @@ mês a mês. O que muda todo mês é a devolução.
 ## 7. Conclusão, sem rodeio
 
 **Não fica inviável — e por uma margem maior do que a primeira versão deste
-documento dizia.** Com os cortes da seção 4 já aplicados, **R$ 35,00/mês** para
-500 famílias: R$ 420 por ano, R$ 0,84 por pessoa por ano.
+documento dizia.** Com os cortes da seção 4 já aplicados, **R$ 17,50/mês** para
+500 famílias: R$ 210 por ano, R$ 0,42 por pessoa por ano — e o serviço inteiro
+cabendo na franquia.
 
 O que muda a ordem de grandeza não é o cadastro, e sim a **devolução**: ela é a
 única que se repete. Cortar uma mensagem da devolução vale 500 mensagens por
@@ -407,7 +433,7 @@ mês; cortar uma do cadastro vale 500 uma única vez na vida da paróquia.
 
 **O que já foi feito:**
 
-1. **Devolução: 6 → 3** (BL-37) — três fusões, nenhuma informação a menos
+1. **Devolução: 6 → 2** (BL-37 e BL-40) — três fusões e o card nativo
 2. **Entrada: 4 → 2** (BL-38) — corta o pico da adesão
 3. **Formulário ligado** (BL-33) — evita o cadastro de 19 mensagens
 
@@ -419,9 +445,9 @@ mês; cortar uma do cadastro vale 500 uma única vez na vida da paróquia.
 
 **O que não vale a pena mexer:** o lembrete mensal. São 500 templates a
 R$ 17,50 no total, e é ele que traz a pessoa de volta — cortá-lo economiza
-pouco e custa a devolução inteira. Note que, com o serviço agora em R$ 17,50,
-o lembrete virou **metade da conta** — e continua sendo o melhor dinheiro
-gasto do projeto.
+pouco e custa a devolução inteira. Com o serviço agora dentro da franquia, o
+lembrete virou **a conta inteira** — e continua sendo o melhor dinheiro gasto
+do projeto.
 
 ---
 

@@ -615,6 +615,56 @@ const Utils = {
   },
 
   /**
+   * Descobre o tipo da chave PIX pelo formato.
+   *
+   * O `pix_dynamic_code` exige `key_type`, e o Odoo guarda só a chave. As regras
+   * são as do próprio PIX: CPF tem 11 dígitos, CNPJ tem 14, telefone vem com
+   * +55, e-mail tem @, e o que sobra é chave aleatória (EVP, 32 hexadecimais).
+   *
+     * @param {string} chave
+   * @returns {string|null} CPF | CNPJ | PHONE | EMAIL | EVP
+   */
+  tipoDaChavePix(chave) {
+    const c = String(chave || '').trim();
+    if (!c) return null;
+
+    if (c.indexOf('@') > 0) return 'EMAIL';
+    if (c.charAt(0) === '+') return 'PHONE';
+
+    const digitos = c.replace(/\D/g, '');
+
+    // 11 dígitos é ambíguo: CPF e celular brasileiro (DDD + 9 dígitos) têm o
+    // mesmo tamanho. O desempate é o dígito verificador — um telefone só passa
+    // por acaso, e a chance é de 1%. Comparar por tamanho classificaria todo
+    // celular guardado sem o '+' como CPF, e a Meta recusaria sem dizer por quê.
+    if (digitos.length === 11) return this._cpfValido(digitos) ? 'CPF' : 'PHONE';
+    if (digitos.length === 14) return 'CNPJ';
+    if (/^[0-9a-fA-F-]{32,36}$/.test(c)) return 'EVP';
+
+    return null;
+  },
+
+  /**
+   * Dígito verificador de CPF (módulo 11). Serve só para desempatar CPF de
+   * telefone em `tipoDaChavePix` — não é validação de cadastro.
+   * @private
+   */
+  _cpfValido(d) {
+    if (/^(\d)\1{10}$/.test(d)) return false;   // 00000000000, 11111111111…
+
+    for (let bloco = 9; bloco <= 10; bloco++) {
+      let soma = 0;
+      for (let i = 0; i < bloco; i++) {
+        soma += parseInt(d.charAt(i), 10) * (bloco + 1 - i);
+      }
+      let dv = (soma * 10) % 11;
+      if (dv === 10) dv = 0;
+      if (dv !== parseInt(d.charAt(bloco), 10)) return false;
+    }
+    return true;
+  },
+
+  /**
    * Marca a mensagem recebida como lida e liga o indicador de "digitando".
    *
    * BL-37 — POR QUE ISTO SUBSTITUI UMA MENSAGEM.
