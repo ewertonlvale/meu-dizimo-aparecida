@@ -66,7 +66,7 @@
 | BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
-| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟡 | ? | 🔬 Sonda pronta — `testarPixNativo()`. Decisão depende do resultado |
+| BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
 
 ---
 
@@ -503,7 +503,7 @@ A verificação e a gravação ficam dentro de um `LockService.getScriptLock()`.
 
 ---
 
-### BL-40 — Card de pagamento nativo do WhatsApp 🟡 (tamanho depende do resultado) — 🔬 **sonda pronta, aguardando execução**
+### BL-40 — Card de pagamento nativo do WhatsApp 🟠 (M) — ✅ **sonda passou em 19/09/2026**
 **Arquivos:** `TestePixNativo.gs` (sonda) · eventualmente `DevolucaoHandler.gs` e `MediaService.gs`
 **Origem:** teste do app concorrente **Dizify**, 19/09 — ele mostra um card de pagamento com botão nativo **Copiar código Pix**.
 
@@ -567,7 +567,57 @@ Descartado: o botão `COPY_CODE` de template existe, mas é restrito a templates
 
 Junto veio `tipoDaChavePix()`: o card exige `key_type` e o Odoo guarda só a chave. Desempata CPF de celular pelo dígito verificador — classificar por tamanho chamaria todo celular sem `+` de CPF, e a Meta recusaria sem explicar. Coberto no harness.
 
-**Aceite:** rodar a sonda e registrar aqui o veredito. Se a Meta aceitar, (A) vira item de implementação; se recusar por elegibilidade, (A) morre e (B) passa a depender das tarifas acima.
+#### ✅ VEREDITO DA SONDA — 19/09/2026
+
+**A Meta aceitou.** HTTP 200 e o card renderizou no aparelho, com o botão nativo **Copiar código Pix**, usando o BR Code que o bot já gera — **sem PSP, sem onboarding de pagamentos, sem intermediário**.
+
+As três dúvidas, respondidas de uma vez:
+
+1. ~~A Meta exige configuração de pagamento aprovada?~~ **Não** — a conta atual, sem nenhum setup de pagamentos, enviou e renderizou.
+2. ~~Ela valida se o código é dinâmico de verdade?~~ **Não** — o campo se chama `pix_dynamic_code`, mas aceitou um BR Code estático gerado localmente.
+3. ~~Entidade religiosa é elegível?~~ **Pergunta sem efeito**, já que não há processo de habilitação envolvido.
+
+**Consequência:** a opção (A) está liberada e é gratuita. A opção (B) — PSP, R$ 150–500/mês — continua sendo a única forma de ter conciliação automática, e agora é uma decisão puramente econômica, desacoplada do botão.
+
+#### ⚠️ O que a sonda NÃO provou
+
+Ela provou que a **mensagem** é aceita e o card **renderiza**. Não provou que o código copiado **paga**. São coisas diferentes: a Meta não valida o conteúdo do BR Code, então um payload malformado renderizaria igual e só falharia no app do banco.
+
+**Antes de implementar:** copiar o código do card e colar no app do banco, conferindo se resolve para a conta da comunidade e com o valor certo. É o mesmo BR Code que o bot já manda hoje como texto, então a expectativa é que funcione — mas "expectativa" não é teste.
+
+#### Decisões que a implementação precisa resolver
+
+- **O QR Code some?** O card substituiria a imagem do QR + o copia-e-cola (2 mensagens → 1, devolução de 3 → 2). Mas quem paga de outra tela perde o QR escaneável. O BL-37 já tinha marcado o QR como "o único corte com perda, e pequena" — agora a perda seria em troca de um botão nativo, que é melhor que o copia-e-cola cru.
+- **`order_status`.** O card é enviado com `order.status: "pending"`. A API tem mensagens de `order_status` para fechar o pedido; sem elas, o pedido pode ficar pendente para sempre no WhatsApp da pessoa. Vale sondar se dá para marcar como pago quando o comprovante é confirmado — seria um fechamento visual, e talvez outra mensagem cobrada.
+
+#### ✅ IMPLEMENTADO — 19/09/2026
+
+O código do card foi colado num app de banco e **pagou corretamente**, para a conta da comunidade e com o valor certo. Era o que faltava: renderizar o card não é o mesmo que o código funcionar.
+
+- `MediaService.enviarCardPix()` monta e envia o `order_details`.
+- `DevolucaoHandler._entregarPagamento()` é o ponto único dos dois caminhos (individual e família): tenta o card e **cai no QR + copia-e-cola se a Meta recusar**. Esta é a mensagem por onde o dinheiro passa — nunca deixar a pessoa em `AGUARDANDO_COMPROVANTE` sem ter como pagar. O harness cobre os dois caminhos.
+- `Utils.tipoDaChavePix()` saiu da sonda e virou utilitário.
+
+**Decisão sobre o QR:** sai. Quem pagava lendo de outra tela perde a imagem; quem paga no próprio aparelho — a maioria — ganha um botão nativo, que nem depende de toque longo. Troca consciente.
+
+**Resultado:** devolução de **3 → 2 mensagens**. Com isso as 500 devoluções passam a caber **inteiras** na franquia de 1.000, e a conta mensal cai de R$ 35,00 para **R$ 17,50** — só o template do lembrete, que não tem franquia.
+
+#### 🔬 Aberto: quanto custa fechar o pedido (`order_status`)
+
+O card nasce `pending` e o WhatsApp cria um PEDIDO no aplicativo da pessoa. A API tem `order_status` para fechá-lo; sem isso, o pedido provavelmente fica pendente para sempre, mesmo depois de a pessoa pagar.
+
+O lugar certo de marcar como pago é **depois do OCR confirmar o comprovante**. A dúvida não é *quando* — é *quanto custa*:
+
+```
+Card (1) + resultado do OCR (1)                 = 2 mensagens ✅
+Card (1) + resultado (1) + order_status (1)     = 3 — o que já tínhamos
+```
+
+Se for cobrado como mensagem de serviço, anula o ganho inteiro e a decisão passa a ser deixar o pedido pendente mesmo.
+
+**Sonda pronta:** `testarPixNativoPago()`, depois de `testarPixNativo()`. Rodar `verificarConsumoMensagens()` antes e depois — se o contador de serviço subir, é cobrado. Atenção à janela de 24h: uma recusa pode ser só isso, não a ausência do recurso.
+
+**Aceite:** decidir, com o número medido, se o pedido é fechado ou fica pendente.
 
 ---
 

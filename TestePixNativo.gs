@@ -60,56 +60,6 @@
  */
 
 /**
- * Descobre o tipo da chave PIX pelo formato.
- *
- * O `pix_dynamic_code` exige `key_type`, e o Odoo guarda só a chave. As regras
- * são as do próprio PIX: CPF tem 11 dígitos, CNPJ tem 14, telefone vem com
- * +55, e-mail tem @, e o que sobra é chave aleatória (EVP, 32 hexadecimais).
- *
- * @param {string} chave
- * @returns {string|null} CPF | CNPJ | PHONE | EMAIL | EVP
- */
-function tipoDaChavePix(chave) {
-  const c = String(chave || '').trim();
-  if (!c) return null;
-
-  if (c.indexOf('@') > 0) return 'EMAIL';
-  if (c.charAt(0) === '+') return 'PHONE';
-
-  const digitos = c.replace(/\D/g, '');
-
-  // 11 dígitos é ambíguo: CPF e celular brasileiro (DDD + 9 dígitos) têm o
-  // mesmo tamanho. O desempate é o dígito verificador — um telefone só passa
-  // por acaso, e a chance é de 1%. Comparar por tamanho classificaria todo
-  // celular guardado sem o '+' como CPF, e a Meta recusaria sem dizer por quê.
-  if (digitos.length === 11) return _cpfValido(digitos) ? 'CPF' : 'PHONE';
-  if (digitos.length === 14) return 'CNPJ';
-  if (/^[0-9a-fA-F-]{32,36}$/.test(c)) return 'EVP';
-
-  return null;
-}
-
-/**
- * Dígito verificador de CPF (módulo 11). Serve só para desempatar CPF de
- * telefone em `tipoDaChavePix` — não é validação de cadastro.
- * @private
- */
-function _cpfValido(d) {
-  if (/^(\d)\1{10}$/.test(d)) return false;   // 00000000000, 11111111111…
-
-  for (let bloco = 9; bloco <= 10; bloco++) {
-    let soma = 0;
-    for (let i = 0; i < bloco; i++) {
-      soma += parseInt(d.charAt(i), 10) * (bloco + 1 - i);
-    }
-    let dv = (soma * 10) % 11;
-    if (dv === 10) dv = 0;
-    if (dv !== parseInt(d.charAt(bloco), 10)) return false;
-  }
-  return true;
-}
-
-/**
  * Envia um `order_details` com o BR Code que o bot já gera hoje.
  *
  * @param {string} [numero] - Destinatário, formato internacional sem '+'.
@@ -180,6 +130,13 @@ function testarPixNativo(numero, valorForcado) {
   // Meta para payment_type "br" — mandar 30 aqui cobraria R$ 0,30.
   const centavos    = Math.round(valor * 100);
   const referencia  = `dizimo-sonda-${Date.now()}`;
+
+  // Guardada para a segunda sonda (`testarPixNativoPago`): o `order_status`
+  // precisa do MESMO reference_id para encontrar o pedido.
+  PropertiesService.getScriptProperties().setProperties({
+    SONDA_PIX_REFERENCIA: referencia,
+    SONDA_PIX_DESTINO:    destino
+  });
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -265,5 +222,107 @@ function testarPixNativo(numero, valorForcado) {
   Logger.log('   • erro de parâmetro/estrutura → provavelmente o payload, não a');
   Logger.log('     elegibilidade. Vale ajustar e repetir antes de concluir.');
   Logger.log('   Copie o bloco inteiro entre as linhas ━ ao reportar.');
+  return false;
+}
+
+
+/**
+ * SONDA 2: quanto custa fechar o pedido?
+ *
+ * O card nasce com `order.status: "pending"` e o WhatsApp cria um PEDIDO no
+ * aplicativo da pessoa — não é só um balão de texto. A API tem a mensagem
+ * `order_status` para mover esse estado. Sem ela, o pedido provavelmente fica
+ * pendente para sempre, mesmo depois de a pessoa pagar e receber a confirmação.
+ *
+ * A DÚVIDA NÃO É *QUANDO*, É *QUANTO CUSTA*. O lugar certo de marcar como pago
+ * é depois do OCR confirmar o comprovante. Mas se o `order_status` for cobrado
+ * como mensagem de serviço, ele anula o ganho inteiro do BL-40:
+ *
+ *   Card (1) + resultado do OCR (1)                    = 2 mensagens ✅
+ *   Card (1) + resultado (1) + order_status (1)        = 3 — o que já tínhamos
+ *
+ * Esta sonda mede isso. Rode `verificarConsumoMensagens()` (Setup.gs) ANTES e
+ * DEPOIS: se o contador de serviço subir, é cobrado.
+ *
+ * ⚠️ Rode `testarPixNativo()` primeiro — é ele que guarda a referência.
+ * ⚠️ A janela de 24h vale aqui: se a pessoa não falou com o bot nas últimas
+ *    24h, a Meta recusa, e isso não quer dizer que o recurso não exista.
+ *
+ * COMO RODAR
+ *   testarPixNativo()        // manda o card
+ *   testarPixNativoPago()    // tenta marcar como pago
+ *
+ * O QUE OBSERVAR
+ *   1. HTTP 200 ou recusa? (a resposta crua vai no log)
+ *   2. O card no aparelho mudou de aparência?
+ *   3. O contador de mensagens de serviço subiu?
+ */
+function testarPixNativoPago() {
+  Logger.log('\n💳 SONDA 2: order_status — fechar o pedido custa mensagem?');
+  Logger.log('━'.repeat(60));
+
+  const props      = PropertiesService.getScriptProperties();
+  const referencia = props.getProperty('SONDA_PIX_REFERENCIA');
+  const destino    = props.getProperty('SONDA_PIX_DESTINO');
+
+  if (!referencia || !destino) {
+    Logger.log('❌ Não achei a referência do card.');
+    Logger.log('   Rode testarPixNativo() primeiro — é ele que a guarda.');
+    return false;
+  }
+
+  Logger.log(`📱 Destino: ${destino}`);
+  Logger.log(`🔖 Referência: ${referencia}`);
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type:    'individual',
+    to:                destino,
+    type:              'interactive',
+    interactive: {
+      type: 'order_status',
+      body: { text: 'Pagamento confirmado. Obrigado! 💛' },
+      action: {
+        name: 'review_order',
+        parameters: {
+          reference_id: referencia,
+          order: {
+            status:      'completed',
+            description: 'Devolução de dízimo registrada'
+          }
+        }
+      }
+    }
+  };
+
+  Logger.log('\n📤 Enviando...');
+  const resposta = Utils._post(payload, { rotulo: 'order_status (sonda)' });
+
+  if (!resposta) {
+    Logger.log('❌ Exceção no envio — veja o erro acima.');
+    return false;
+  }
+
+  const code = resposta.getResponseCode();
+  Logger.log('\n' + '━'.repeat(60));
+  Logger.log(`HTTP ${code}`);
+  Logger.log(resposta.getContentText());
+  Logger.log('━'.repeat(60));
+
+  if (code === 200) {
+    Logger.log('\n✅ ACEITO. Agora o que importa é o CUSTO:');
+    Logger.log('   Rode verificarConsumoMensagens() e compare com antes.');
+    Logger.log('   • Contador de serviço subiu → é cobrado. Fechar o pedido');
+    Logger.log('     custaria 1 mensagem por devolução e anularia o ganho do');
+    Logger.log('     BL-40. Aí a decisão é deixar o pedido pendente mesmo.');
+    Logger.log('   • Não subiu → fechamos de graça, e o card mostra "pago".');
+    Logger.log('   Veja também se o card mudou de aparência no aparelho.');
+    return true;
+  }
+
+  Logger.log('\n❌ RECUSADO. Vale conferir se não é a janela de 24h: se o');
+  Logger.log('   número não falou com o bot recentemente, a Meta recusa e isso');
+  Logger.log('   NÃO significa que o recurso não exista. Mande uma mensagem do');
+  Logger.log('   aparelho para o bot e repita.');
   return false;
 }

@@ -368,7 +368,116 @@ const MediaService = {
   },
 
   // ==========================================================================
-  // QR CODE PIX
+  // CARD DE PAGAMENTO NATIVO (BL-40)
+  // ==========================================================================
+
+  /**
+   * Envia o card `order_details` com o botão nativo **Copiar código Pix**.
+   *
+   * BL-40 — POR QUE ISTO SUBSTITUI DUAS MENSAGENS.
+   * O copia-e-cola precisava ir sozinho e sem formatação, senão o toque longo
+   * → Copiar não levava o código EMV exato e o app do banco recusava. Era a
+   * única mensagem que o BL-37 não conseguiu fundir. O botão nativo resolve
+   * isso de dentro do card: some a imagem do QR, some o copia-e-cola, e as
+   * duas viram uma.
+   *
+   * SEM PSP. O campo `code` é uma string que nós fornecemos, e a sonda de
+   * 19/09 confirmou que a Meta aceita o BR Code estático que o próprio bot
+   * gera — apesar de o campo se chamar `pix_dynamic_code`. Nada de
+   * intermediário, nada de tarifa, dinheiro caindo direto na conta da
+   * comunidade. O que continua exigindo PSP é a CONCILIAÇÃO automática, e por
+   * isso o comprovante e o OCR seguem existindo.
+   *
+   * @param {string} to          - Destinatário
+   * @param {Object} comunidade  - Registro x_comunidade com os dados de pagamento
+   * @param {number} valor       - Valor sugerido, em reais
+   * @param {string} corpo       - Texto do card (dados da comunidade, instrução)
+   * @param {string} referencia  - `reference_id` do pedido, único por envio
+   * @returns {boolean} false se a Meta não aceitou — quem chama DEVE cair no
+   *   caminho antigo, senão a pessoa fica sem como pagar.
+   */
+  enviarCardPix(to, comunidade, valor, corpo, referencia) {
+    const chave = comunidade && comunidade.x_studio_chave_pix;
+    if (!chave) return false;
+
+    // O card exige `key_type` e o Odoo guarda só a chave. Sem conseguir
+    // deduzir, não dá para montar o card — e insistir faria a Meta recusar
+    // sem explicar. Cai no caminho antigo, que não precisa do tipo.
+    const tipo = Utils.tipoDaChavePix(chave);
+    if (!tipo) {
+      console.warn('⚠️ [Card PIX] Não deduzi o key_type da chave — usando o caminho antigo');
+      return false;
+    }
+
+    const titular = comunidade.x_studio_titular_conta || 'Paroquia';
+
+    let codigo;
+    try {
+      codigo = this._gerarPayloadPix(chave, valor, titular);
+    } catch (e) {
+      console.warn('⚠️ [Card PIX] Falhei ao gerar o BR Code:', e.message);
+      return false;
+    }
+
+    // `offset: 100` é exigência da Meta para `payment_type: "br"`: o valor vai
+    // em centavos. Mandar 30 aqui cobraria R$ 0,30.
+    const centavos = Math.round(valor * 100);
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type:    'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'order_details',
+        body: { text: corpo },
+        action: {
+          name: 'review_and_pay',
+          parameters: {
+            reference_id: referencia,
+            type:         'digital-goods',
+            payment_type: 'br',
+            payment_settings: [
+              {
+                type: 'pix_dynamic_code',
+                pix_dynamic_code: {
+                  code:          codigo,
+                  merchant_name: titular,
+                  key:           chave,
+                  key_type:      tipo
+                }
+              }
+            ],
+            currency:     'BRL',
+            total_amount: { value: centavos, offset: 100 },
+            order: {
+              status: 'pending',
+              items: [
+                {
+                  retailer_id: 'dizimo',
+                  name:        'Dízimo',
+                  amount:      { value: centavos, offset: 100 },
+                  quantity:    1
+                }
+              ],
+              subtotal: { value: centavos, offset: 100 }
+            }
+          }
+        }
+      }
+    };
+
+    const resposta = Utils._post(payload, { rotulo: 'Card PIX' });
+    const ok = !!resposta && resposta.getResponseCode() === 200;
+
+    if (!ok) {
+      console.warn('⚠️ [Card PIX] Recusado pela Meta — caindo no QR + copia-e-cola');
+    }
+    return ok;
+  },
+
+  // ==========================================================================
+  // QR CODE PIX — caminho antigo, hoje rede de segurança do card (BL-40)
   // ==========================================================================
 
   /**
