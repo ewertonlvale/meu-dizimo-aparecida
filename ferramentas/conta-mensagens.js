@@ -902,6 +902,26 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       }
     },
     {
+      // Duas URLs, e a primeira funciona: a segunda tem de ser PULADA. Cada
+      // tentativa é uma mensagem cobrada, então um laço que insiste depois de
+      // acertar gasta dinheiro à toa — e é o tipo de coisa que só apareceria
+      // na fatura.
+      arquivo: 'TesteCabecalhoFlow.gs',
+      funcao:  'testarCabecalhoFlow',
+      rotulo:  'testarCabecalhoFlow() para de tentar quando uma URL funciona',
+      props:   { AVATAR_URL: 'https://um.exemplo/a.png, https://dois.exemplo/b.png' },
+      envios:  3,   // id, a PRIMEIRA url, e o controle — a segunda não sai
+      confere(enviados) {
+        const links = enviados
+          .filter(p => (p.interactive.header.image || {}).link)
+          .map(p => p.interactive.header.image.link);
+        if (links.length !== 1) return `mandou ${links.length} links, devia mandar 1`;
+        return links[0] === 'https://um.exemplo/a.png'
+          ? null
+          : `tentou ${links[0]} — devia começar pela primeira da lista`;
+      }
+    },
+    {
       // Não manda mensagem: o que ela faz é apagar cache, sessão e o registro
       // no Odoo. Entra aqui pelo mesmo motivo das outras — é função que só
       // roda no editor, e por isso ninguém a executa antes de você.

@@ -33,9 +33,17 @@
  *   `GET /<media-id>` exige Bearer token, então a Meta não a buscaria.
  *
  * O QUE FALTA
- *   Configurar a Script Property `AVATAR_URL` com uma URL pública do avatar e
- *   rodar de novo. O site em `docs/` já é servido publicamente
- *   (meudizimo.pnscaparecida.com), então basta publicar a imagem lá.
+ *   Configurar a Script Property `AVATAR_URL` e rodar de novo. Ela aceita
+ *   VÁRIAS URLs separadas por vírgula, e a sonda tenta uma a uma até alguma
+ *   ser aceita — parando aí, porque cada tentativa é uma mensagem cobrada.
+ *
+ *   Por que mais de uma: o avatar está publicado em `docs/avatar.png`, servido
+ *   pelo GitHub Pages. Com o CNAME configurado, a URL `github.io` responde 301
+ *   para o domínio próprio, e não se sabe se o buscador da Meta segue
+ *   redirecionamento. Passar as duas resolve numa rodada só:
+ *
+ *     https://meudizimo.pnscaparecida.com/avatar.png,
+ *     https://ewertonlvale.github.io/meu-dizimo-aparecida/avatar.png
  *
  * ⚠️ ENVIA ATÉ TRÊS FORMULÁRIOS DE VERDADE, cobrados, para o número informado.
  *    São formulários FUNCIONAIS: preenchê-los cria cadastro no Odoo. Para só
@@ -48,6 +56,7 @@
  *   0.  `GET /<media-id>` na Graph API        ← o id é entregável? (sem envio)
  *   1.  o formulário com `image.id`           ← já respondido: exige link
  *   1b. o formulário com `image.link`         ← a pergunta que resta
+ *       (uma tentativa por URL de AVATAR_URL, até alguma passar)
  *   2.  o formulário com cabeçalho de TEXTO   ← controle (o que roda hoje)
  *
  *   o 1b chegou com a imagem  → fecha o A12: número novo de 2 → 1 mensagem.
@@ -55,7 +64,7 @@
  *                               2, e isso vira resposta, não pendência.
  *   nem o controle chegou     → não é o cabeçalho: token, janela ou FLOW_ID.
  *
- * Versão: 2.0
+ * Versão: 2.1
  * Data: Setembro 2026
  */
 
@@ -184,26 +193,48 @@ function testarCabecalhoFlow(numero) {
   //
   // A URL precisa ser pública: a `lookaside.fbsbx.com` que o `GET /<media-id>`
   // devolve exige Bearer token, então a Meta não conseguiria buscá-la.
-  const urlImagem = props.getProperty('AVATAR_URL');
-  let code1b = null;
+  // `AVATAR_URL` aceita VÁRIAS URLs separadas por vírgula, e a sonda tenta uma
+  // a uma. O motivo é concreto: com um CNAME configurado, o GitHub Pages
+  // responde a URL `github.io` com 301 para o domínio próprio, e não se sabe
+  // se o buscador da Meta segue redirecionamento. Testar as duas numa rodada
+  // custa uma mensagem; descobrir na rodada seguinte custa uma rodada.
+  const urls = String(props.getProperty('AVATAR_URL') || '')
+    .split(',').map(u => u.trim()).filter(Boolean);
 
-  if (!urlImagem) {
+  let code1b = null;
+  let urlQueFuncionou = null;
+
+  if (!urls.length) {
     Logger.log('\n⏭️ 1b PULADO — sem a Script Property AVATAR_URL.');
     Logger.log('   É ela que responde a pergunta que sobrou: se o flow aceita');
-    Logger.log('   imagem por LINK. Configure com uma URL pública do avatar');
-    Logger.log('   (o site em docs/ já é servido publicamente) e repita.');
+    Logger.log('   imagem por LINK. Configure com uma ou mais URLs públicas do');
+    Logger.log('   avatar, separadas por vírgula, e repita.');
   } else {
-    Logger.log(`\n📤 1b/2 — formulário com a imagem por LINK…\n   ${urlImagem}`);
-    const r1b = Utils._post(
-      montar({ type: 'image', image: { link: urlImagem } },
-             '🔗 *Teste do cabeçalho por link*\n\n' +
-             'Se esta chegou COM a imagem acima, o flow aceita cabeçalho de ' +
-             'imagem por URL. Não precisa preencher. 💛'),
-      { rotulo: 'Sonda cabeçalho flow (link)' }
-    );
-    code1b = r1b ? r1b.getResponseCode() : null;
-    Logger.log(`HTTP ${code1b} (por link)`);
-    if (code1b !== 200) Logger.log(r1b ? r1b.getContentText() : '(sem resposta)');
+    urls.forEach((url, n) => {
+      // Depois que uma funciona, as outras não acrescentam nada — e cada
+      // tentativa é uma mensagem cobrada.
+      if (urlQueFuncionou) {
+        Logger.log(`\n⏭️ Pulando ${url} — a anterior já funcionou.`);
+        return;
+      }
+      Logger.log(`\n📤 1b.${n + 1} — formulário com a imagem por LINK…\n   ${url}`);
+      const r = Utils._post(
+        montar({ type: 'image', image: { link: url } },
+               '🔗 *Teste do cabeçalho por link*\n\n' +
+               `URL ${n + 1}: se esta chegou COM a imagem acima, o flow aceita ` +
+               'cabeçalho de imagem por URL. Não precisa preencher. 💛'),
+        { rotulo: `Sonda cabeçalho flow (link ${n + 1})` }
+      );
+      const c = r ? r.getResponseCode() : null;
+      Logger.log(`HTTP ${c}`);
+      if (c === 200) {
+        urlQueFuncionou = url;
+      } else {
+        Logger.log(r ? r.getContentText() : '(sem resposta)');
+      }
+      code1b = c;
+    });
+    if (urlQueFuncionou) code1b = 200;
   }
 
   // ── 2. O CONTROLE ───────────────────────────────────────────────────────
@@ -255,20 +286,22 @@ function testarCabecalhoFlow(numero) {
   }
 
   if (code1b !== 200) {
-    Logger.log('❌ NEM POR LINK A META ACEITOU. Leia o erro do 1b acima: costuma');
-    Logger.log('   ser URL inacessível, redirecionamento ou content-type errado.');
+    Logger.log('❌ NENHUMA DAS URLs FOI ACEITA. Leia os erros acima: costuma ser');
+    Logger.log('   URL inacessível, redirecionamento (o github.io redireciona 301');
+    Logger.log('   quando há CNAME) ou content-type errado.');
     Logger.log('   A entrada de número novo fica em 2 mensagens.');
     Logger.log('═'.repeat(60));
     return false;
   }
 
-  Logger.log('✅ A META ACEITOU O ENVIO POR LINK (HTTP 200).');
+  Logger.log(`✅ A META ACEITOU O ENVIO POR LINK: ${urlQueFuncionou}`);
   Logger.log('   Aceitar e entregar são coisas diferentes — a S1 gastou três');
   Logger.log('   rodadas aprendendo isso. Quem responde é o aparelho.');
   Logger.log('');
-  Logger.log('   👉 O FORMULÁRIO DO 1b CHEGOU COM A IMAGEM EM CIMA?');
+  Logger.log('   👉 O FORMULÁRIO DESSA URL CHEGOU COM A IMAGEM EM CIMA?');
   Logger.log('');
   Logger.log('   sim  → fecha o A12: a entrada de número novo cai de 2 para 1.');
+  Logger.log('          Guarde ESSA url: é a que a produção vai usar.');
   Logger.log('   não  → a Meta aceitou e descartou. A entrada fica em 2, e isso');
   Logger.log('          vira resposta, não pendência.');
   Logger.log('');
