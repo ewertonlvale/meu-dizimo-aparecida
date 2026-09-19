@@ -23,6 +23,10 @@
         "comunidade_padrao": {
           "type": "string",
           "__example__": "1"
+        },
+        "nome_padrao": {
+          "type": "string",
+          "__example__": "Maria"
         }
       },
       "layout": {
@@ -32,7 +36,8 @@
             "type": "Form",
             "name": "form_oferta",
             "init-values": {
-              "comunidade": "${data.comunidade_padrao}"
+              "comunidade": "${data.comunidade_padrao}",
+              "nome": "${data.nome_padrao}"
             },
             "children": [
               {
@@ -40,12 +45,24 @@
                 "text": "Sua oferta"
               },
               {
+                "type": "TextBody",
+                "text": "Escolha a comunidade que vai receber."
+              },
+              {
                 "type": "Dropdown",
                 "name": "comunidade",
                 "label": "Comunidade",
                 "required": true,
-                "data-source": "${data.comunidades}",
-                "helper-text": "Para qual comunidade vai a sua oferta"
+                "data-source": "${data.comunidades}"
+              },
+              {
+                "type": "TextInput",
+                "name": "nome",
+                "label": "Seu nome",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 2,
+                "max-chars": 60
               },
               {
                 "type": "TextInput",
@@ -62,6 +79,7 @@
                   "name": "complete",
                   "payload": {
                     "comunidade": "${form.comunidade}",
+                    "nome": "${form.nome}",
                     "valor": "${form.valor}"
                   }
                 }

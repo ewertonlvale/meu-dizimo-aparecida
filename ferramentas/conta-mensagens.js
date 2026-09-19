@@ -387,11 +387,11 @@ const CENARIOS = [
     porque: 'volta ao texto. Quem pediu ajuda não pode ficar sem contato nenhum'
   },
   {
-    nome: 'Oferta de quem JÁ é dizimista — não pergunta a comunidade',
+    nome: 'Oferta de quem JÁ é dizimista — TAMBÉM escolhe a comunidade',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.OfertaHandler.iniciar('55'),
     esperado: 1,
-    porque: 'o cadastro já respondeu a comunidade; vai direto ao valor'
+    porque: 'a do cadastro é sugestão, não resposta: dá para ofertar para outra'
   },
   {
     nome: 'Oferta de quem NÃO é cadastrado — pergunta a comunidade',
@@ -414,6 +414,21 @@ const CENARIOS = [
     roda: ctx => ctx.OfertaHandler.iniciar('55'),
     esperado: 1,
     porque: 'comunidade e valor numa submissão, e a comunidade já vem selecionada'
+  },
+  {
+    nome: 'Oferta de não cadastrado — pede o nome depois da comunidade',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.processarComunidade('55', 'ofc_3', 'São José'),
+    esperado: 1,
+    porque: 'sem nome, a oferta chega à secretaria como um telefone solto'
+  },
+  {
+    nome: 'Oferta de dizimista — NÃO pede o nome (já se sabe)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               sessao: { ofertaNome: 'Maria' } },
+    roda: ctx => ctx.OfertaHandler.processarComunidade('55', 'ofc_3', 'São José'),
+    esperado: 1,
+    porque: 'vai direto ao valor'
   },
   {
     nome: 'Submenu "Outras opções"',
@@ -566,6 +581,16 @@ const REGRAS_DE_CONTEUDO = [
     confere: msgs => {
       const ids = msgs.map(m => (m.texto.match(/\[(.*)\]/) || [, ''])[1]);
       return ids.every(x => x === ids[0]) ? null : `conjuntos diferentes: ${ids.join(' | ')}`;
+    }
+  },
+  {
+    nome: 'A lista de comunidades marca a da pessoa, mas traz todas',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    confere: msgs => {
+      const t = msgs[0].texto;
+      if (!t.includes('Para qual comunidade')) return 'não perguntou a comunidade';
+      return null;
     }
   },
   {

@@ -474,10 +474,12 @@ const FlowHandler = {
   _processarOferta(from, resposta) {
     const comunidadeId = parseInt(resposta.comunidade, 10);
     const valor        = Utils.parseValorBR(resposta.valor);
+    const nome         = String(resposta.nome || '').trim();
 
     const erros = [];
     if (!comunidadeId) erros.push('Comunidade não reconhecida');
     if (!valor || valor <= 0) erros.push('Valor da oferta inválido');
+    if (nome.length < 2) erros.push('Nome não informado');
 
     if (erros.length) {
       // A validação do Flow roda no cliente, então o servidor não pode confiar
@@ -493,20 +495,21 @@ const FlowHandler = {
       return;
     }
 
-    // O nome da comunidade não vem do formulário (o Dropdown devolve só o id),
+    // O nome da COMUNIDADE não vem do formulário — o Dropdown devolve só o id —,
     // e é ele que aparece na mensagem de pagamento.
-    let nome = '';
+    let nomeComunidade = '';
     try {
       const c = OdooService.searchRead('x_comunidade', ['x_name'],
         [['id', '=', comunidadeId]], { limit: 1 });
-      nome = (c && c[0] && c[0].x_name) || '';
+      nomeComunidade = (c && c[0] && c[0].x_name) || '';
     } catch (e) {
       console.warn('⚠️ [Flow] Não li o nome da comunidade:', e.message);
     }
 
     StateManager.salvarMultiplosCampos(from, {
       ofertaComunidadeId:   comunidadeId,
-      ofertaComunidadeNome: nome,
+      ofertaComunidadeNome: nomeComunidade,
+      ofertaNome:           nome,
       ofertaValor:          valor
     });
 
@@ -518,8 +521,9 @@ const FlowHandler = {
    * Manda o formulário de oferta. Devolve false quando não dá — e aí o
    * `OfertaHandler` segue pela conversa, que continua inteira.
    *
-   * @param {Object} [dados] - `{ comunidadePadrao }` para pré-selecionar a
-   *   comunidade de quem já é dizimista.
+   * @param {Object} [dados] - `{ comunidadePadrao, nomePadrao }` para
+   *   pré-preencher o formulário de quem já é dizimista. São sugestões: ele
+   *   pode ofertar para outra comunidade.
    */
   enviarFlowOferta(from, dados = {}) {
     const props  = PropertiesService.getScriptProperties();
@@ -574,7 +578,10 @@ const FlowHandler = {
               screen: 'OFERTA',
               data: {
                 comunidades:       comunidades,
-                comunidade_padrao: String(dados.comunidadePadrao || comunidades[0].id)
+                // Sugestões, não respostas: a pessoa pode ofertar para outra
+                // comunidade, e conferir o nome antes de enviar.
+                comunidade_padrao: String(dados.comunidadePadrao || comunidades[0].id),
+                nome_padrao:       String(dados.nomePadrao || '')
               }
             }
           }

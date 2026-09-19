@@ -48,9 +48,12 @@ const OfertaHandler = {
     const rel = dizimista && dizimista.x_studio_comunidade;
     const comunidadeId = Array.isArray(rel) ? rel[0] : rel;
 
+    // A comunidade do cadastro é SUGESTÃO, não resposta.
+    //
+    // A pessoa pertence a uma comunidade, mas pode ofertar para outra — numa
+    // festa, numa capela que visitou, numa obra específica. Por isso a pergunta
+    // é feita a todo mundo; para quem é dizimista ela só chega pré-selecionada.
     if (comunidadeId) {
-      // Dizimista: a comunidade dele é a aposta certa. Perguntar seria pedir
-      // de novo algo que o cadastro já respondeu.
       StateManager.salvarMultiplosCampos(from, {
         ofertaComunidadeId:   comunidadeId,
         ofertaComunidadeNome: Array.isArray(rel) ? rel[1] : '',
@@ -59,19 +62,21 @@ const OfertaHandler = {
       });
     }
 
-    // BL-41 (A7/A8): o formulário resolve comunidade e valor numa submissão —
-    // 2 mensagens da conversa viram 1. Para quem é dizimista, a comunidade já
-    // chega selecionada e sobra confirmar.
+    // BL-41 (A7/A8): o formulário resolve comunidade, nome e valor numa
+    // submissão — três perguntas da conversa viram uma mensagem. Para quem é
+    // dizimista, comunidade e nome já chegam preenchidos e sobra conferir.
     //
     // Devolve false com o interruptor desligado, sem FLOW_ID_OFERTA, sem
     // comunidade ativa ou se a Meta recusar. Em todos esses casos a conversa
     // abaixo continua valendo: ela NÃO é legado esperando remoção.
-    if (FlowHandler.enviarFlowOferta(from, { comunidadePadrao: comunidadeId })) {
+    if (FlowHandler.enviarFlowOferta(from, {
+          comunidadePadrao: comunidadeId,
+          nomePadrao:       (dizimista && dizimista.x_name) || ''
+        })) {
       console.log(`🎁 [Oferta] ${from} recebeu o formulário — conversa em espera`);
       return;
     }
 
-    if (comunidadeId) return this._pedirValor(from);
     this._pedirComunidade(from);
   },
 
@@ -110,9 +115,14 @@ const OfertaHandler = {
 
     StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMUNIDADE_OFERTA);
 
+    // A comunidade do dizimista fica marcada, mas a lista traz todas: ele pode
+    // ofertar para outra.
+    const daPessoa = StateManager.getCampo(from, 'ofertaComunidadeId');
+
     const rows = comunidades.slice(0, 9).map(c => ({
-      id:    `ofc_${c.id}`,
-      title: String(c.x_name || '').substring(0, 24)
+      id:          `ofc_${c.id}`,
+      title:       String(c.x_name || '').substring(0, 24),
+      description: (daPessoa && c.id === daPessoa) ? 'Sua comunidade' : ''
     }));
 
     Utils.enviarLista(from,
@@ -131,6 +141,30 @@ const OfertaHandler = {
       ofertaComunidadeId:   id,
       ofertaComunidadeNome: itemTitle || ''
     });
+
+    // Quem é cadastrado já tem nome; quem não é precisa informar, senão a
+    // oferta chega à secretaria como um telefone solto.
+    if (!StateManager.getCampo(from, 'ofertaNome')) return this._pedirNome(from);
+    this._pedirValor(from);
+  },
+
+  /** @private */
+  _pedirNome(from) {
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_NOME_OFERTA);
+    Utils.enviarSimples(from,
+      '🎁 *Oferta*\n\nComo você se chama?\n\n' +
+      '_Para a secretaria saber de quem foi a oferta._'
+    );
+  },
+
+  /** Nome digitado, enquanto em AGUARDANDO_NOME_OFERTA. */
+  processarNome(from, texto) {
+    const nome = String(texto || '').trim();
+    if (nome.length < 2) {
+      Utils.enviarSimples(from, '❌ Não entendi. Digite seu nome, por favor.');
+      return;
+    }
+    StateManager.salvarMultiplosCampos(from, { ofertaNome: nome.substring(0, 60) });
     this._pedirValor(from);
   },
 
@@ -215,6 +249,8 @@ const OfertaHandler = {
     }
 
     let msg = '━━━━━━━━━━━━━━━━━━━━\n🎁 *OFERTA*\n━━━━━━━━━━━━━━━━━━━━\n\n';
+    const quem = StateManager.getCampo(from, 'ofertaNome');
+    if (quem) msg += `Ofertante: *${quem}*\n`;
     msg += `Comunidade: *${comunidade.x_name || StateManager.getCampo(from, 'ofertaComunidadeNome') || '—'}*\n`;
     msg += `Valor: *${Utils.formatarValor(valor)}*\n\n`;
     msg += 'Que Deus abençoe sua generosidade! 💛\n\n';

@@ -15,6 +15,7 @@
  *     4. (sem erro nenhum) "Comunidade: ${data.comunidade}" apareceu LITERAL na
  *        tela do aparelho — o binding só resolve a string inteira, e o Flow
  *        Builder aceita a mistura sem reclamar
+ *     5. "Property 'helper-text' is not allowed in 'Dropdown' component"
  *
  *   Cada uma custou um ciclo de editar, colar, ler o erro. Este script cobra as
  *   mesmas regras aqui, em segundos.
@@ -32,6 +33,16 @@ const fs   = require('fs');
 const path = require('path');
 
 const LIMITES = { label: 20, 'helper-text': 80, text: 80, title: 30 };
+
+// Regra 5, descoberta em 19/09 publicando o formulário de oferta:
+// "Property 'helper-text' is not allowed in 'Dropdown' component."
+//
+// Nem toda propriedade vale para todo componente, e o erro só aparece ao colar
+// no Flow Builder — o campo existe, o JSON é válido, e mesmo assim é recusado.
+// Cada linha aqui é uma recusa REAL da Meta, não uma suposição sobre o schema.
+const PROIBIDO_POR_COMPONENTE = {
+  Dropdown: ['helper-text']
+};
 
 function componentes(form) {
   return (form.children || []).filter(c => c.name);
@@ -72,6 +83,14 @@ function validar(arquivo) {
                 `${chave} com ${v.length} caracteres (máx ${lim}) — "${v.slice(0, 40)}…"`);
         }
       }
+      // Regra 5: propriedade que não vale para aquele componente.
+      for (const prop of PROIBIDO_POR_COMPONENTE[c.type] || []) {
+        if (prop in c) {
+          aviso(`${onde} · ${c.name || c.type}`,
+                `'${prop}' não é permitido em '${c.type}'`);
+        }
+      }
+
       // Valor inicial pertence ao Form, não ao componente.
       if ('init-value' in c) {
         aviso(`${onde} · ${c.name || c.type}`,

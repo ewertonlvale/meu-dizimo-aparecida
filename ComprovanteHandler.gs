@@ -308,7 +308,12 @@ const ComprovanteHandler = {
       id = OdooService.registrarDevolucao(
         dizimistaId, dados, resultado.arquivoOriginalBase64,
         resultado.tipo === 'pdf' ? 'pdf' : 'imagem', conf.motivo,
-        { comunidadeId: comunidadeId, tipo: 'oferta', telefoneOfertante: from }
+        {
+          comunidadeId:      comunidadeId,
+          tipo:              'oferta',
+          telefoneOfertante: from,
+          nomeOfertante:     StateManager.getCampo(from, 'ofertaNome') || ''
+        }
       );
     } catch (e) {
       console.error('❌ [Oferta] Falha ao registrar:', e.message);
