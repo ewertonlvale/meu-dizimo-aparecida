@@ -34,6 +34,7 @@
  *   na entrega. Na primeira rodada desta sonda foi exatamente o que houve: as
  *   duas aceitas, uma só entregue. Por isso são três braços, e não dois.
  *
+ *   0. `GET /<media-id>` na Graph API           ← o id é entregável?
  *   1. a imagem SOZINHA, com o mesmo media ID   ← controle da mídia
  *   2. os botões COM cabeçalho de imagem        ← a pergunta
  *   3. os MESMOS botões sem cabeçalho           ← controle do envio
@@ -42,11 +43,15 @@
  *   1 e 3, sem a 2  → cabeçalho não é suportado. O A12 morre.
  *   só a 3          → o media ID está morto; a sonda não respondeu nada.
  *
+ *   O braço 0 é síncrono e não gasta mensagem: a Graph API diz na hora se o
+ *   id é entregável. Um id inválido é descartado e a imagem sobe de novo,
+ *   sem exigir uma segunda rodada.
+ *
  *   O braço 1 existe porque sem ele "a 2 não chegou" tem duas causas e
  *   nenhuma forma de separá-las. O motivo da Meta para cada descarte chega no
  *   webhook, e `Webhook.gs` o loga como "❌ [Entrega] <wamid> FALHOU".
  *
- * Versão: 2.0
+ * Versão: 3.0
  * Data: Setembro 2026
  */
 
@@ -94,47 +99,57 @@ function testarCabecalhoImagem(numero) {
   } catch (e) { /* segue para o upload */ }
 
   if (!mediaId) {
-    Logger.log('ℹ️ Sem media ID em cache — subindo o avatar do Odoo agora.');
-    try {
-      const p = OdooService.buscarParametros();
-      if (!p || !p.x_studio_avatar) {
-        Logger.log('❌ Não há avatar em `x_studio_avatar` no Odoo.');
-        Logger.log('   Mande um "oi" de um número novo primeiro (as boas-vindas');
-        Logger.log('   sobem a imagem e guardam o id), ou configure o avatar.');
-        return false;
-      }
-      // Sobe SEM enviar mensagem: o envio é justamente o que a sonda controla.
-      mediaId = MediaService.subirImagem(p.x_studio_avatar);
-      if (!mediaId) {
-        Logger.log('❌ O upload da imagem falhou — veja o erro acima.');
-        return false;
-      }
-    } catch (e) {
-      Logger.log(`❌ Falhei ao preparar a imagem: ${e.message}`);
-      return false;
-    }
+    mediaId = _subirAvatarDoOdoo();
+    if (!mediaId) return false;
   }
 
-  // ── 1. O TESTE: botões com cabeçalho de imagem ──────────────────────────
-  const comImagem = {
-    messaging_product: 'whatsapp',
-    recipient_type:    'individual',
-    to:                destino,
-    type:              'interactive',
-    interactive: {
-      type:   'button',
-      header: { type: 'image', image: { id: mediaId } },
-      body:   { text: '👋 *Teste do cabeçalho de imagem*\n\n' +
-                      'Se esta mensagem chegou COM a imagem acima dos botões, ' +
-                      'a entrada do bot pode cair de 2 para 1 mensagem. 💛' },
-      footer: { text: 'Com carinho, Cidinha 💛' },
-      action: {
-        buttons: [
-          { type: 'reply', reply: { id: 'btn_menu', title: '🔙 Menu' } }
-        ]
-      }
+  // ── A VALIDAÇÃO DO MEDIA ID ─────────────────────────────────────────────
+  // Síncrona, sem gastar mensagem. A Graph API responde o que um media ID é:
+  // `GET /<id>` devolve url, mime_type e tamanho se o id vale, e um erro se
+  // não vale. Isto separa de vez "a Meta descartou na entrega" de "o id nunca
+  // foi entregável" — e a idade em cache não responde: um id de 42 h pode
+  // estar morto se o WHATSAPP_PHONE_ID mudou, porque media ID é escopado ao
+  // número que subiu o arquivo.
+  Logger.log('\n🔍 Conferindo o media ID na Graph API (não envia nada)…');
+  try {
+    const cfg = getConfig();
+    const rv = Utils.fetchComRetry(
+      getWhatsAppUrl(`${mediaId}?phone_number_id=${cfg.WHATSAPP_PHONE_ID}`),
+      {
+        method:  'get',
+        headers: { Authorization: `Bearer ${cfg.WHATSAPP_TOKEN}` },
+        muteHttpExceptions: true
+      },
+      { idempotente: true, rotulo: 'Consulta media ID' }
+    );
+    const codeV = rv ? rv.getResponseCode() : null;
+    const corpo = rv ? rv.getContentText() : '';
+    Logger.log(`   HTTP ${codeV} — ${corpo}`);
+
+    const dados = corpo ? JSON.parse(corpo) : {};
+    if (codeV === 200 && dados.url) {
+      Logger.log(`   ✅ Media ID vivo: ${dados.mime_type}, ${dados.file_size} bytes.`);
+    } else {
+      Logger.log('   ❌ MEDIA ID INVÁLIDO. É esta a causa das sumiças, não o');
+      Logger.log('      cabeçalho. Repare o id antes de concluir qualquer coisa');
+      Logger.log('      sobre o A12.');
+      const e = dados.error || {};
+      if (e.code) Logger.log(`      Meta: código ${e.code} — ${e.message || ''}`);
+      Logger.log('');
+      Logger.log('      Causa mais comum: o media ID é escopado ao número que');
+      Logger.log('      subiu o arquivo. Se WHATSAPP_PHONE_ID mudou, todo id em');
+      Logger.log('      cache morreu junto.');
+      Logger.log('');
+      Logger.log('   🔧 Descartando o id morto e subindo a imagem de novo…');
+      MediaService._descartarMediaId('avatar');
+      mediaId = _subirAvatarDoOdoo();
+      if (!mediaId) return false;
+      Logger.log(`   ✅ Media ID novo: ${mediaId}. Seguindo com a sonda.`);
     }
-  };
+  } catch (err) {
+    Logger.log(`   ⚠️ Não consegui conferir o media ID: ${err.message}`);
+    Logger.log('   Seguindo assim mesmo — mas se as imagens sumirem, suspeite daqui.');
+  }
 
   // ── 0. O CONTROLE DA IMAGEM ─────────────────────────────────────────────
   // O braço que faltava. Sem ele, "a mensagem 1 não chegou" tem duas causas
@@ -224,4 +239,38 @@ function testarCabecalhoImagem(numero) {
   Logger.log('═'.repeat(60));
 
   return true;
+}
+
+/**
+ * Sobe o avatar do Odoo e devolve o media ID, ou null com o motivo no log.
+ *
+ * Existe porque a sonda precisa disto em dois pontos — quando não há id em
+ * cache e quando o id em cache se revela morto na validação — e repetir o
+ * bloco deixaria os dois caminhos divergirem na primeira manutenção.
+ *
+ * Sobe SEM enviar mensagem: o envio é justamente o que a sonda controla.
+ *
+ * @returns {string|null}
+ * @private
+ */
+function _subirAvatarDoOdoo() {
+  Logger.log('ℹ️ Subindo o avatar do Odoo agora.');
+  try {
+    const p = OdooService.buscarParametros();
+    if (!p || !p.x_studio_avatar) {
+      Logger.log('❌ Não há avatar em `x_studio_avatar` no Odoo.');
+      Logger.log('   Mande um "oi" de um número novo primeiro (as boas-vindas');
+      Logger.log('   sobem a imagem e guardam o id), ou configure o avatar.');
+      return null;
+    }
+    const id = MediaService.subirImagem(p.x_studio_avatar);
+    if (!id) {
+      Logger.log('❌ O upload da imagem falhou — veja o erro acima.');
+      return null;
+    }
+    return id;
+  } catch (e) {
+    Logger.log(`❌ Falhei ao preparar a imagem: ${e.message}`);
+    return null;
+  }
 }
