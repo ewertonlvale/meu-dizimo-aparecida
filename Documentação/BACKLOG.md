@@ -662,7 +662,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **A8.** `FlowHandler` da oferta. ✅ 19/09 — `TOKEN_OFERTA`, `_processarOferta` (revalida no servidor, porque a validação do Flow roda no cliente), `enviarFlowOferta`, estado `AGUARDANDO_FLOW_OFERTA`. ⚠️ Depende da Script Property **`FLOW_ID_OFERTA`** — sem ela a oferta segue pela conversa, sem quebrar
 - [x] **A9.** Handler de oferta. ✅ 19/09 — feito junto do A6 para não existir botão sem destino. Caminho de conversa completo; o formulário (A7/A8) entra por cima
 - [x] **A10.** "Convidar alguém". ✅ 19/09 — link em texto, não botão: mensagem interativa é *ou* botões *ou* URL, nunca as duas, e este caminho já custa 2 mensagens. ⚠️ Depende da Script Property nova **`WHATSAPP_NUMERO_EXIBICAO`** (o número do bot, formato 5586988521231) — sem ela o convite sai sem link clicável. Não dá para derivar do `PHONE_ID`, que é o id interno da Meta
-- [ ] **A11.** `FLUXOS.md`: novo fluxo, contagens e diagramas
+- [x] **A11.** `FLUXOS.md`: seção 5b com o fluxo da oferta, contagens e o custo do submenu. ✅ 19/09
 
 #### ⏸️ BLOQUEADO — depende de sonda
 
@@ -677,6 +677,26 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [ ] **S5.** `clasp push` + republicar o deployment
 - [ ] **S7.** Publicar `ferramentas/flow-oferta.json` no WhatsApp Manager e guardar o id em **`FLOW_ID_OFERTA`** (sem ela, a oferta usa a conversa)
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
+
+#### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
+
+**Concluídos:** A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11 — **a TRILHA A inteira**, menos o A12, que está bloqueado de propósito.
+
+**O A9 foi adiantado** para junto do A6: subir o botão de Oferta sem destino deixaria um caminho morto em produção até a execução seguinte.
+
+**Nada foi pulado por falta de decisão.**
+
+**Três coisas que o harness pegou e valem a sua atenção:**
+
+1. `devolucoesDoMes` estava stubada no harness, então o filtro por tipo não era exercitado. **Terceira vez** nesta sessão que um stub esconde justamente a lógica sob teste (antes: `criarDizimista`/BL-39 e `registrarDevolucao`/A3). Ficou um comentário no harness listando o que não pode ser stubado.
+2. A oferta exibia o valor do OCR e gravava o valor escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00. Corrigido: a mensagem mostra o que foi gravado.
+3. `campoExiste` não bastava para a comunidade, porque ela **já existe** e só muda de readonly para gravável. Escrever antes da migração faria o Odoo recusar a gravação inteira e a devolução se perderia. Daí o `campoGravavel()` novo.
+
+**Aguardando PR:** tudo. Esta execução não tem as ferramentas do GitHub, então os 9 commits estão no branch `claude/ecstatic-edison-ea2b5t`, sem PR aberto.
+
+**Nada foi enviado para `staging`.**
+
+---
 
 #### As 12 chamadas do item A5
 
