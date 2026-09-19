@@ -26,7 +26,13 @@ const ComprovanteHandler = {
   // PONTO DE ENTRADA ÚNICO
   // ==========================================================================
 
-  processar(from, arquivo) {
+  /**
+   * @param {string} from
+   * @param {Object} arquivo
+   * @param {string} [messageId] - `id` da mensagem recebida, para o indicador
+   *   de "digitando" (BL-37). Sem ele, o aviso de progresso volta a ser texto.
+   */
+  processar(from, arquivo, messageId) {
     console.log('📄 Iniciando processamento de comprovante de:', from);
 
     const tipo = this._detectarTipo(arquivo);
@@ -39,7 +45,15 @@ const ComprovanteHandler = {
       return;
     }
 
-    Utils.enviarSimples(from, `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+    // BL-37: o "⏳ Analisando comprovante..." era uma mensagem cobrada para
+    // dizer "estou trabalhando". O indicador de digitação diz o mesmo de graça
+    // — e melhor, porque é um balão vivo em vez de uma linha parada. Só quando
+    // ele não sai é que o texto volta: o OCR leva segundos, e silêncio total
+    // parece travamento.
+    if (!Utils.sinalizarProcessando(messageId)) {
+      Utils.enviarSimples(from,
+        `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+    }
 
     const resultado = this._processarArquivo(from, arquivo, tipo);
     this._tratarResultado(from, resultado);
@@ -71,6 +85,7 @@ const ComprovanteHandler = {
       dados: null,
       validacao: null,
       erro: null,
+      pdfIlegivel: false,
       tipo,
       arquivoOriginalBase64: null
     };
@@ -96,25 +111,14 @@ const ComprovanteHandler = {
         console.log('📄 Enviando PDF diretamente para Vision API...');
         analise = VisionService.analisarPDF(arquivoBaixado.base64);
 
-        // Fallback: Vision API não conseguiu extrair texto do PDF
-        // (protegido, escaneado com qualidade muito baixa, corrompido)
+        // BL-27: PDF sem texto extraível (protegido, escaneado ruim, corrompido
+        // — ou que simplesmente não é um comprovante). Aceitar aqui criaria uma
+        // devolução de R$ 0,00 sem chave para conferir, contornando a validação
+        // de destinatário do BL-26. Pede reenvio em vez de registrar.
         if (!analise) {
-          console.warn('⚠️ Vision API não extraiu dados do PDF — ativando fallback');
-          resultado.sucesso = true;
-          resultado.ehComprovante = true;
-          resultado.dados = {
-            valor: 0,
-            data: Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'dd/MM/yyyy'),
-            tipo: 'PDF',
-            banco: 'A confirmar',
-            chavePix: null,
-            textoCompleto: 'PDF recebido - análise manual necessária'
-          };
-          resultado.validacao = {
-            ehComprovante: true,
-            motivo: 'PDF aceito sem análise automática',
-            confianca: 50
-          };
+          console.warn('⚠️ Vision API não extraiu texto do PDF — pedindo reenvio');
+          resultado.pdfIlegivel = true;
+          resultado.erro = 'PDF sem texto extraível';
           return resultado;
         }
       }
@@ -153,6 +157,132 @@ const ComprovanteHandler = {
    *          motivo: 'ok' | 'divergente' | 'ausente' | 'sem_referencia'
    * @private
    */
+  /**
+   * Confere o comprovante contra o cadastro da comunidade (BL-46).
+   *
+   * Três sinais, de forças MUITO diferentes:
+   *
+   *   chave PIX  — forte. Se diverge, o dinheiro foi para outra conta.
+   *   nome       — médio. Depende de o layout do comprovante ser reconhecido.
+   *   banco      — fraco. Idem, e nomes de banco variam ("Itaú" x "Itaú
+   *                Unibanco"); serve para confirmar, mal serve para acusar.
+   *
+   * A chave manda. Nome e banco só decidem quando ela não pôde ser lida, e
+   * ainda assim precisam divergir OS DOIS — é o "totalmente divergente".
+   *
+   * O que NÃO foi extraído nunca conta contra ninguém: `null` é "não sei",
+   * não "não confere". Com a variedade de modelos de comprovante, tratar
+   * ausência como divergência reprovaria gente que pagou certo.
+   *
+   * @param {Object} dados      - `resultado.dados` do Vision
+   * @param {Object} comunidade - Registro x_comunidade
+   * @returns {{conferido: boolean, motivo: string}}
+   * @private
+   */
+  /**
+   * A frase de desfecho, conforme o que a conferência encontrou (BL-46).
+   *
+   * Três desfechos, e a diferença entre o segundo e o terceiro é o pedido do
+   * usuário: avisar que *as informações não conferem* só quando forem
+   * totalmente divergentes. Nos casos duvidosos a pessoa não precisa saber que
+   * houve dúvida — a secretaria confere e pronto. Dizer "seu comprovante não
+   * confere" a quem pagou certo é pior que conferir calado.
+   *
+   * Estava escrito em três lugares (individual, família e oferta), e já
+   * divergia entre eles.
+   *
+   * @param {string} motivo - Código de CONFERENCIA
+   * @param {string} oQue   - 'Sua devolução' | 'Sua oferta' | 'Ela'
+   * @private
+   */
+  _fraseDesfecho(motivo, oQue) {
+    if (motivo === 'ok') return `${oQue} foi registrada e será confirmada em breve.`;
+
+    if (alertaDoador(motivo)) {
+      return '⚠️ *O pagamento não confere.*\n\n' +
+             'Os dados de quem recebeu, acima, não batem com os da sua ' +
+             `comunidade. ${oQue} foi registrada e será *analisada por um ` +
+             'agente da Pastoral do Dízimo*.\n\n' +
+             'Se quiser falar com eles agora, é só tocar no botão abaixo. 💛';
+    }
+
+    return `${oQue} foi registrada e passará por *conferência da secretaria* ` +
+           'antes de ser confirmada.';
+  },
+
+  /**
+   * Manda o desfecho, com a saída certa para cada caso (BL-50).
+   *
+   * Quando a mensagem diz que o pagamento não confere, ela PRECISA oferecer a
+   * pastoral no mesmo balão: avisar alguém de que o dízimo dela pode ter ido
+   * para a conta errada e deixá-la sem para onde ir é pior que não avisar.
+   *
+   * Nos demais casos, o botão de sempre. Um balão, nos dois.
+   * @private
+   */
+  _responderDesfecho(from, texto, motivo) {
+    if (!alertaDoador(motivo)) return Utils.enviarComBotaoMenu(from, texto);
+
+    Utils.enviarMenu(from, texto, [
+      { id: 'btn_secretaria', title: '📞 Contato Pastoral' },
+      { id: 'btn_menu',       title: '🔙 Menu'             }
+    ]);
+  },
+
+  _conferirComprovante(dados, comunidade) {
+    dados = dados || {};
+    comunidade = comunidade || {};
+
+    const chave = this._conferirChave(dados.chavePix, comunidade.x_studio_chave_pix);
+
+    // Chave confere: nada acima disso muda o desfecho para a pessoa. Uma
+    // divergência de nome ou banco aqui vira conferência da secretaria, não
+    // alerta — pode ser o layout que não entendemos.
+    const rec = dados.recebedor || {};
+    const nomeDif  = this._textoDivergente(rec.nome,  comunidade.x_studio_titular_conta);
+    const bancoDif = this._textoDivergente(rec.banco, comunidade.x_studio_banco);
+
+    if (chave.motivo === 'ok') {
+      if (nomeDif)  return { conferido: false, motivo: 'titular_divergente' };
+      if (bancoDif) return { conferido: false, motivo: 'banco_divergente' };
+      return chave;
+    }
+
+    // Chave divergente já é o caso mais grave; nome e banco não agravam.
+    if (chave.motivo === 'divergente') return chave;
+
+    // Sem chave legível, nome E banco divergindo juntos é o sinal que sobra.
+    if (nomeDif && bancoDif) return { conferido: false, motivo: 'tudo_divergente' };
+
+    return chave;
+  },
+
+  /**
+   * Os dois textos divergem de verdade? (BL-46)
+   *
+   * `false` sempre que houver dúvida: sem um dos lados, ou com qualquer
+   * palavra significativa em comum. "PAROQUIA N S CONCEICAO" e "Paróquia
+   * Nossa Senhora da Conceição Aparecida" são a mesma conta escrita por dois
+   * sistemas, e um comparador exato acusaria as duas de divergentes.
+   *
+   * Divergente é só quando NENHUMA palavra significativa coincide.
+   * @private
+   */
+  _textoDivergente(a, b) {
+    const partes = (t) => String(t || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // tira acento
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(p => p.length > 2 && ['DOS', 'DAS', 'LTDA'].indexOf(p) < 0);
+
+    const pa = partes(a);
+    const pb = partes(b);
+    if (!pa.length || !pb.length) return false;        // faltou um lado: não sei
+
+    return !pa.some(p => pb.indexOf(p) >= 0);
+  },
+
   _conferirChave(extraida, esperada) {
     if (!esperada) return { conferido: false, motivo: 'sem_referencia' };
     if (!extraida) return { conferido: false, motivo: 'ausente' };
@@ -188,7 +318,7 @@ const ComprovanteHandler = {
    * chave (BL-26) é feita uma vez, contra a comunidade do responsável.
    * @private
    */
-  _tratarResultadoFamilia(from, resultado, lote) {
+  _tratarResultadoFamilia(from, resultado, lote, blocoDados) {
     console.log(`🎯 [Família] Registrando devolução em lote (${lote.length} membro(s))...`);
 
     let responsavel = null;
@@ -201,22 +331,18 @@ const ComprovanteHandler = {
     }
 
     // Conferência de chave (uma vez, contra a comunidade do responsável).
-    let conferido = false;
-    let observacao = '';
+    let conferido   = false;
+    let conferencia = '';
     if (responsavel) {
-      let chaveEsperada = null;
+      let comunidadeRef = null;
       try {
-        const comunidade = OdooService.buscarDadosPagamentoComunidade(responsavel);
-        chaveEsperada = comunidade && comunidade.x_studio_chave_pix;
+        comunidadeRef = OdooService.buscarDadosPagamentoComunidade(responsavel);
       } catch (e) {
         console.warn('⚠️ [Família] Não obtive a chave da comunidade:', e.message);
       }
-      const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
-      conferido = conf.conferido;
-      observacao = conferido ? '' :
-        (conf.motivo === 'divergente'
-          ? '⚠️ CONFERIR: chave do comprovante diverge da comunidade'
-          : '⚠️ CONFERIR: chave não identificada no comprovante');
+      const conf  = this._conferirComprovante(resultado.dados, comunidadeRef);
+      conferido   = conf.conferido;
+      conferencia = conf.motivo;
     }
 
     // Cria uma devolução por membro (valor = valor do membro).
@@ -231,7 +357,7 @@ const ComprovanteHandler = {
             tipo:  resultado.dados && resultado.dados.tipo
           };
           const devId = OdooService.registrarDevolucao(
-            m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, observacao
+            m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, conferencia
           );
           if (devId) registrados.push(m.nome);
         } catch (e) {
@@ -244,18 +370,18 @@ const ComprovanteHandler = {
     // Sucesso (ao menos uma criada): encerra a sessão.
     if (registrados.length > 0) {
       StateManager.limparDados(from);
-      const base  = `✅ *Comprovante recebido!*\n\nRegistrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
+      const base  = `✅ *Comprovante recebido!*\n\n${blocoDados || ''}` +
+                    `Registrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
       const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
-      Utils.enviarComBotaoMenu(from, conferido
-        ? `${base}\n\nSerá confirmada em breve.${fecho}`
-        : `${base}\n\nPassará por *conferência da secretaria* antes de ser confirmada.${fecho}`);
+      this._responderDesfecho(from,
+        `${base}\n\n${this._fraseDesfecho(conferencia, 'Ela')}${fecho}`, conferencia);
       return;
     }
 
     // Falha (Odoo/instabilidade): MANTÉM o estado para o usuário reenviar.
     if (erroOdoo || !responsavel) {
       Utils.enviarComBotaoMenu(from,
-        '⚠️ *Não consegui registrar as devoluções agora.*\n\n' +
+        '⚠️ *Não consegui registrar as devoluções agora.*\n\n' + (blocoDados || '') +
         'Seu comprovante foi recebido, mas houve uma falha ao salvar. ' +
         'Por favor, *reenvie o comprovante* em alguns minutos ou fale com a secretaria. 🙏'
       );
@@ -264,6 +390,111 @@ const ComprovanteHandler = {
 
     StateManager.limparDados(from);
     Utils.enviarComBotaoMenu(from, '⚠️ Não consegui registrar as devoluções. Tente novamente.');
+  },
+
+  /**
+   * Comprovante de uma OFERTA (BL-41).
+   *
+   * Diferente do dízimo em dois pontos que importam:
+   *   - pode não haver dizimista, e isso é normal — a comunidade vem da
+   *     escolha da pessoa, e o telefone fica no registro para a secretaria
+   *     conseguir falar com quem ofertou;
+   *   - o valor informado prevalece sobre o que o OCR leu. A pessoa disse
+   *     quanto ia ofertar; se o OCR discordar, quem erra é o OCR (BL-14), e
+   *     não faz sentido gravar um valor que ninguém escolheu.
+   * @private
+   */
+  _tratarResultadoOferta(from, resultado, blocoDados) {
+    const comunidadeId = StateManager.getCampo(from, 'ofertaComunidadeId');
+    const valorEscolhido = StateManager.getCampo(from, 'ofertaValor');
+    const dizimistaId = StateManager.getCampo(from, 'ofertaDizimistaId') || null;
+
+    const dados = Object.assign({}, resultado.dados);
+    if (valorEscolhido) dados.valor = valorEscolhido;
+
+    // O bloco exibido tem de refletir o que será GRAVADO. Montado antes desta
+    // correção, ele mostraria o valor do OCR enquanto o Odoo receberia o valor
+    // escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00 e não teria
+    // como saber qual dos dois vale.
+    blocoDados = this._blocoDados(dados);
+
+    let comunidadeRef = null;
+    try {
+      comunidadeRef = OdooService.buscarDadosPagamentoComunidade({ x_studio_comunidade: [comunidadeId] });
+    } catch (e) {
+      console.warn('⚠️ [Oferta] Não obtive a chave da comunidade:', e.message);
+    }
+    const conf = this._conferirComprovante(resultado.dados, comunidadeRef);
+
+    let id = null;
+    try {
+      id = OdooService.registrarDevolucao(
+        dizimistaId, dados, resultado.arquivoOriginalBase64,
+        resultado.tipo === 'pdf' ? 'pdf' : 'imagem', conf.motivo,
+        {
+          comunidadeId:      comunidadeId,
+          tipo:              'oferta',
+          telefoneOfertante: from,
+          nomeOfertante:     StateManager.getCampo(from, 'ofertaNome') || ''
+        }
+      );
+    } catch (e) {
+      console.error('❌ [Oferta] Falha ao registrar:', e.message);
+    }
+
+    if (!id) {
+      // MANTÉM o estado, para a pessoa reenviar sem refazer o fluxo.
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ *Não consegui registrar sua oferta agora.*\n\n' + blocoDados +
+        'Li o comprovante, mas houve uma falha ao salvar — ele *ainda não foi ' +
+        'registrado*. Por favor, reenvie em alguns minutos ou fale com a ' +
+        'secretaria informando os dados acima.\n\nPeço desculpas pelo transtorno. 🙏'
+      );
+      return;
+    }
+
+    StateManager.limparDados(from);
+    this._responderDesfecho(from,
+      '🎁 *Oferta recebida!*\n\n' + blocoDados +
+      this._fraseDesfecho(conf.motivo, 'Sua oferta') +
+      '\n\n🙏 Que Deus abençoe sua generosidade!',
+      conf.motivo
+    );
+  },
+
+  /**
+   * Monta o resumo do que o OCR leu. Vai prefixado à mensagem de resultado
+   * (BL-37) — não é enviado por conta própria.
+   * @private
+   */
+  _blocoDados(dados) {
+    const rec = dados.recebedor || {};
+    const naoVi = '_não identificado_';
+
+    let t = '━━━━━━━━━━━━━━━━━━━━\n📊 *DADOS IDENTIFICADOS*\n━━━━━━━━━━━━━━━━━━━━\n\n';
+
+    t += (dados.valor && dados.valor > 0)
+      ? `💰 *Valor devolvido:* ${Utils.formatarValor(dados.valor)}\n`
+      : `💰 *Valor devolvido:* ${naoVi}\n`;
+
+    t += dados.data ? `📅 *Data:* ${dados.data}\n` : `📅 *Data:* ${naoVi}\n`;
+    if (dados.tipo && dados.tipo !== 'Desconhecido') t += `💳 *Tipo:* ${dados.tipo}\n`;
+
+    // BL-50: quem RECEBEU, em campos próprios e sempre presentes — inclusive
+    // quando não foram lidos.
+    //
+    // O que falta é tão informativo quanto o que veio: se a mensagem diz que
+    // algo não confere, a pessoa precisa ver O QUE foi lido para julgar. Um
+    // campo omitido em silêncio deixaria "não confere" sem apelação.
+    //
+    // O banco aqui é o do RECEBEDOR, não `dados.banco` — aquele é o primeiro
+    // banco do texto, que num comprovante é o app de quem pagou (BL-46).
+    t += '\n👤 *Quem recebeu*\n';
+    t += `   Nome: ${rec.nome || naoVi}\n`;
+    t += `   Chave PIX: ${dados.chavePix || naoVi}\n`;
+    t += `   Banco: ${rec.banco || naoVi}\n`;
+
+    return t + '\n━━━━━━━━━━━━━━━━━━━━\n\n';
   },
 
   // ==========================================================================
@@ -275,6 +506,23 @@ const ComprovanteHandler = {
     
     if (!resultado.sucesso) {
       console.log('🎯 [_tratarResultado] FALHOU - Não teve sucesso');
+
+      // BL-27: PDF ilegível — mantém o estado AGUARDANDO_COMPROVANTE para o
+      // usuário reenviar, e deixa claro que nada foi registrado.
+      if (resultado.pdfIlegivel) {
+        Utils.enviarMenu(from,
+          '📄 *Não consegui ler este PDF*\n\n' +
+          'Recebi o arquivo, mas não consegui extrair os dados dele — por isso ' +
+          'sua devolução *ainda não foi registrada*.\n\n' +
+          'Por favor, envie:\n' +
+          '• Uma *foto* (ou print) do comprovante, ou\n' +
+          '• O PDF original do aplicativo do banco, sem senha\n\n' +
+          'Se o problema continuar, fale com a secretaria. 🙏',
+          [{ id: 'btn_menu', title: '🔙 Menu' }]
+        );
+        return;
+      }
+
       MenuHandler.erro(from,
         `Não consegui processar o comprovante.\n\n_Motivo: ${resultado.erro || 'Erro desconhecido'}_\n\n` +
         'Tente novamente ou entre em contato com a secretaria.'
@@ -292,63 +540,35 @@ const ComprovanteHandler = {
       return;
     }
 
-    // ===== VERIFICAR SE É PDF EM MODO FALLBACK =====
-    const isPdfFallback = resultado.dados.tipo === 'PDF' && resultado.dados.valor === 0;
     const dados = resultado.dados;
 
-    // ===== EXIBIR DADOS EXTRAÍDOS =====
     console.log('🎯 [_tratarResultado] Comprovante VÁLIDO');
-    
-    if (isPdfFallback) {
-      Utils.enviarSimples(from,
-        '📄 *Comprovante PDF recebido!*\n\n' +
-        'Não consegui extrair os dados automaticamente deste PDF.\n\n' +
-        'Os dados serão confirmados manualmente pela secretaria.\n\n' +
-        '━━━━━━━━━━━━━━━━━━━━\n' +
-        '⏳ Registrando sua devolução...'
-      );
-    } else {
-      let mensagemDados = '✅ *Comprovante analisado com sucesso!*\n\n';
-      mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n';
-      mensagemDados += '📊 *DADOS IDENTIFICADOS*\n';
-      mensagemDados += '━━━━━━━━━━━━━━━━━━━━\n\n';
-      
-      if (dados.valor && dados.valor > 0) {
-        mensagemDados += `💰 *Valor:* R$ ${dados.valor.toFixed(2).replace('.', ',')}\n`;
-      } else {
-        mensagemDados += `💰 *Valor:* Não identificado\n`;
-      }
-      
-      if (dados.data) {
-        mensagemDados += `📅 *Data:* ${dados.data}\n`;
-      } else {
-        mensagemDados += `📅 *Data:* Não identificada\n`;
-      }
-      
-      if (dados.tipo && dados.tipo !== 'Desconhecido') {
-        mensagemDados += `💳 *Tipo:* ${dados.tipo}\n`;
-      }
-      
-      if (dados.banco) {
-        mensagemDados += `🏦 *Banco:* ${dados.banco}\n`;
-      }
-      
-      if (dados.chavePix) {
-        mensagemDados += `🔑 *Chave PIX:* ${dados.chavePix}\n`;
-      }
-      
-      mensagemDados += '\n━━━━━━━━━━━━━━━━━━━━\n';
-      mensagemDados += `⏳ Registrando sua devolução...`;
-      
-      Utils.enviarSimples(from, mensagemDados);
+
+    // BL-37: os dados extraídos NÃO são mais uma mensagem própria.
+    //
+    // Eram enviados aqui, seguidos de "⏳ Registrando sua devolução...", e logo
+    // depois vinha o resultado — que repetia valor e data. Duas mensagens
+    // cobradas para o mesmo conteúdo, separadas por alguns segundos de Odoo.
+    // Agora o bloco vai NA mensagem de resultado, que sai de qualquer forma.
+    //
+    // A pessoa continua vendo o que o OCR leu, que é o que importa: a extração
+    // de valor é reconhecidamente frágil (BL-14), e é olhando esse bloco que
+    // alguém percebe um valor errado. Só vê junto com o desfecho, em vez de
+    // antes dele.
+    const blocoDados = this._blocoDados(dados);
+
+    // ===== CONTEXTO DE OFERTA (BL-41) =====
+    // Precisa vir ANTES da busca por dizimista: a oferta pode ser de quem o bot
+    // nunca viu, e o caminho normal responderia "não encontrei seu cadastro" —
+    // depois de a pessoa já ter pagado.
+    if (StateManager.getCampo(from, 'ofertaComunidadeId')) {
+      return this._tratarResultadoOferta(from, resultado, blocoDados);
     }
-    
-    Utilities.sleep(2000);
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
     const lote = StateManager.getCampo(from, 'devolucaoLote');
     if (lote && lote.length) {
-      return this._tratarResultadoFamilia(from, resultado, lote);
+      return this._tratarResultadoFamilia(from, resultado, lote, blocoDados);
     }
 
     // ===== REGISTRAR NO ODOO =====
@@ -362,6 +582,11 @@ const ComprovanteHandler = {
     let dizimista   = null;
     let erroOdoo    = false;
     let conferido   = false;   // BL-26: chave do comprovante confere com a da comunidade?
+    // BL-46: o CÓDIGO da conferência, não só o sim/não. É ele que decide se a
+    // pessoa é avisada de que os dados não batem ou se a secretaria confere
+    // calada — e 'sem_referencia' (a comunidade não tem chave cadastrada) não
+    // é culpa de quem pagou.
+    let motivoConferencia = 'sem_referencia';
 
     try {
       dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
@@ -379,29 +604,24 @@ const ComprovanteHandler = {
         // BL-26: conferir se o comprovante foi feito para a chave PIX da comunidade.
         // Se não bater (ou não houver chave legível), registra mesmo assim, porém
         // marcado para conferência manual — nunca confirmamos como verificado.
-        let chaveEsperada = null;
+        let comunidadeRef = null;
         try {
-          const comunidade = OdooService.buscarDadosPagamentoComunidade(dizimista);
-          chaveEsperada = comunidade && comunidade.x_studio_chave_pix;
+          comunidadeRef = OdooService.buscarDadosPagamentoComunidade(dizimista);
         } catch (eCom) {
           console.warn('⚠️ [_tratarResultado] Não obtive a chave da comunidade:', eCom.message);
         }
 
-        const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+        const conf = this._conferirComprovante(resultado.dados, comunidadeRef);
         conferido = conf.conferido;
-        console.log(`🎯 [_tratarResultado] Conferência de chave: ${conferido ? 'OK' : 'PENDENTE'} (${conf.motivo})`);
-
-        const observacao = conferido ? '' :
-          (conf.motivo === 'divergente'
-            ? '⚠️ CONFERIR: chave do comprovante diverge da comunidade'
-            : '⚠️ CONFERIR: chave não identificada no comprovante');
+        motivoConferencia = conf.motivo;
+        console.log(`🎯 [_tratarResultado] Conferência: ${conferido ? 'OK' : 'PENDENTE'} (${conf.motivo})`);
 
         devolucaoId = OdooService.registrarDevolucao(
           dizimista.id,
           resultado.dados,
           resultado.arquivoOriginalBase64,
           tipoComprovante,
-          observacao
+          conf.motivo
         );
         console.log('🎯 [_tratarResultado] ✅ Devolução registrada! ID:', devolucaoId);
       } catch (e) {
@@ -412,29 +632,20 @@ const ComprovanteHandler = {
     }
 
     // ===== RESPOSTA FINAL — honesta quanto ao que realmente aconteceu =====
-    const dadosResumo =
-      (dados.valor > 0 ? `• Valor: R$ ${dados.valor.toFixed(2).replace('.', ',')}\n` : '') +
-      (dados.data     ? `• Data: ${dados.data}\n` : '');
+    // BL-37: `blocoDados` entra em todos os desfechos. Antes havia um
+    // `dadosResumo` reduzido só para o caso de falha, e o bloco completo ia
+    // numa mensagem separada — dois formatos do mesmo conteúdo.
 
     // 1) Sucesso real: devolução criada. Encerra a sessão.
     if (devolucaoId) {
       StateManager.limparDados(from);
-      if (conferido) {
-        // Chave do comprovante confere com a da comunidade.
-        Utils.enviarComBotaoMenu(from,
-          '✅ *Comprovante recebido com sucesso!*\n\n' +
-          'Sua devolução foi registrada e será confirmada em breve.\n\n' +
-          '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
-        );
-      } else {
-        // BL-26: chave divergente ou não identificada — não prometer confirmação.
-        Utils.enviarComBotaoMenu(from,
-          '✅ *Comprovante recebido!*\n\n' +
-          'Sua devolução foi registrada e passará por *conferência da secretaria* ' +
-          'antes de ser confirmada.\n\n' +
-          '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
-        );
-      }
+      this._responderDesfecho(from,
+        (conferido ? '✅ *Comprovante recebido com sucesso!*\n\n'
+                   : '✅ *Comprovante recebido!*\n\n') + blocoDados +
+        this._fraseDesfecho(motivoConferencia, 'Sua devolução') +
+        '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!',
+        motivoConferencia
+      );
       return;
     }
 
@@ -442,12 +653,11 @@ const ComprovanteHandler = {
     //    AGUARDANDO_COMPROVANTE para o usuário reenviar sem refazer o fluxo.
     if (erroOdoo) {
       Utils.enviarComBotaoMenu(from,
-        '⚠️ *Não consegui registrar sua devolução agora.*\n\n' +
-        'Estamos com uma instabilidade temporária, então seu comprovante ' +
-        '*ainda não foi registrado*. Por favor, *reenvie o comprovante* em ' +
-        'alguns minutos ou fale com a secretaria' +
-        (dadosResumo ? ' informando:\n' + dadosResumo : '.') +
-        '\nPeço desculpas pelo transtorno. 🙏'
+        '⚠️ *Não consegui registrar sua devolução agora.*\n\n' + blocoDados +
+        'Li o comprovante, mas estamos com uma instabilidade temporária — então ' +
+        'ele *ainda não foi registrado*. Por favor, *reenvie o comprovante* em ' +
+        'alguns minutos, ou fale com a secretaria informando os dados acima.\n\n' +
+        'Peço desculpas pelo transtorno. 🙏'
       );
       return;
     }
@@ -455,7 +665,7 @@ const ComprovanteHandler = {
     // 3) Número realmente não cadastrado. Nada foi registrado; volta ao menu.
     StateManager.limparDados(from);
     Utils.enviarMenu(from,
-      '⚠️ *Não encontrei seu cadastro* para registrar a devolução.\n\n' +
+      '⚠️ *Não encontrei seu cadastro* para registrar a devolução.\n\n' + blocoDados +
       'Por isso, seu comprovante *ainda não foi registrado*. Para concluir, ' +
       'faça seu cadastro como dizimista ou entre em contato com a secretaria.',
       [

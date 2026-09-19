@@ -19,9 +19,9 @@
  *   — Menus e Fluxos —
  *   testarMenuPrincipal()       → Envia o menu principal
  *   testarSerDizimista()        → Inicia o fluxo de cadastro (btn_ser_dizimista)
- *   testarSouDizimista()        → Verifica cadastro e exibe opções (btn_ja_sou_dizimista)
+ *   testarSouDizimista()        → Botão antigo btn_ja_sou_dizimista (ver BL-38)
  *   testarDevolverDizimo()      → Inicia fluxo de devolução (btn_devolver_dizimo)
- *   testarHistorico()           → Exibe histórico de devoluções (btn_minhas_devolucoes)
+ *   testarHistorico()           → Histórico (botão antigo; hoje o atalho é digitar "histórico")
  *   testarSecretaria()          → Exibe informações da secretaria (btn_secretaria)
  *
  *   — Diagnóstico —
@@ -262,8 +262,9 @@ function testarSerDizimista() {
 }
 
 /**
- * Simula clique em "🙏 Já sou Dizimista".
- * Busca cadastro no Odoo e exibe opções de devolução ou histórico.
+ * Simula o toque no botão antigo "🙏 Já sou Dizimista", que saiu dos menus no
+ * BL-38 mas continua chegando pelas mensagens antigas na conversa das pessoas.
+ * Hoje ele encaminha para `MenuHandler.entrada`, que decide pelo número.
  */
 function testarSouDizimista() {
   Logger.log('\n🔍 TESTE: Já sou Dizimista (btn_ja_sou_dizimista)\n' + '━'.repeat(40));
@@ -275,8 +276,8 @@ function testarSouDizimista() {
     DevolucaoHandler.verificarDizimista(NUMERO_TESTE);
 
     Logger.log(`✅ Verificação executada para ${NUMERO_TESTE}`);
-    Logger.log(`   Se cadastrado: exibiu opções de devolução e histórico`);
-    Logger.log(`   Se não cadastrado: sugeriu cadastro`);
+    Logger.log(`   Se cadastrado: menu do dizimista (1 mensagem, sem identificação)`);
+    Logger.log(`   Se não cadastrado: foi direto para o cadastro`);
     return true;
   } catch (error) {
     Logger.log(`❌ Erro: ${error.message}`);

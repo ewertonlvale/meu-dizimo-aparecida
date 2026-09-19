@@ -31,27 +31,81 @@ const CadastroHandler = {
   // INICIAR CADASTRO
   // ==========================================================================
 
-  iniciar(from) {
-    const dizimistaExistente = OdooService.buscarDizimistaPorWhatsapp(from);
+  /**
+   * @param {string} from
+   * @param {Object|null} [jaBuscado] - Resultado de `buscarDizimistaPorWhatsapp`
+   *   quando quem chamou já consultou. Evita a segunda ida ao Odoo no caminho
+   *   do primeiro contato, que passa por `MenuHandler.entrada`.
+   */
+  /**
+   * O cadastro por CONVERSA está ligado? (BL-44)
+   *
+   * Desligado por padrão: só `'true'` liga, como o `FLOW_CADASTRO_ATIVO`.
+   * O formulário passou a ser o único caminho de cadastro — são 19 mensagens
+   * contra 4, e o passo a passo existia para quem não conseguisse abrir o
+   * formulário, não como caminho principal.
+   *
+   * O código do passo a passo CONTINUA aqui, inteiro. Isto é um interruptor,
+   * não uma remoção: se o formulário der problema, `CADASTRO_CONVERSA_ATIVO`
+   * = `true` devolve o caminho antigo sem republicar nada.
+   *
+   * @returns {boolean}
+   */
+  conversaAtiva() {
+    try {
+      return PropertiesService.getScriptProperties()
+        .getProperty('CADASTRO_CONVERSA_ATIVO') === 'true';
+    } catch (e) {
+      return false;
+    }
+  },
+
+  iniciar(from, jaBuscado) {
+    const dizimistaExistente = jaBuscado !== undefined
+      ? jaBuscado
+      : OdooService.buscarDizimistaPorWhatsapp(from);
 
     if (dizimistaExistente) {
-      const nome = dizimistaExistente.x_name || 'Dizimista';
-      Utilities.sleep(2000);
-      Utils.enviarMenu(from,
-        `👋 Olá, *${nome}*!\n\nVocê já está cadastrado(a) em nosso sistema!\n\n` +
-        `Se deseja atualizar seus dados, entre em contato com a secretaria.`,
-        [
-          { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
-          { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },
-          { id: 'btn_menu',             title: '🔙 Menu'             }
-        ]
-      );
+      // Mesmo menu de sempre para quem já é dizimista — um lugar só, para as
+      // duas telas não divergirem com o tempo.
+      MenuHandler.menuDizimista(from, dizimistaExistente);
       return;
     }
 
     StateManager.limparDados(from);
     StateManager.iniciarSessaoCadastro(from);
-    StateManager.registrarSessaoAtiva(from); 
+    StateManager.registrarSessaoAtiva(from);
+
+    // BL-33: o formulário, quando ligado. `enviarFlowCadastro` devolve `false`
+    // se o interruptor estiver desligado, se o id não estiver configurado, se
+    // o Odoo não responder ou se não houver comunidade ativa — e em todos
+    // esses casos a conversa abaixo continua valendo. O caminho por conversa
+    // NÃO é legado esperando remoção: é o destino de quem abre o formulário e
+    // desiste, de quem está num aparelho que não o renderiza e de quem cai na
+    // validação do servidor.
+    if (FlowHandler.enviarFlowCadastro(from)) {
+      console.log(`📋 [Cadastro] ${from} recebeu o formulário — conversa em espera`);
+      return;
+    }
+
+    // O formulário não saiu: desligado, sem id, sem comunidade, Odoo fora do
+    // ar. Com o cadastro por conversa desligado (BL-44), não há segundo
+    // caminho — e quem quer se cadastrar NÃO pode ficar sem resposta.
+    //
+    // Isto é erro, não informação: significa que ninguém consegue se cadastrar
+    // agora. O log precisa gritar para que alguém repare o formulário; a
+    // pessoa, enquanto isso, recebe quem procurar.
+    if (!this.conversaAtiva()) {
+      console.error(`❌ [Cadastro] Formulário indisponível e conversa desligada — ` +
+                    `${from} não tem como se cadastrar. Confira FLOW_ID_CADASTRO, ` +
+                    `FLOW_CADASTRO_ATIVO e as comunidades ativas no Odoo.`);
+      StateManager.limparDados(from);
+      MenuHandler.lembrarCadastroPendente(from,
+        '🙏 *Desculpe!* Não consegui abrir o formulário de cadastro agora.\n\n' +
+        'Tente de novo em alguns minutos. Se continuar assim, fale com a ' +
+        'pastoral da sua comunidade — eles cadastram você por lá. 💛');
+      return;
+    }
 
     const numeroFormatado = Utils.formatarNumeroExibicao(from);
 
@@ -99,6 +153,33 @@ const CadastroHandler = {
       responsavelEndereco: responsavel.x_studio_endereco || '',
       responsavelDia:      responsavel.x_studio_dia_preferido || 10
     });
+
+    // O formulário de membro, quando houver. Ele chega PREENCHIDO com o
+    // endereço e o dia do responsável — que na conversa custam uma pergunta
+    // com dois botões e um estado só para isso, e no formulário são um campo
+    // que já vem certo e a pessoa altera se precisar.
+    //
+    // Degrada sozinho: sem FLOW_ID_MEMBRO ou com o interruptor desligado, o
+    // familiar é cadastrado pela conversa abaixo, como sempre foi.
+    if (FlowHandler.enviarFlowMembro(from, StateManager.getDadosTemporarios(from))) {
+      console.log(`👨‍👩‍👧 [Membro] ${from} recebeu o formulário — conversa em espera`);
+      return;
+    }
+
+    // Mesmo interruptor do cadastro (BL-44): as duas conversas são a mesma
+    // coisa — cadastrar gente perguntando campo por campo. São 14 mensagens
+    // aqui, contra 4 pelo formulário.
+    if (!this.conversaAtiva()) {
+      console.error(`❌ [Membro] Formulário indisponível e conversa desligada — ` +
+                    `${from} não consegue adicionar familiar. Confira FLOW_ID_MEMBRO ` +
+                    `e FLOW_CADASTRO_ATIVO.`);
+      StateManager.limparDados(from);
+      MenuHandler.lembrarCadastroPendente(from,
+        '🙏 *Desculpe!* Não consegui abrir o formulário para adicionar seu ' +
+        'familiar agora.\n\nTente de novo em alguns minutos. Se continuar ' +
+        'assim, a pastoral da sua comunidade cadastra por lá. 💛');
+      return;
+    }
 
     Utils.enviarSimples(from,
       `👨‍👩‍👧 *Adicionar membro da família*\n\n` +
@@ -222,15 +303,9 @@ const CadastroHandler = {
     const mes = data.substring(2, 4);
     const ano = data.substring(4, 8);
 
-    // BL-08: validar data real (rejeita 31/02), não futura e ano plausível.
-    const nDia = parseInt(dia, 10);
-    const nMes = parseInt(mes, 10);
-    const nAno = parseInt(ano, 10);
-    const d = new Date(nAno, nMes - 1, nDia);
-    const dataReal =
-      d.getFullYear() === nAno && d.getMonth() === nMes - 1 && d.getDate() === nDia;
-
-    if (!dataReal || nAno < 1900 || d > new Date()) {
+    // BL-08: a regra mora em Utils.validarDataBR, porque o Flow precisa dela sem
+    // o envio de mensagem que vem logo abaixo.
+    if (!Utils.validarDataBR(dia, mes, ano)) {
       MenuHandler.campoInvalido(from, 'Data', 'informe uma data de nascimento válida e não futura. Exemplo: 15/03/1990');
       return;
     }
@@ -299,18 +374,10 @@ const CadastroHandler = {
   // ==========================================================================
 
   processarValorMensal(from, texto) {
-    // BL-06: tratar separador de milhar. "1.000,50" → 1000.5 (antes virava 1).
-    // Regra: vírgula presente → ponto é milhar; sem vírgula, ponto+3 dígitos
-    // também é milhar (ex.: "1.000"); ponto isolado (ex.: "50.00") é decimal.
-    let t = String(texto).replace(/[^\d.,]/g, '');
-    if (t.indexOf(',') >= 0) {
-      t = t.replace(/\./g, '').replace(',', '.');
-    } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
-      t = t.replace(/\./g, '');
-    }
-    const valor = parseFloat(t);
+    // BL-06: a regra de milhar mora em Utils.parseValorBR — o Flow usa a mesma.
+    const valor = Utils.parseValorBR(texto);
 
-    if (isNaN(valor) || valor <= 0) {
+    if (valor === null) {
       MenuHandler.campoInvalido(from, 'Valor', 'informe um número válido. Escreva somente o valor. Por exemplo: 50 ou 50,00');
       return;
     }
@@ -435,9 +502,32 @@ const CadastroHandler = {
     );
   },
 
-  /** Membro: pula a foto e vai ao resumo. */
-  pularFotoMembro(from) {
+  /** Pula a foto e vai ao resumo. Serve ao membro e a quem veio pelo Flow. */
+  pularFoto(from) {
     this.mostrarResumo(from);
+  },
+
+  /** @deprecated Use `pularFoto`. Mantido pelo id de botão antigo. */
+  pularFotoMembro(from) {
+    this.pularFoto(from);
+  },
+
+  /**
+   * Pede a foto de quem preencheu o formulário (BL-33).
+   *
+   * Com opção de pular, ao contrário do cadastro por conversa. A diferença é
+   * proposital: ali a foto é uma pergunta entre outras, e quem chegou até ela
+   * já respondeu oito. Aqui é a ÚNICA coisa que separa a pessoa de terminar um
+   * cadastro que ela já preencheu inteiro — travar nesse ponto seria perder o
+   * cadastro por causa do passo mais dispensável.
+   */
+  pedirFotoDoDizimista(from) {
+    StateManager.setEstado(from, ESTADOS.AGUARDANDO_FOTO_PERFIL);
+    Utils.enviarMenu(from,
+      `✅ *Recebi seus dados!*\n\n📸 Para terminar, envie uma foto sua de perfil.\n\n` +
+      `💡 Pode ser uma selfie ou uma foto da galeria.`,
+      [{ id: 'btn_foto_pular', title: '⏭️ Pular foto' }]
+    );
   },
 
   // ==========================================================================
@@ -489,6 +579,82 @@ const CadastroHandler = {
   //this.mostrarResumo(from);
 
   // ==========================================================================
+  // REAPRESENTAR O PASSO ATUAL (BL-28)
+  // ==========================================================================
+
+  /**
+   * Repete a pergunta do passo em que o cadastro parou.
+   *
+   * O WhatsApp mantém as mensagens interativas ANTIGAS clicáveis na conversa.
+   * Basta a pessoa rolar para cima e tocar numa lista de uma etapa anterior —
+   * ou de outro fluxo — para que a resposta chegue fora de contexto. Antes,
+   * isso caía no menu principal e o cadastro em andamento era abandonado sem
+   * uma palavra.
+   *
+   * O BL-10 já tinha tratado exatamente este risco para os atalhos de TEXTO
+   * ("menu", "0", "rel"); as respostas interativas ficaram de fora.
+   *
+   * @param {string} from
+   * @returns {boolean} false se não havia cadastro em andamento.
+   */
+  reapresentarPasso(from) {
+    const estado = StateManager.getEstado(from);
+    if (!ESTADOS_CADASTRO.includes(estado)) return false;
+
+    const dados    = StateManager.getDadosTemporarios(from);
+    const ehMembro = !!dados.cadastrandoMembro;
+
+    switch (estado) {
+      case ESTADOS.AGUARDANDO_CONFIRMACAO_NUMERO:
+        Utils.enviarConfirmar(from,
+          `📱 Esse número é o correto para o cadastro?\n\n*${Utils.formatarNumeroExibicao(from)}*`,
+          'btn_numero_confirmar', 'btn_numero_cancelar');
+        return true;
+
+      case ESTADOS.AGUARDANDO_COMUNIDADE:
+        this._enviarPaginaComunidades(from, OdooService.listarComunidades(), 0, true);
+        return true;
+
+      case ESTADOS.AGUARDANDO_NOME:
+        Utils.enviarSimples(from, '📝 *Nome Completo*\n\nDigite seu nome completo como está no documento:');
+        return true;
+
+      case ESTADOS.AGUARDANDO_NOME_USUAL:
+        Utils.enviarSimples(from, '💛 Como gostaria de ser chamado(a)?\n\nPode ser seu apelido ou nome de preferência:');
+        return true;
+
+      case ESTADOS.AGUARDANDO_DATA_NASCIMENTO:
+        Utils.enviarSimples(from, '📅 *Data de Nascimento*\n\nDigite no formato DD/MM/AAAA\nExemplo: 15/03/1990');
+        return true;
+
+      case ESTADOS.AGUARDANDO_ENDERECO:
+        Utils.enviarSimples(from, '🏠 *Endereço*\n\nDigite seu endereço completo:\n\n_Rua, número, bairro e ponto de referência_');
+        return true;
+
+      case ESTADOS.AGUARDANDO_VALOR_MENSAL:
+        Utils.enviarSimples(from, '💰 *Valor Mensal do Dízimo*\n\nEscreva somente o valor. Por exemplo: 50 ou 50,00');
+        return true;
+
+      case ESTADOS.AGUARDANDO_NOTIFICACAO:
+        Utils.enviarConfirmar(from,
+          '📲 *NOTIFICAÇÕES*\n\nDeseja receber lembretes mensais sobre suas devoluções?',
+          'btn_notificacao_sim', 'btn_notificacao_nao');
+        return true;
+
+      case ESTADOS.AGUARDANDO_DIA_PREFERIDO:
+        Utils.enviarSimples(from, '📅 Digite o dia do mês para o lembrete (número de *1 a 28*):');
+        return true;
+
+      case ESTADOS.AGUARDANDO_FOTO_PERFIL:
+        if (ehMembro) this._pedirFotoMembro(from);
+        else          this.pedirFotoDoDizimista(from);
+        return true;
+    }
+
+    return false;
+  },
+
+  // ==========================================================================
   // RESUMO E FINALIZAÇÃO
   // ==========================================================================
 
@@ -527,7 +693,16 @@ const CadastroHandler = {
     const dados = StateManager.getDadosTemporarios(from);
     const ehMembro = !!dados.cadastrandoMembro;
 
-    Utils.enviarSimples(from, ehMembro ? '⏳ Adicionando membro...' : '⏳ Salvando seu cadastro...');
+    // BL-37: mesmo tratamento do "⏳ Analisando comprovante..." — um aviso de
+    // progresso não vale uma mensagem cobrada quando o balão de "digitando" diz
+    // a mesma coisa de graça. Só quando ele não sai é que o texto volta.
+    //
+    // Efeito colateral bem-vindo: quem responde um formulário antigo (BL-39)
+    // deixa de receber "⏳ Salvando seu cadastro..." seguido de "você já está
+    // cadastrado" — dois avisos contraditórios, sendo o primeiro cobrado.
+    if (!Utils.sinalizarProcessando()) {
+      Utils.enviarSimples(from, ehMembro ? '⏳ Adicionando membro...' : '⏳ Salvando seu cadastro...');
+    }
 
     try {
       // ── Membro da família ────────────────────────────────────────────────
@@ -558,7 +733,10 @@ const CadastroHandler = {
         }
         msg += `\n\nVocê já pode devolver o dízimo dele(a) por você. 💛`;
 
-        Utils.enviarComBotaoMenu(from, msg);
+        // Mesmo motivo do cadastro: quem acabou de adicionar um familiar ou vai
+        // devolver por ele agora, ou vai adicionar o próximo. As duas coisas
+        // estão nos botões, sem custar a mensagem do menu.
+        Utils.enviarMenu(from, msg, MenuHandler.botoesDizimista());
         return;
       }
 
@@ -595,9 +773,33 @@ const CadastroHandler = {
 
       mensagemFinal += `\n\nQue Deus abençoe sua generosidade! 🙏`;
 
-      Utils.enviarComBotaoMenu(from, mensagemFinal);
+      // Os botões de dizimista vão AQUI, no lugar do antigo "🔙 Menu".
+      //
+      // Não é só conveniência: com o botão de menu, quem quisesse devolver na
+      // hora tocava em Menu, o bot mandava o menu (uma mensagem cobrada) e só
+      // então ela tocava em "Devolver dízimo". Os três botões deste menu já
+      // cabem nesta mensagem, que sai de qualquer forma — então a mensagem do
+      // menu deixa de existir. Digitar *menu* continua funcionando para quem
+      // quiser outra coisa.
+      Utils.enviarMenu(from, mensagemFinal, MenuHandler.botoesDizimista());
 
     } catch (error) {
+      // BL-39: não é erro, é cadastro que já existe — tipicamente um formulário
+      // antigo respondido agora, ou dois toques em "Confirmar". Nada foi
+      // gravado, e dizer "ocorreu um erro" faria a pessoa tentar de novo,
+      // repetindo a tentativa que acabou de ser barrada.
+      if (error && error.codigo === OdooService.ERRO_JA_CADASTRADO) {
+        console.log(`ℹ️ [Cadastro] ${from} já tinha cadastro — duplicata evitada`);
+        StateManager.limparDados(from);
+        MenuHandler.menuDizimista(from, error.dizimista,
+          '😊 *Você já está cadastrado(a)!*\n\n' +
+          'Este formulário era de uma conversa anterior — não precisava preencher ' +
+          'de novo, e *nada foi duplicado*. Para atualizar seus dados, fale com ' +
+          'a secretaria.'
+        );
+        return;
+      }
+
       console.error('❌ Erro ao salvar cadastro:', error);
       MenuHandler.erro(from, ehMembro
         ? 'Ocorreu um erro ao adicionar o membro. Tente novamente ou fale com a secretaria.'
@@ -611,6 +813,43 @@ const CadastroHandler = {
     Utils.enviarComBotaoMenu(from,
       '❌ *Cadastro cancelado.*\n\nSe mudar de ideia, é só nos chamar! 💛'
     );
+  },
+
+  /**
+   * O botão "Corrigir" da tela de confirmação (BL-45).
+   *
+   * Ele CANCELAVA o cadastro: a pessoa via um dado errado, tocava em corrigir
+   * e perdia tudo o que tinha preenchido — sete campos — sem aviso nenhum. O
+   * botão dizia uma coisa e fazia outra.
+   *
+   * Agora o formulário volta com o que ela já digitou. Só a comunidade é
+   * escolhida de novo (ver `FlowHandler._dadosPreenchidos`).
+   *
+   * A sessão é MANTIDA de propósito: é dela que saem os valores. Quem fecha o
+   * formulário sem enviar continua com o cadastro em aberto, e a sessão
+   * expira sozinha como sempre.
+   */
+  corrigir(from) {
+    const dados = StateManager.getDadosTemporarios(from) || {};
+
+    if (dados.cadastrandoMembro) {
+      // O formulário de membro tem outro id e outros campos; preenchê-lo é
+      // trabalho à parte. Enquanto não existe, o passo a passo do familiar
+      // ainda é um caminho — e não custa os 19 do cadastro.
+      if (FlowHandler.enviarFlowMembro(from, dados)) return;
+    } else if (FlowHandler.enviarFlowCadastro(from, dados)) {
+      console.log(`✏️ [Cadastro] ${from} pediu correção — formulário reenviado preenchido`);
+      return;
+    }
+
+    // Sem formulário não há o que corrigir, e apagar o que a pessoa digitou
+    // seria repetir o problema que isto veio consertar. O cadastro fica em
+    // aberto; ela decide.
+    console.warn(`⚠️ [Cadastro] ${from} pediu correção, mas o formulário não saiu`);
+    MenuHandler.lembrarCadastroPendente(from,
+      '🙏 *Não consegui reabrir o formulário agora.*\n\n' +
+      'Seus dados continuam guardados. Tente de novo em alguns minutos, ou ' +
+      'fale com a pastoral da sua comunidade. 💛');
   }
 
 };

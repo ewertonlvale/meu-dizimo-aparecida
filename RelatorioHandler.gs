@@ -815,10 +815,15 @@ const RelatorioHandler = {
         const valor = `R$ ${(dev.x_studio_value || 0).toFixed(2).replace('.', ',')}`;
         const data  = Utils.formatarDataOdoo(dev.x_studio_data_da_devolucao);
 
+        // BL-26: sinaliza na própria lista quando a chave do comprovante não
+        // conferiu — sem isto o coordenador confirma a baixa sem saber.
+        // A regra "o que pede olhar humano" mora em Config.gs, com a tabela.
+        const conferir = exigeConferencia(dev.x_studio_conferencia_pix);
+
         return {
           id:          `pend_${dev.id}`,
-          title:       `${dizimistaName}`.substring(0, 24),
-          description: `${valor} — ${data}`
+          title:       `${conferir ? '⚠️ ' : ''}${dizimistaName}`.substring(0, 24),
+          description: `${conferir ? 'CONFERIR • ' : ''}${valor} — ${data}`
         };
       });
 
@@ -902,6 +907,13 @@ const RelatorioHandler = {
 
       if (dev.x_studio_forma_de_pagamento) {
         detalhe += `💳 *Forma:* ${dev.x_studio_forma_de_pagamento}\n`;
+      }
+
+      // BL-26: o motivo da conferência pendente, logo antes dos botões de baixa.
+      // Tabela única em Config.gs — antes este mapa vivia dentro desta função.
+      const motivo = (CONFERENCIA[dev.x_studio_conferencia_pix] || {}).textoCoordenador;
+      if (motivo) {
+        detalhe += `\n⚠️ *Confira antes de confirmar:* ${motivo}.\n`;
       }
 
       detalhe += `\n━━━━━━━━━━━━━━━━━━━━`;

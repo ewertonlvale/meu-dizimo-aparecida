@@ -21,37 +21,19 @@ const DevolucaoHandler = {
   // ==========================================================================
 
   /**
-   * Verifica se o usuário tem cadastro e exibe as opções de devolução.
-   * Ponto de entrada via botão 'btn_ja_sou_dizimista'.
+   * Ponto de entrada do antigo botão 'btn_ja_sou_dizimista'.
+   *
+   * O botão saiu dos menus, mas continua chegando: mensagens antigas ficam na
+   * conversa das pessoas e o toque nelas chega ao webhook como sempre. Por isso
+   * o id segue atendido — só que sem a sequência de identificação.
+   *
+   * Ela pedia à pessoa que se identificasse ('🔍 Buscando seu cadastro...',
+   * '✅ Cadastro encontrado!', menu) para descobrir pelo número o que o número
+   * já dizia. Três mensagens para nada; agora delega a `MenuHandler.entrada`,
+   * que decide pelo número em uma só.
    */
   verificarDizimista(from) {
-    Utils.enviarSimples(from, '🔍 Buscando seu cadastro...');
-
-    const dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
-
-    if (!dizimista) {
-      Utils.enviarMenu(from,
-        '😕 Não encontrei seu cadastro em nosso sistema.\n\n' +
-        'Para acessar as opções de dizimista, primeiro você precisa se cadastrar.',
-        [
-          { id: 'btn_ser_dizimista', title: '🙏 Ser Dizimista' },
-          { id: 'btn_menu',          title: '🔙 Menu'           }
-        ]
-      );
-      return;
-    }
-
-    Utils.enviarSimples(from, `✅ *Olá, ${dizimista.x_name}!*\n\nSeu cadastro foi encontrado! 😊`);
-    Utilities.sleep(1000);
-
-    Utils.enviarMenu(from,
-      'O que você gostaria de fazer?',
-      [
-        { id: 'btn_devolver_dizimo',   title: '💰 Devolver dízimo'  },
-        { id: 'btn_minhas_devolucoes', title: '📊 Meu histórico'    },
-        { id: 'btn_menu',              title: '🔙 Menu'              }
-      ]
-    );
+    MenuHandler.entrada(from);
   },
 
   // ==========================================================================
@@ -315,13 +297,9 @@ const DevolucaoHandler = {
     msg += `🔑 *Chave PIX:* \`${comunidade.x_studio_chave_pix}\`\n\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n\n📸 *Faça um único pagamento do total e envie o comprovante aqui.*\n\nAceito: imagem (foto) ou PDF.`;
 
-    Utils.enviarSimples(from, msg);
-    try {
-      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, total, comunidade.x_studio_titular_conta);
-    } catch (e) {
-      console.warn('⚠️ QR Code PIX (lote) não pôde ser gerado:', e.message);
-    }
-    return true;
+    // BL-40: mesmo caminho do individual — card nativo, com o QR como reserva.
+    return this._entregarPagamento(from, comunidade, total, msg,
+                                   `dizimo-familia-${responsavel.id}-${Date.now()}`);
   },
 
   _selecaoExpirada(from) {
@@ -434,7 +412,8 @@ const DevolucaoHandler = {
     const devolucoes = OdooService.buscarDevolucoesDizimista(dizimistaId, 10);
 
     if (!devolucoes || devolucoes.length === 0) {
-      Utilities.sleep(1000);
+      // BL-21: sem espera — a consulta ao Odoo acima já separa esta mensagem
+      // do "Buscando histórico..." enviado antes dela.
       Utils.enviarMenu(from,
         `📭 *${nome}* ainda não tem devoluções registradas.`,
         [
@@ -474,6 +453,38 @@ const DevolucaoHandler = {
    * @param {string} from       - Número do destinatário
    * @param {Object} dizimista  - Registro do dizimista no Odoo
    */
+  /**
+   * Uma linha com a última devolução registrada, para abrir a tela de
+   * pagamento com contexto.
+   *
+   * Silenciosa quando não há histórico ou quando a consulta falha: é
+   * informação de apoio, e derrubar a devolução por causa dela seria trocar o
+   * essencial pelo acessório.
+   *
+   * @returns {string} Já com quebra de linha, ou '' quando não há o que dizer.
+   * @private
+   */
+  _linhaUltimaDevolucao(dizimistaId) {
+    try {
+      const ultimas = OdooService.buscarDevolucoesDizimista(dizimistaId, 1);
+      if (!ultimas || !ultimas.length) {
+        return '✨ Esta será sua *primeira devolução* registrada por aqui!\n\n';
+      }
+
+      const u = ultimas[0];
+      const data  = u.x_studio_data_da_devolucao
+        ? Utils.formatarDataOdoo(u.x_studio_data_da_devolucao)
+        : '—';
+      const valor = Utils.formatarValor(u.x_studio_value);
+
+      return `📊 Sua última devolução: *${valor}* em *${data}*\n` +
+             `_Digite *histórico* para ver as anteriores._\n\n`;
+    } catch (e) {
+      console.warn('⚠️ Não consegui ler a última devolução:', e.message);
+      return '';
+    }
+  },
+
   _enviarDadosPagamento(from, dizimista) {
     const comunidade = OdooService.buscarDadosPagamentoComunidade(dizimista);
 
@@ -492,6 +503,10 @@ const DevolucaoHandler = {
     mensagem    += `━━━━━━━━━━━━━━━━━━━━\n\n`;
     mensagem    += `Olá, *${nomeUsual}*! 😊\n\n`;
     mensagem    += `Sua devolução mensal registrada é de *${valorMensal}*\n\n`;
+    // O histórico entra AQUI, como contexto, em vez de ser um destino de menu.
+    // Os três botões do menu estão ocupados, e uma linha aqui alcança todo
+    // mundo que vai devolver — não só quem sairia procurando por ela.
+    mensagem    += this._linhaUltimaDevolucao(dizimista.id);
     mensagem    += `💡 *Mas você pode contribuir com qualquer valor!*\n`;
     mensagem    += `Doe o que sentir confortável no momento. 💛\n\n`;
     mensagem    += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -506,13 +521,61 @@ const DevolucaoHandler = {
     mensagem += `📸 *Após efetuar o pagamento, envie o comprovante aqui.*\n\n`;
     mensagem += `Aceito: imagem (foto) ou PDF.`;
 
-    Utils.enviarSimples(from, mensagem);
+    return this._entregarPagamento(from, comunidade, dizimista.x_studio_value,
+                                   mensagem, `dizimo-${dizimista.id}-${Date.now()}`);
+  },
 
-    // Tentar enviar QR Code PIX via MediaService
+  /**
+   * Entrega os dados de pagamento pelo melhor caminho disponível.
+   *
+   * BL-40 — UMA MENSAGEM, COM O BOTÃO NATIVO.
+   * O card `order_details` carrega o texto E o botão "Copiar código Pix", então
+   * substitui de uma vez a imagem do QR e o copia-e-cola: 2 mensagens viram 1.
+   *
+   * O QR escaneável sai junto, e isso é uma perda consciente — quem pagava
+   * lendo de outra tela (computador, ou alguém pagando pelo celular de outro)
+   * perde a imagem. Em troca, quem paga no próprio aparelho — a maioria — ganha
+   * um botão nativo, que é melhor que o copia-e-cola cru: não depende de toque
+   * longo nem de selecionar o trecho certo.
+   *
+   * REDE DE SEGURANÇA. Esta é a mensagem por onde o dinheiro passa. Se a Meta
+   * recusar o card por qualquer motivo — mudança de política, chave de tipo
+   * indeduzível, indisponibilidade — cai no caminho antigo (QR + copia-e-cola),
+   * que continua inteiro e testado. Nunca deixar a pessoa em
+   * AGUARDANDO_COMPROVANTE sem ter como pagar.
+   *
+   * @private
+   */
+  _entregarPagamento(from, comunidade, valor, mensagem, referencia) {
     try {
-      MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, dizimista.x_studio_value, comunidade.x_studio_titular_conta);
+      if (MediaService.enviarCardPix(from, comunidade, valor, mensagem, referencia)) {
+        return true;
+      }
+    } catch (e) {
+      console.warn('⚠️ [Devolução] Card PIX falhou:', e.message);
+    }
+
+    console.warn('⚠️ [Devolução] Usando o caminho antigo: QR + copia-e-cola');
+
+    let enviou = false;
+    try {
+      enviou = MediaService.enviarQrCode(
+        from,
+        comunidade.x_studio_chave_pix,
+        valor,
+        comunidade.x_studio_titular_conta,
+        undefined,
+        mensagem
+      );
     } catch (e) {
       console.warn('⚠️ QR Code PIX não pôde ser gerado:', e.message);
+    }
+
+    // Último recurso: os dados como texto puro. Sem eles a pessoa não tem como
+    // pagar, e o estado AGUARDANDO_COMPROVANTE ficaria esperando o impossível.
+    if (!enviou) {
+      console.warn('⚠️ [Devolução] QR não saiu; enviando os dados como texto');
+      Utils.enviarSimples(from, mensagem);
     }
 
     return true;

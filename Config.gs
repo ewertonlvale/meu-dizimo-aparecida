@@ -40,6 +40,20 @@ const ESTADOS = {
   // Contato da pastoral: usuário sem cadastro escolhe a comunidade para ver o responsável
   AGUARDANDO_COMUNIDADE_CONTATO:   'AGUARDANDO_COMUNIDADE_CONTATO',
 
+  // Flow de cadastro enviado — aguardando o `nfm_reply` do aparelho.
+  // Não entra em ESTADOS_CADASTRO: o Flow roda no cliente, então não há
+  // sessão de coleta a expirar nem log passo a passo a acumular.
+  AGUARDANDO_FLOW_CADASTRO:      'AGUARDANDO_FLOW_CADASTRO',
+
+  // ── Oferta (BL-41) ─────────────────────────────────────────────────────────
+  // Oferta NÃO exige cadastro, então estes estados valem também para número
+  // desconhecido — são os primeiros do bot nessa condição.
+  AGUARDANDO_COMUNIDADE_OFERTA:  'AGUARDANDO_COMUNIDADE_OFERTA',
+  AGUARDANDO_NOME_OFERTA:        'AGUARDANDO_NOME_OFERTA',
+  AGUARDANDO_VALOR_OFERTA:       'AGUARDANDO_VALOR_OFERTA',
+  AGUARDANDO_COMPROVANTE_OFERTA: 'AGUARDANDO_COMPROVANTE_OFERTA',
+  AGUARDANDO_FLOW_OFERTA:        'AGUARDANDO_FLOW_OFERTA',
+
   AGUARDANDO_NOTIFICACAO:        'AGUARDANDO_NOTIFICACAO',
   AGUARDANDO_DIA_PREFERIDO:      'AGUARDANDO_DIA_PREFERIDO',
 
@@ -92,6 +106,145 @@ const ESTADOS_CADASTRO = [
 ];
 
 /**
+ * ============================================================================
+ * CONFERÊNCIA DA CHAVE PIX (BL-26)
+ * ============================================================================
+ *
+ * O resultado da conferência entre a chave do comprovante e a da comunidade
+ * nasce em `ComprovanteHandler._conferirChave`, é gravado em
+ * `x_studio_conferencia_pix` e precisa ser lido em dois lugares muito
+ * diferentes: o nome do registro no Odoo (curto, cabe numa linha) e a tela do
+ * coordenador no WhatsApp (uma frase).
+ *
+ * Estava escrito em três lugares — o enum no ComprovanteHandler, um mapa de
+ * texto curto no OdooService e outro de texto longo declarado DENTRO de uma
+ * função do RelatorioHandler. Os dois mapas falham em SILÊNCIO: um código novo
+ * (ou um typo) vira `undefined`, e a devolução aparece sem aviso nenhum para
+ * quem vai confirmar. É exatamente a falha silenciosa que o BL-26 existe para
+ * acabar.
+ *
+ * `exigeConferencia` também mora aqui: o RelatorioHandler codificava a regra
+ * "diferente de 'ok' significa conferir" por conta própria.
+ */
+const CONFERENCIA = {
+  ok: {
+    exigeConferencia: false,
+    avisoRegistro:    '',
+    textoCoordenador: ''
+  },
+  divergente: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    avisoRegistro:    '⚠️ CONFERIR: chave do comprovante diverge da comunidade',
+    textoCoordenador: 'a chave do comprovante *diverge* da chave da comunidade'
+  },
+  ausente: {
+    exigeConferencia: true,
+    avisoRegistro:    '⚠️ CONFERIR: chave não identificada no comprovante',
+    textoCoordenador: 'não consegui identificar a chave no comprovante'
+  },
+  sem_referencia: {
+    exigeConferencia: true,
+    avisoRegistro:    '⚠️ CONFERIR: comunidade sem chave PIX cadastrada',
+    textoCoordenador: 'a comunidade não tem chave PIX cadastrada para comparar'
+  },
+
+  // BL-46: o que o recebedor do comprovante diz, além da chave. `alertaDoador`
+  // marca os casos em que a PESSOA é avisada de que algo não bate — e só os
+  // graves entram, porque um alerta injusto acusa quem pagou certo.
+  titular_divergente: {
+    exigeConferencia: true,
+    // BL-50: passou a avisar. Antes só o "totalmente divergente" avisava, para
+    // não acusar quem pagou certo. O que mudou foi a mensagem: ela agora
+    // MOSTRA nome, chave e banco que foram lidos, então a pessoa vê em cima de
+    // que dado a dúvida se apoia — e tem o botão da pastoral ao lado.
+    alertaDoador:     true,
+    avisoRegistro:    '⚠️ CONFERIR: nome de quem recebeu diverge do titular',
+    textoCoordenador: 'o nome de quem recebeu *diverge* do titular da comunidade'
+  },
+  banco_divergente: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    avisoRegistro:    '⚠️ CONFERIR: banco de destino diverge do cadastrado',
+    textoCoordenador: 'o banco de destino *diverge* do cadastrado na comunidade'
+  },
+  tudo_divergente: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    avisoRegistro:    '🚨 CONFERIR: nome E banco de destino divergem',
+    textoCoordenador: 'nome e banco de quem recebeu *divergem* dos da comunidade'
+  }
+};
+
+/**
+ * O status com que a devolução nasce no Odoo, conforme a conferência (BL-51).
+ *
+ * Três desfechos, e o do meio é o que não pode sumir:
+ *
+ *   'Confirmado'  a chave, o nome e o banco conferem. Nada a decidir.
+ *   'Rejeitado'   algum dado LIDO diverge. É o mesmo critério que avisa a
+ *                 pessoa — e ela já foi avisada de que um agente da pastoral
+ *                 vai analisar, então o registro precisa estar achável.
+ *   'Pendente'    não deu para ler o que seria comparado. Continua como antes:
+ *                 entra na fila do coordenador, que confirma ou rejeita.
+ *
+ * A TERCEIRA LINHA É O PONTO. Marcar 'Rejeitado' o que não foi lido rejeitaria
+ * pagamento legítimo em massa: o comprovante do Nubank sem chave no destino é
+ * o caso mais comum que existe (BL-49), e ali não se sabe de nada. Ausência de
+ * informação não é prova de erro.
+ *
+ * ⚠️ 'Confirmado' aqui quer dizer "o comprovante bate com o cadastro" — não
+ *    que o dinheiro caiu na conta. Quem quiser a conferência financeira
+ *    continua tendo o extrato; isto é conferência de comprovante.
+ *
+ * @param {string} codigo - Valor de x_studio_conferencia_pix
+ * @returns {string} 'Confirmado' | 'Rejeitado' | 'Pendente'
+ */
+function statusDaDevolucao(codigo) {
+  if (codigo === 'ok')          return 'Confirmado';
+  if (alertaDoador(codigo))     return 'Rejeitado';
+  return 'Pendente';
+}
+
+/**
+ * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
+ *
+ * Bem mais restrito que `exigeConferencia`. Ali o custo de errar é um olhar
+ * humano a mais; aqui é dizer a quem devolveu o dízimo que o comprovante dela
+ * parece estar errado. Comprovante bancário não tem formato padrão, e um
+ * alerta injusto é pior que uma conferência a mais.
+ *
+ * Só entram os casos em que o dinheiro provavelmente foi para outro lugar:
+ * a chave diverge, ou — sem chave legível — nome E banco divergem juntos.
+ *
+ * Código desconhecido NÃO alerta. É o oposto de `exigeConferencia`, e de
+ * propósito: no silêncio, o lado seguro ali é conferir; aqui é calar.
+ *
+ * @param {string} codigo - Valor de x_studio_conferencia_pix
+ * @returns {boolean}
+ */
+function alertaDoador(codigo) {
+  const regra = CONFERENCIA[codigo];
+  return !!(regra && regra.alertaDoador);
+}
+
+/**
+ * Este resultado de conferência pede olhar humano?
+ *
+ * Um código DESCONHECIDO conta como "sim". É o lado seguro: melhor um aviso a
+ * mais do que uma devolução com problema passando batida por falta de entrada
+ * na tabela — que era o comportamento anterior.
+ *
+ * @param {string} codigo - Valor de x_studio_conferencia_pix
+ * @returns {boolean}
+ */
+function exigeConferencia(codigo) {
+  if (!codigo) return false;                    // campo vazio: nada a conferir
+  const regra = CONFERENCIA[codigo];
+  return regra ? regra.exigeConferencia : true;
+}
+
+/**
  * Fuso horário único do projeto. Use esta constante em todo Utilities.formatDate
  * para evitar inconsistências (antes havia mistura de 'America/Sao_Paulo' e
  * 'America/Fortaleza', com risco de erro de borda em datas de relatório).
@@ -141,7 +294,8 @@ function getWhatsAppUrl(path) {
 /**
  * Retorna credenciais do WhatsApp Business API.
  * Lança erro se propriedades obrigatórias não estiverem configuradas.
- * @returns {Object} { WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN }
+ * @returns {Object} { WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN,
+ *                      WHATSAPP_NUMERO_EXIBICAO }
  */
 function getConfig() {
   const props = PropertiesService.getScriptProperties();
@@ -150,6 +304,12 @@ function getConfig() {
     WHATSAPP_TOKEN:    props.getProperty('WHATSAPP_TOKEN'),
     WHATSAPP_PHONE_ID: props.getProperty('WHATSAPP_PHONE_ID'),
     VERIFY_TOKEN:      props.getProperty('VERIFY_TOKEN'),
+
+    // BL-41 (A10): o número do bot, para montar o link wa.me do convite.
+    // OPCIONAL — sem ele o convite ainda sai, só sem o link clicável.
+    // Não dá para derivar do PHONE_ID: aquele é o identificador interno da
+    // Meta, não o telefone. Formato: 5586988521231 (internacional, sem '+').
+    WHATSAPP_NUMERO_EXIBICAO: props.getProperty('WHATSAPP_NUMERO_EXIBICAO') || '',
   };
 
   if (!config.WHATSAPP_TOKEN || !config.WHATSAPP_PHONE_ID) {
@@ -163,7 +323,9 @@ function getConfig() {
 }
 
 /**
- * Retorna o segredo opcional do webhook usado para autenticar o POST da Meta.
+ * Retorna o segredo do webhook usado para autenticar o POST da Meta.
+ * BL-17: é obrigatório — sem ele `doPost` rejeita todas as requisições.
+ * Use `configurarSegredoWebhook()` (Setup.gs) para gerar e obter a URL pronta.
  *
  * IMPORTANTE: web apps do Apps Script NÃO expõem os headers da requisição em
  * doPost(e), portanto não é possível validar o header X-Hub-Signature-256

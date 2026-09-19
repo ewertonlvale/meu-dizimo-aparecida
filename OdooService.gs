@@ -120,18 +120,65 @@ const OdooService = {
   },
 
   /**
+   * Apaga registros. Exige a lista explícita de IDs e não aceita domínio, de
+   * propósito: assim não há como varrer um modelo inteiro por engano.
+   * @param {string}   model - Nome do modelo
+   * @param {number[]} ids   - IDs a apagar
+   * @returns {boolean} true se o Odoo confirmou
+   */
+  unlink(model, ids) {
+    if (!Array.isArray(ids) || ids.length === 0) return false;
+
+    const cfg = getOdooConfig();
+    const payload = {
+      jsonrpc: '2.0',
+      method:  'call',
+      params: {
+        service: 'object',
+        method:  'execute_kw',
+        args: [cfg.database, cfg.uid, cfg.apiKey, model, 'unlink', [ids]]
+      }
+    };
+
+    return this._rpc(cfg.url, payload);
+  },
+
+  // BL-24: métodos que NÃO podem ser repetidos após 5xx. `create` duplicaria o
+  // registro; `unlink` falharia na segunda tentativa ("registro não existe"),
+  // transformando uma exclusão bem-sucedida em erro no log.
+  METODOS_NAO_IDEMPOTENTES: ['create', 'unlink'],
+
+  /**
    * Faz a chamada HTTP e retorna result ou lança erro.
    * @private
    */
   _rpc(baseUrl, payload) {
-    console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${payload.params.args[4]}`);
+    const metodo = payload.params.args[4];
+    console.log(`🔄 Odoo RPC → ${payload.params.args[3]} / ${metodo}`);
 
-    const response = UrlFetchApp.fetch(`${baseUrl}/jsonrpc`, {
-      method:      'post',
-      contentType: 'application/json',
-      payload:     JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
+    // BL-24: leituras e `write` (que só fixa valores) podem ser repetidas com
+    // segurança; `create` e `unlink` não — ver METODOS_NAO_IDEMPOTENTES.
+    const response = Utils.fetchComRetry(
+      `${baseUrl}/jsonrpc`,
+      {
+        method:      'post',
+        contentType: 'application/json',
+        payload:     JSON.stringify(payload),
+        muteHttpExceptions: true
+      },
+      {
+        idempotente: this.METODOS_NAO_IDEMPOTENTES.indexOf(metodo) < 0,
+        rotulo:      `Odoo ${metodo}`
+      }
+    );
+
+    // Antes o corpo era parseado direto: um 5xx devolve HTML e estourava um
+    // SyntaxError de JSON, escondendo a causa real.
+    const code = response.getResponseCode();
+    if (code !== 200) {
+      console.error(`❌ [Odoo] HTTP ${code} em ${metodo}:`, response.getContentText().slice(0, 300));
+      throw new Error(`Odoo respondeu HTTP ${code} em ${metodo}`);
+    }
 
     const result = JSON.parse(response.getContentText());
 
@@ -174,19 +221,21 @@ const OdooService = {
 
     if (registros?.length > 0) return registros[0];
 
-    // Busca inteligente: com/sem 9º dígito
-    let whatsappAlt;
-    if (whatsapp.length === 13) {
-      whatsappAlt = whatsapp.substring(0, 4) + whatsapp.substring(5);
-    } else if (whatsapp.length === 12) {
-      whatsappAlt = whatsapp.substring(0, 4) + '9' + whatsapp.substring(4);
-    }
+    // Busca com a outra forma do nono dígito (BL-32). A regra mora em
+    // `Utils.variantesNumeroBR` — antes estava reescrita aqui por `length`, e as
+    // duas versões já divergiam: esta aceitava qualquer número de 12 dígitos e
+    // inventava um 9 no meio, então um TELEFONE FIXO disparava um segundo
+    // search_read garantidamente vazio a cada mensagem.
+    const variantes = Utils.variantesNumeroBR(whatsapp);
+    const alternativo = variantes
+      ? (whatsapp === variantes.comNove ? variantes.semNove : variantes.comNove)
+      : null;
 
-    if (whatsappAlt) {
+    if (alternativo) {
       registros = this.searchRead(
         'x_dizimista',
         this.CAMPOS_DIZIMISTA,
-        [['x_studio_partner_phone', '=', whatsappAlt]]
+        [['x_studio_partner_phone', '=', alternativo]]
       );
 
       if (registros?.length > 0) {
@@ -204,11 +253,73 @@ const OdooService = {
   },
 
   /**
+   * Código do erro lançado por `criarDizimista` quando o número já tem cadastro.
+   * Os chamadores comparam contra ele em vez de olhar a mensagem — mensagem é
+   * texto para humano e muda; código não.
+   */
+  ERRO_JA_CADASTRADO: 'JA_CADASTRADO',
+
+  /**
    * Cria um novo dizimista a partir dos dados coletados no cadastro.
+   *
+   * BL-39 — POR QUE A VERIFICAÇÃO MORA AQUI, E NÃO NO HANDLER.
+   * O cadastro já conferia se o número existia ao *começar* (`iniciar`), mas
+   * não ao *terminar*. Entre um e outro cabe muita coisa: tocar num formulário
+   * de meses atrás (a mensagem continua na conversa), tocar duas vezes em
+   * "Confirmar", ou completar o cadastro por conversa num aparelho enquanto o
+   * formulário de outro já gravou. Qualquer um desses criava um SEGUNDO
+   * `x_dizimista` com o mesmo telefone — e `buscarDizimistaPorWhatsapp`
+   * devolve `registros[0]`, então devoluções e lembretes passavam a cair num
+   * registro e o histórico no outro, em silêncio.
+   *
+   * Pôr a guarda no handler consertaria os caminhos de hoje e não os de
+   * amanhã. Aqui, é o ponto por onde todo cadastro obrigatoriamente passa —
+   * conversa e formulário.
+   *
    * @param {Object} dados - Dados temporários do StateManager
    * @returns {number} ID criado
+   * @throws {Error} com `.codigo === ERRO_JA_CADASTRADO` e `.dizimista` quando
+   *   o número já está cadastrado
    */
   criarDizimista(dados) {
+    // O lock fecha a janela do toque duplo: duas execuções do Apps Script
+    // chegando com 400 ms de diferença passariam as duas pela busca antes de
+    // qualquer uma criar. É o mesmo padrão de `StateManager.ehPrimeiroContato`.
+    const lock = LockService.getScriptLock();
+    let travado = false;
+    try {
+      lock.waitLock(10000);
+      travado = true;
+    } catch (e) {
+      // Sem o lock ainda vale conferir: pega o caso comum (formulário antigo),
+      // só não protege contra a corrida.
+      console.warn('⚠️ [criarDizimista] Lock não obtido, seguindo sem serializar:', e.message);
+    }
+
+    try {
+      const existente = this.buscarDizimistaPorWhatsapp(dados.whatsapp);
+      if (existente) {
+        const erro = new Error(
+          `Já existe dizimista para este número (id ${existente.id})`
+        );
+        erro.codigo    = this.ERRO_JA_CADASTRADO;
+        erro.dizimista = existente;
+        throw erro;
+      }
+
+      return this._criarDizimista(dados);
+    } finally {
+      if (travado) lock.releaseLock();
+    }
+  },
+
+  /**
+   * A gravação em si, sem a guarda. Separada para que `criarDizimista` fique
+   * com uma responsabilidade legível e para que a guarda não tenha como ser
+   * pulada por engano — nada fora daqui chama este método.
+   * @private
+   */
+  _criarDizimista(dados) {
     const [dia, mes, ano] = dados.dataNascimento.split('/');
     const dataOdoo = `${ano}-${mes}-${dia}`;
 
@@ -420,7 +531,64 @@ const OdooService = {
       });
     }
 
-    return { comunidade: com.x_name || null, contatos };
+    return { comunidade: com.x_name || null, contatos: this._comWaId(contatos) };
+  },
+
+  /**
+   * Acrescenta a cada contato o `wa_id` REAL, quando ele é conhecido.
+   *
+   * O PROBLEMA. Celular brasileiro tem duas formas — com e sem o nono dígito —
+   * e o `wa_id` de uma conta antiga costuma ser a de 8 dígitos. O cartão de
+   * contato só abre a conversa se o `wa_id` bater exatamente; com a forma
+   * errada, o WhatsApp mostra "Salvar" em vez de "Conversar".
+   *
+   * POR QUE NÃO USAR O PALPITE. `Utils.variantesNumeroBR` devolve um
+   * `provavel`, mas o próprio comentário dele avisa: é heurística por DDD, e
+   * uma conta criada depois da mudança mantém o 9 mesmo fora da lista. Aplicar
+   * como regra consertaria uns e quebraria outros.
+   *
+   * O QUE FAZEMOS. Procuramos as DUAS formas em `x_contato_bot`, onde ficam os
+   * números que já escreveram ao bot. Ali o `x_name` é o `wa_id` de verdade —
+   * foi o WhatsApp que o entregou, não nós que o deduzimos. Quem não está lá
+   * fica sem `wa_id`, e o cartão trata disso à sua maneira.
+   *
+   * Uma consulta só para todos os contatos.
+   * @private
+   */
+  _comWaId(contatos) {
+    if (!contatos.length) return contatos;
+
+    // Todas as formas possíveis, de todos os contatos, numa busca só.
+    const formas = [];
+    const porContato = contatos.map(c => {
+      const v = Utils.variantesNumeroBR(Utils._e164(c.whatsapp));
+      if (v) formas.push(v.comNove, v.semNove);
+      return v;
+    });
+    if (!formas.length) return contatos;
+
+    let achados = [];
+    try {
+      achados = this.searchRead('x_contato_bot', ['x_name'],
+                                [['x_name', 'in', formas]], { limit: 50 }) || [];
+    } catch (e) {
+      // Sem o wa_id o cartão ainda sai; falhar aqui seria trocar um contato
+      // imperfeito por contato nenhum.
+      console.warn('⚠️ [OdooService] Falha ao resolver wa_id dos contatos:', e.message);
+      return contatos;
+    }
+
+    const conhecidos = {};
+    achados.forEach(a => { conhecidos[String(a.x_name)] = true; });
+
+    return contatos.map((c, i) => {
+      const v = porContato[i];
+      if (!v) return c;
+      const waId = conhecidos[v.comNove] ? v.comNove
+                 : conhecidos[v.semNove] ? v.semNove
+                 : null;
+      return waId ? Object.assign({}, c, { waId }) : c;
+    });
   },
 
   /**
@@ -435,19 +603,176 @@ const OdooService = {
     return this.buscarContatosComunidade(comunidadeId);
   },
 
+  /**
+   * O campo existe **e pode ser gravado**? (com cache, como `campoExiste`)
+   *
+   * BL-41 — POR QUE `campoExiste` NÃO BASTA AQUI.
+   * `x_studio_comunidade` sempre existiu. O que muda na migração é ele deixar
+   * de ser `related` (espelho do dizimista, readonly) e virar gravável. Um
+   * `campoExiste` responderia "sim" nos dois casos, e o bot tentaria gravar
+   * num campo readonly — o Odoo recusa a escrita inteira, e a devolução se
+   * perde. Numa mensagem por onde passa dinheiro, isso é inaceitável.
+   *
+   * Então a pergunta certa é "posso escrever?", e a resposta é: existe, não é
+   * `related` e não é `readonly`.
+   *
+   * @param {string} model
+   * @param {string} nome
+   * @returns {boolean}
+   */
+  campoGravavel(model, nome) {
+    const chave = `campo_grav_${model}_${nome}`;
+
+    this._camposGravaveis = this._camposGravaveis || {};
+    if (chave in this._camposGravaveis) return this._camposGravaveis[chave];
+
+    const cache    = CacheService.getScriptCache();
+    const cacheado = cache.get(chave);
+    if (cacheado) {
+      this._camposGravaveis[chave] = cacheado === '1';
+      return this._camposGravaveis[chave];
+    }
+
+    let gravavel = false;
+    try {
+      const campos = this.searchRead(
+        'ir.model.fields', ['id', 'related', 'readonly'],
+        [['model', '=', model], ['name', '=', nome]],
+        { limit: 1 }
+      );
+      const c = campos && campos[0];
+      gravavel = !!c && !c.related && !c.readonly;
+    } catch (e) {
+      console.warn(`⚠️ [OdooService] Não consegui verificar se ${model}.${nome} é gravável:`, e.message);
+    }
+
+    // TTL curto quando ainda não é gravável, para passar a valer logo após a
+    // migração — mesma regra do `campoExiste`.
+    cache.put(chave, gravavel ? '1' : '0', gravavel ? 21600 : 300);
+    this._camposGravaveis[chave] = gravavel;
+    return gravavel;
+  },
+
   // ==========================================================================
   // DEVOLUÇÕES
   // ==========================================================================
 
+  /**
+   * BL-26: `x_studio_conferencia_pix` é criado por `criarCampoConferenciaPix()`
+   * (SetupCamposFamilia.gs). Enquanto ele não existir no Odoo, gravá-lo — ou
+   * pedi-lo num searchRead — faria a chamada inteira falhar, e uma devolução
+   * perdida é pior que um aviso ausente. Checa uma vez e cacheia o resultado.
+   * @returns {boolean} true se o campo existe no schema
+   * @private
+   */
+  /**
+   * Existe este campo customizado no modelo? (com cache)
+   *
+   * Generalizado de `_temCampoConferenciaPix`: a pergunta "o setup já criou
+   * este campo?" aparece sempre que um campo é opcional, e o `SetupCamposFamilia`
+   * tende a criar mais. Sem isto, cada novo campo copia as mesmas ~20 linhas,
+   * inclusive a chave de cache e a regra de TTL.
+   *
+   * Três níveis, do mais barato ao mais caro:
+   *   1. memória da execução — o laço de família chama isto uma vez por membro
+   *      e a resposta não muda dentro da mesma execução;
+   *   2. CacheService;
+   *   3. um search_read em `ir.model.fields`.
+   *
+   * TTL curto quando ausente, para o campo passar a valer logo após o setup.
+   *
+   * @param {string} model - Ex.: 'x_devolucao'
+   * @param {string} nome  - Ex.: 'x_studio_conferencia_pix'
+   * @returns {boolean}
+   */
+  campoExiste(model, nome) {
+    const chave = `campo_${model}_${nome}`;
+
+    this._camposConhecidos = this._camposConhecidos || {};
+    if (chave in this._camposConhecidos) return this._camposConhecidos[chave];
+
+    const cache    = CacheService.getScriptCache();
+    const cacheado = cache.get(chave);
+    if (cacheado) {
+      this._camposConhecidos[chave] = cacheado === '1';
+      return this._camposConhecidos[chave];
+    }
+
+    let existe = false;
+    try {
+      const campos = this.searchRead(
+        'ir.model.fields', ['id'],
+        [['model', '=', model], ['name', '=', nome]],
+        { limit: 1 }
+      );
+      existe = !!(campos && campos.length);
+    } catch (e) {
+      console.warn(`⚠️ [OdooService] Não consegui verificar ${model}.${nome}:`, e.message);
+    }
+
+    cache.put(chave, existe ? '1' : '0', existe ? 21600 : 300);
+    this._camposConhecidos[chave] = existe;
+    return existe;
+  },
+
+  /** @private @deprecated Use `campoExiste`. Mantido pelos chamadores do BL-26. */
+  _temCampoConferenciaPix() {
+    return this.campoExiste('x_devolucao', 'x_studio_conferencia_pix');
+  },
+
+  /**
+   * Texto de alerta correspondente a cada resultado de conferência (BL-26).
+   * Usado no nome do registro; a fonte filtrável é `x_studio_conferencia_pix`.
+   */
   /**
    * Registra uma devolução no Odoo com comprovante (imagem ou PDF).
    * @param {number}      dizimistaId        - ID do dizimista
    * @param {Object}      dadosAnalise       - Dados extraídos pela Vision API
    * @param {string|null} comprovanteBase64  - Arquivo original em base64
    * @param {string}      tipoComprovante    - 'imagem' ou 'pdf'
+   * @param {string}      conferencia        - Resultado da conferência da chave
+   *        PIX (BL-26): 'ok' | 'divergente' | 'ausente' | 'sem_referencia'
    * @returns {number} ID da devolução criada
    */
-  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', observacao = '') {
+  /**
+   * Acrescenta o filtro por tipo de contribuição a um domínio, quando faz sentido.
+   *
+   * BL-41 — POR QUE ISTO EXISTE, E POR QUE CADA CHAMADOR ESCOLHE.
+   * Depois que a oferta passou a morar no mesmo modelo do dízimo, toda consulta
+   * a `x_devolucao` devolve os dois. Não há um padrão bom para todas: o aviso de
+   * duplicata e o relatório do coordenador querem só dízimo; a fila de
+   * conferência da secretaria quer os dois, porque comprovante de oferta também
+   * precisa ser conferido. Um default silencioso acertaria uns e mentiria nos
+   * outros — e relatório errado não falha, só mente.
+   *
+   * Antes da migração o campo não existe; filtrar por ele faria o search_read
+   * inteiro falhar, o que é pior que trazer registros a mais. Por isso o
+   * `campoExiste`.
+   *
+   * @param {Array} dominio
+   * @param {string|null} tipo - 'dizimo' | 'oferta' | null (não filtra)
+   * @returns {Array}
+   * @private
+   */
+  _comTipo(dominio, tipo) {
+    if (!tipo) return dominio;
+    if (!this.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) return dominio;
+    return dominio.concat([['x_studio_tipo_contribuicao', '=', tipo]]);
+  },
+
+  /**
+   * @param {number|null} dizimistaId - null numa OFERTA de quem não é cadastrado
+   * @param {Object} dadosAnalise
+   * @param {string} [comprovanteBase64]
+   * @param {string} [tipoComprovante]
+   * @param {string} [conferencia]
+   * @param {Object} [extras] - BL-41:
+   *   `comunidadeId` (obrigatório quando não há dizimista),
+   *   `tipo` ('dizimo' | 'oferta', padrão 'dizimo'),
+   *   `telefoneOfertante`
+   * @throws {Error} se não houver como determinar a comunidade
+   */
+  registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '', extras = {}) {
     const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
     let dataOdoo = hoje;
@@ -462,19 +787,85 @@ const OdooService = {
       }
     }
 
-    // observacao (BL-26): marca de conferência manual quando a chave do
-    // comprovante não confere/está ausente — fica visível no nome do registro.
-    let descricao = `Devolução de R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
-    if (observacao) descricao += ` — ${observacao}`;
+    // BL-26: o resultado da conferência da chave PIX vai num campo estruturado
+    // (filtrável pelo coordenador) e, como redundância visível, no nome do registro.
+    const aviso = (CONFERENCIA[conferencia] || {}).avisoRegistro || '';
+
+    const rotulo = (extras.tipo === 'oferta') ? 'Oferta' : 'Devolução';
+    // O nome entra na descrição porque é ela que aparece na LISTA do Odoo.
+    // Uma oferta de não cadastrado sem nome chega à secretaria como um
+    // telefone solto, e ela não tem como saber de quem é sem abrir o registro.
+    const de = extras.nomeOfertante ? ` de ${extras.nomeOfertante}` : '';
+    let descricao = `${rotulo}${de} - R$ ${dadosAnalise?.valor || 0} - ${dadosAnalise?.data || hoje}`;
+    if (aviso) descricao += ` — ${aviso}`;
+
+    const tipo = extras.tipo || 'dizimo';
+
+    // ── BL-41: a COMUNIDADE ─────────────────────────────────────────────────
+    // Antes da migração ela era `related` ao dizimista: o bot nunca a gravava,
+    // e o Odoo a espelhava sozinho. Depois da migração o espelho some, e quem
+    // não gravar deixa o campo vazio — em silêncio, porque nada falha.
+    //
+    // É por isso que aqui se EXIGE a comunidade em vez de deixá-la opcional:
+    // uma devolução sem comunidade é uma linha que ninguém concilia e que some
+    // dos relatórios do coordenador, sem nenhum sinal de erro.
+    let comunidadeId = extras.comunidadeId || null;
+
+    if (!comunidadeId && dizimistaId) {
+      // Dízimo: a comunidade é a do dizimista, como sempre foi. Buscar aqui
+      // custa uma leitura, e é o preço de a garantia valer para todo chamador
+      // em vez de depender de cada um lembrar de passar.
+      try {
+        const d = this.searchRead('x_dizimista', ['x_studio_comunidade'],
+          [['id', '=', dizimistaId]], { limit: 1 });
+        const rel = d && d[0] && d[0].x_studio_comunidade;
+        if (rel) comunidadeId = Array.isArray(rel) ? rel[0] : rel;
+      } catch (e) {
+        console.warn('⚠️ [Devolução] Não consegui ler a comunidade do dizimista:', e.message);
+      }
+    }
+
+    if (!comunidadeId) {
+      throw new Error(
+        'Devolução sem comunidade: ' +
+        (dizimistaId ? `dizimista ${dizimistaId} está sem comunidade no Odoo`
+                     : 'oferta sem comunidade informada')
+      );
+    }
 
     const dados = {
       x_name:                        descricao,
-      x_studio_dizimista:            dizimistaId,
+      x_studio_dizimista:            dizimistaId || false,
       x_studio_data_da_devolucao:    dataOdoo,
       x_studio_value:                dadosAnalise?.valor || 0,
-      x_studio_status:               'Pendente',
+      // BL-51: o status nasce da conferência. Era sempre 'Pendente', e o
+      // coordenador decidia tudo — inclusive o que o bot já sabia responder.
+      x_studio_status:               statusDaDevolucao(conferencia),
       x_studio_tipo_comprovante:     tipoComprovante
     };
+
+    // Só grava a comunidade quando o campo já aceita escrita. Enquanto for
+    // `related`, o Odoo recusaria a escrita INTEIRA e a devolução se perderia
+    // — pior que o campo ficar espelhado, que é o que ele já faz sozinho.
+    if (this.campoGravavel('x_devolucao', 'x_studio_comunidade')) {
+      dados.x_studio_comunidade = comunidadeId;
+    }
+
+    if (this.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) {
+      dados.x_studio_tipo_contribuicao = tipo;
+    }
+
+    if (extras.telefoneOfertante && this.campoExiste('x_devolucao', 'x_studio_telefone_ofertante')) {
+      dados.x_studio_telefone_ofertante = String(extras.telefoneOfertante);
+    }
+
+    if (extras.nomeOfertante && this.campoExiste('x_devolucao', 'x_studio_nome_ofertante')) {
+      dados.x_studio_nome_ofertante = String(extras.nomeOfertante);
+    }
+
+    if (conferencia && this._temCampoConferenciaPix()) {
+      dados.x_studio_conferencia_pix = conferencia;
+    }
 
     // Forma de pagamento: mapear o tipo detectado pelo OCR para o campo
     // selection do Odoo (valores existentes: 'Pix' | 'Dinheiro'). Só definimos
@@ -502,11 +893,17 @@ const OdooService = {
    * @param {number} limite      - Quantidade máxima de registros
    * @returns {Array}
    */
-  buscarDevolucoesDizimista(dizimistaId, limite = 10) {
+  /**
+   * @param {string|null} [tipo] - BL-41. Padrão 'dizimo': quem chama isto é o
+   *   histórico e a linha "sua última devolução", os dois dentro do fluxo de
+   *   dízimo. Misturar oferta ali faria a pessoa achar que já devolveu o dízimo
+   *   do mês quando na verdade tinha ofertado. Passe null para trazer tudo.
+   */
+  buscarDevolucoesDizimista(dizimistaId, limite = 10, tipo = 'dizimo') {
     return this.searchRead(
       'x_devolucao',
       ['id', 'x_studio_data_da_devolucao', 'x_studio_value', 'x_studio_status'],
-      [['x_studio_dizimista', '=', dizimistaId]],
+      this._comTipo([['x_studio_dizimista', '=', dizimistaId]], tipo),
       { order: 'x_studio_data_da_devolucao desc', limit: limite }
     );
   },
@@ -517,18 +914,24 @@ const OdooService = {
    * @param {number} dizimistaId
    * @returns {Array<{data: string, valor: number}>}  data em 'yyyy-MM-dd'
    */
-  devolucoesDoMes(dizimistaId) {
+  /**
+   * @param {string|null} [tipo] - BL-41. Padrão 'dizimo', porque isto alimenta o
+   *   aviso "você já tem devolução registrada neste mês". Quem deu uma oferta e
+   *   depois for devolver o dízimo levaria o aviso indevidamente — e desistiria
+   *   de devolver achando que já tinha devolvido.
+   */
+  devolucoesDoMes(dizimistaId, tipo = 'dizimo') {
     const hoje = new Date();
     const primeiro = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
     const ultimo   = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
     const regs = this.searchRead(
       'x_devolucao',
       ['x_studio_data_da_devolucao', 'x_studio_value'],
-      [
+      this._comTipo([
         ['x_studio_dizimista', '=', dizimistaId],
         ['x_studio_data_da_devolucao', '>=', primeiro],
         ['x_studio_data_da_devolucao', '<=', ultimo]
-      ],
+      ], tipo),
       { order: 'x_studio_data_da_devolucao asc' }
     );
     return (regs || []).map(r => ({
@@ -544,14 +947,20 @@ const OdooService = {
    * @param {string} dataFim    - Formato ISO: 'YYYY-MM-DD'
    * @returns {Array}
    */
-  listarDevolucoesPorPeriodo(dataInicio, dataFim) {
+  /**
+   * @param {string|null} [tipo] - BL-41. Padrão 'dizimo': isto alimenta o
+   *   relatório do coordenador, e somar oferta no total do dízimo faria os
+   *   números da paróquia mentirem sem nada falhar. Passe 'oferta' para o
+   *   relatório de ofertas, ou null para o consolidado dos dois.
+   */
+  listarDevolucoesPorPeriodo(dataInicio, dataFim, tipo = 'dizimo') {
     return this.searchRead(
       'x_devolucao',
       ['id', 'x_studio_dizimista', 'x_studio_value', 'x_studio_data_da_devolucao', 'x_studio_status'],
-      [
+      this._comTipo([
         ['x_studio_data_da_devolucao', '>=', dataInicio],
         ['x_studio_data_da_devolucao', '<=', dataFim]
-      ],
+      ], tipo),
       { limit: false }
     );
   },
@@ -563,16 +972,24 @@ const OdooService = {
    * @returns {Array}
    */
   buscarDevolucoesPendentes(comunidadeId, limite = 10) {
+    const campos = [
+      'id',
+      'x_name',
+      'x_studio_dizimista',
+      'x_studio_data_da_devolucao',
+      'x_studio_value',
+      'x_studio_status'
+    ];
+    if (this._temCampoConferenciaPix()) campos.push('x_studio_conferencia_pix');
+    // BL-41: a fila da secretaria NÃO filtra por tipo — comprovante de oferta
+    // também precisa ser conferido. Mas traz o campo, para a tela dizer o que é.
+    if (this.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) {
+      campos.push('x_studio_tipo_contribuicao');
+    }
+
     return this.searchRead(
       'x_devolucao',
-      [
-        'id',
-        'x_name',
-        'x_studio_dizimista',
-        'x_studio_data_da_devolucao',
-        'x_studio_value',
-        'x_studio_status'
-      ],
+      campos,
       [
         ['x_studio_comunidade', '=', comunidadeId],
         ['x_studio_status',     '=', 'Pendente']
@@ -587,22 +1004,30 @@ const OdooService = {
    * @returns {Object|null}
    */
   buscarDevolucaoDetalhada(devolucaoId) {
+    const campos = [
+      'id',
+      'x_name',
+      'x_studio_dizimista',
+      'x_studio_comunidade',
+      'x_studio_data_da_devolucao',
+      'x_studio_value',
+      'x_studio_status',
+      'x_studio_comprovante',
+      'x_studio_tipo_comprovante',
+      'x_studio_nome_arquivo',
+      'x_studio_forma_de_pagamento',
+      'x_studio_competencia'
+    ];
+    if (this._temCampoConferenciaPix()) campos.push('x_studio_conferencia_pix');
+    // BL-41: busca por id, então não há o que filtrar — mas a tela de detalhe
+    // precisa dizer se aquilo é dízimo ou oferta.
+    if (this.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) {
+      campos.push('x_studio_tipo_contribuicao');
+    }
+
     const registros = this.searchRead(
       'x_devolucao',
-      [
-        'id',
-        'x_name',
-        'x_studio_dizimista',
-        'x_studio_comunidade',
-        'x_studio_data_da_devolucao',
-        'x_studio_value',
-        'x_studio_status',
-        'x_studio_comprovante',
-        'x_studio_tipo_comprovante',
-        'x_studio_nome_arquivo',
-        'x_studio_forma_de_pagamento',
-        'x_studio_competencia'
-      ],
+      campos,
       [['id', '=', devolucaoId]],
       { limit: 1 }
     );

@@ -21,20 +21,56 @@ const MenuHandler = {
   // ==========================================================================
 
   /**
-   * Envia o menu principal com as opções: Ser Dizimista / Já sou Dizimista / Secretaria.
-   * @param {string} from - Número do destinatário
+   * Menu principal — decide pelo número.
+   *
+   * Quem é dizimista vê o que dizimista faz; quem não é vê o convite para se
+   * cadastrar. O botão "Já sou Dizimista" saiu: pedia identificação de quem o
+   * bot já tinha identificado.
    */
-  menuPrincipal(from) {
+  menuPrincipal(from, opcoes = {}) {
+    // O menu é o destino de vários fallbacks — inclusive dos que existem para
+    // quando o Odoo falha. Uma exceção aqui deixaria a pessoa sem resposta
+    // nenhuma, então o Odoo fora do ar degrada para o menu de quem não é
+    // dizimista, e não para o silêncio.
+    //
+    // `dizimista` em `opcoes` pula a consulta quando quem chama já buscou.
+    // Testado com `in`, e não pela verdade do valor: o primeiro contato passa
+    // `null` de propósito — "já procurei, não achou" —, e `opcoes.dizimista ||`
+    // trataria isso como "não sei" e consultaria o Odoo de novo.
+    let dizimista = null;
+    if ('dizimista' in opcoes) {
+      dizimista = opcoes.dizimista;
+    } else {
+      try {
+        dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+      } catch (e) {
+        console.warn('⚠️ [Menu] Odoo indisponível, menu genérico:', e.message);
+      }
+    }
+
+    if (dizimista) {
+      this.menuDizimista(from, dizimista, null, opcoes);
+      return;
+    }
+
     StateManager.setEstado(from, ESTADOS.MENU);
 
+    // Com imagem no cabeçalho, o título em texto perde o lugar: `header` é um
+    // só. A arte do avatar já diz "Pastoral do Dízimo".
+    const cabecalho = opcoes.imagemId
+      ? { imagemId: opcoes.imagemId }
+      : { header: '💛 Pastoral do Dízimo' };
+
     Utils.enviarMenu(from,
-      'Como posso te ajudar hoje?',
+      opcoes.texto || 'Como posso te ajudar hoje?',
       [
-        { id: 'btn_ser_dizimista',    title: '💛 Ser Dizimista'   },
-        { id: 'btn_ja_sou_dizimista', title: '🙏 Já sou Dizimista' },
-        { id: 'btn_secretaria',       title: '📞 Contato Pastoral' }
+        // BL-41: oferta NÃO exige cadastro, então precisa estar visível aqui —
+        // é a razão de este menu voltar a existir para número novo.
+        { id: 'btn_ser_dizimista', title: '💛 Ser Dizimista'   },
+        { id: 'btn_oferta',        title: '🎁 Oferta'          },
+        { id: 'btn_secretaria',    title: '📞 Contato Pastoral' }
       ],
-      { header: '💛 Pastoral do Dízimo' }
+      cabecalho
     );
   },
 
@@ -130,6 +166,35 @@ const MenuHandler = {
         `Ainda não há um contato da pastoral cadastrado${comunidadeNome ? ` para *${comunidadeNome}*` : ''}.`);
     }
 
+    // BL-41 (A1): cartão de contato nativo, com "Conversar" e "Salvar contato".
+    //
+    // Antes ia um texto com o número formatado, e a pessoa tinha de copiar ou
+    // digitar para falar com a pastoral. O cartão resolve num toque e custa a
+    // MESMA mensagem.
+    //
+    // O contexto (de que comunidade é) vai dentro do cartão, no campo de
+    // organização — e não numa mensagem anterior. Fosse numa mensagem própria,
+    // este caminho passaria de 1 para 2 mensagens só para dizer o óbvio.
+    const org = comunidadeNome
+      ? `Pastoral do Dízimo · ${comunidadeNome}`
+      : 'Pastoral do Dízimo';
+
+    const enviou = Utils.enviarContatos(from, contatos.map(c => ({
+      nome:     c.nome,
+      whatsapp: c.whatsapp,
+      // Sem repassar o `waId`, o cartão volta a adivinhar o nono dígito: este
+      // `map` reconstrói o objeto, e o que não for citado aqui se perde.
+      waId:     c.waId,
+      cargo:    org
+    })));
+
+    if (enviou) return;
+
+    // Rede de segurança: cartão recusado pela Meta (formato de número
+    // inesperado no Odoo, política, indisponibilidade). Sem isto a pessoa
+    // ficaria sem contato nenhum — e é justamente quem pediu ajuda.
+    console.warn('⚠️ [Pastoral] Cartão de contato não saiu; enviando como texto');
+
     let msg = '📞 *Pastoral do Dízimo*\n';
     if (comunidadeNome) msg += `Comunidade: *${comunidadeNome}*\n`;
     msg += `\nFale com ${contatos.length > 1 ? 'uma destas pessoas' : 'o responsável'}:\n`;
@@ -210,38 +275,378 @@ const MenuHandler = {
   // ==========================================================================
 
   /**
-   * Mensagem de boas-vindas enviada logo após a imagem da Cidinha.
-   * @param {string} from - Número do destinatário
+   * Texto de boas-vindas. Fica separado porque vai na LEGENDA da imagem
+   * quando há avatar, e como mensagem própria quando não há.
+   * @private
+   */
+  _textoBoasVindas() {
+    return '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛\n\n' +
+           '🙏 *Bem-vindo(a) ao Meu Dízimo!*\n\n' +
+           'Estou aqui para te ajudar com seu cadastro e suas devoluções.';
+  },
+
+  /**
+   * Boas-vindas de quem JÁ é dizimista e escreve ao bot pela primeira vez —
+   * em geral quem a secretaria cadastrou no Odoo e recebeu o lembrete.
+   *
+   * Separado de `_textoBoasVindas` porque aquele fala em "seu cadastro", e
+   * para esta pessoa o cadastro já existe. Aqui a apresentação e a saudação
+   * são a MESMA frase: prefixar uma na outra daria dois "olá" seguidos.
+   * @private
+   */
+  _textoBoasVindasDizimista(nome) {
+    return `👋 *Olá, ${nome}!* Sou a Cidinha, assistente virtual da Pastoral ` +
+           'do Dízimo 💛\n\n' +
+           '🙏 *Que alegria ter você por aqui!*\n\n' +
+           'Como posso te ajudar hoje?';
+  },
+
+  /**
+   * Boas-vindas do primeiro contato — UMA mensagem.
+   *
+   * Eram duas: a imagem com uma legenda curta e, logo depois, um texto com o
+   * resto. Como a legenda da imagem já carrega texto, as duas viraram uma —
+   * e a pessoa vê a mesma coisa. Sem avatar no Odoo, vira texto simples, que
+   * continua sendo uma mensagem.
    */
   boasVindas(from) {
-
     console.log('👋 Enviando boas-vindas para:', from);
 
     try {
-      // Buscar parâmetros do sistema (avatar)
       const parametros = OdooService.buscarParametros();
 
       if (parametros && parametros.x_studio_avatar) {
-        // Avatar encontrado no Odoo
-        console.log('🖼️ Enviando avatar do Odoo');
-        MediaService.enviarImagemBase64(
-          from, 
-          parametros.x_studio_avatar,
-          '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛'
-        );
-    }
-
+        // `enviarImagemFixa`: o media ID é reaproveitado entre primeiros
+        // contatos, em vez de subir a mesma imagem a cada pessoa nova (BL-21).
+        MediaService.enviarImagemFixa(from, parametros.x_studio_avatar, this._textoBoasVindas());
+        return;
+      }
     } catch (error) {
       console.error('❌ Erro ao enviar avatar:', error);
-      // Continuar sem avatar - não bloquear o fluxo
+      // Cai no texto abaixo — não bloquear o fluxo por causa da imagem.
     }
 
-    Utils.enviarSimples(from,
-      '🙏 *Bem-vindo(a) ao Meu Dízimo!*\n\n' +
-      'Estou aqui para te ajudar com seu cadastro e devoluções!\n\n'
+    Utils.enviarSimples(from, this._textoBoasVindas());
+  },
+
+  /**
+   * O primeiro contato inteiro — boas-vindas e próximo passo.
+   *
+   * BL-41 · A12 — POR QUE UMA MENSAGEM, E POR QUE SÓ PARA QUEM JÁ É DIZIMISTA.
+   * A entrada custava duas: o avatar com a legenda de boas-vindas e, logo
+   * depois, o menu. A sonda S1 confirmou no aparelho que mensagem de BOTÕES
+   * renderiza cabeçalho de imagem — então, para quem já é dizimista, a imagem,
+   * o texto e os botões cabem num balão só. Toda pessoa passa por aqui, uma
+   * vez: é a economia mais barata do projeto.
+   *
+   * Para NÚMERO NOVO continuam sendo duas. O próximo passo ali é o formulário
+   * (`interactive.type = 'flow'`), e se ele aceita cabeçalho de imagem ninguém
+   * testou — a sonda S1 respondeu sobre botões, não sobre flow. Encurtar esse
+   * caminho no escuro arriscaria a mensagem de quem chega pela primeira vez,
+   * que é justamente quem não pode tropeçar. Fica para a sonda S10.
+   *
+   * Sem imagem disponível, cai nas duas mensagens de sempre. A entrada não
+   * pode depender de uma imagem para acontecer.
+   */
+  primeiroContato(from) {
+    let dizimista;
+    try {
+      dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
+    } catch (e) {
+      // Sem saber quem é, não dá para montar a mensagem única. O caminho de
+      // sempre pelo menos cumprimenta e oferece um menu.
+      console.warn('⚠️ [Primeiro contato] Odoo indisponível:', e.message);
+      this.boasVindas(from);
+      this.entrada(from, undefined);
+      return;
+    }
+
+    if (dizimista) {
+      // Mensagem de BOTÕES: cabeçalho por media ID (sonda S1).
+      const imagemId = MediaService.mediaIdDoAvatar();
+      if (imagemId) {
+        const nome = dizimista.x_name || 'Dizimista';
+        this.menuDizimista(from, dizimista, null, {
+          imagemId,
+          texto: this._textoBoasVindasDizimista(nome)
+        });
+        console.log('✅ [A12] Primeiro contato em UMA mensagem (dizimista)');
+        return;
+      }
+      this.boasVindas(from);
+      this.entrada(from, dizimista);
+      return;
+    }
+
+    // Número novo: o MENU, não o formulário direto.
+    //
+    // Por um tempo esta entrada mandou o formulário de cadastro em cima das
+    // boas-vindas — uma mensagem, o caminho mais curto até o cadastro. O
+    // problema é que era o ÚNICO caminho visível: quem só queria fazer uma
+    // oferta, ou falar com a pastoral, chegava num beco sem saída, porque
+    // `menuPrincipal` — que existe exatamente para isso, e cujos botões dizem
+    // exatamente isso — só aparecia depois.
+    //
+    // Continua sendo UMA mensagem. A diferença é que quem escolhe cadastro
+    // gasta mais uma, uma vez na vida, e as outras duas portas deixam de ser
+    // invisíveis. Oferta não exige cadastro; esconder isso de quem chega é
+    // perder a oferta inteira, não uma mensagem.
+    const imagemId = MediaService.mediaIdDoAvatar();
+    if (imagemId) {
+      this.menuPrincipal(from, {
+        imagemId,
+        texto: this._textoBoasVindasMenu(),
+        dizimista            // já buscado acima: não consulta o Odoo de novo
+      });
+      console.log('✅ [A12] Primeiro contato em UMA mensagem (número novo)');
+      return;
+    }
+
+    this.boasVindas(from);
+    this.entrada(from, dizimista);
+  },
+
+  /**
+   * Boas-vindas de quem chega pela primeira vez e ainda não é dizimista,
+   * fundidas com a pergunta do menu (BL-41 · A12).
+   *
+   * As duas frases vinham em mensagens separadas — a legenda do avatar e o
+   * corpo do menu. Juntas num balão só, a pergunta fica logo abaixo da
+   * apresentação, que é a ordem em que a pessoa lê de qualquer jeito.
+   * @private
+   */
+  _textoBoasVindasMenu() {
+    return '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛\n\n' +
+           '🙏 *Bem-vindo(a) ao Meu Dízimo!*\n\n' +
+           'Como posso te ajudar hoje?';
+  },
+
+  /**
+   * Primeira coisa depois das boas-vindas: leva a pessoa direto ao que ela
+   * pode fazer, decidindo PELO NÚMERO.
+   *
+   * Antes havia um botão "Já sou Dizimista" que pedia à pessoa para se
+   * identificar — e depois consultava o Odoo pelo mesmo número que o WhatsApp
+   * já tinha entregue. Eram três mensagens (menu, "buscando seu cadastro",
+   * "cadastro encontrado") para descobrir algo que o bot sabia desde o início.
+   *
+   * @param {Object} [dizimista] - Resultado já buscado, para não consultar duas vezes
+   */
+  entrada(from, dizimista) {
+    let encontrado = dizimista;
+
+    if (encontrado === undefined) {
+      try {
+        encontrado = OdooService.buscarDizimistaPorWhatsapp(from);
+      } catch (e) {
+        // Acabamos de mandar as boas-vindas; parar aqui deixaria a pessoa com
+        // um "olá" e mais nada. O menu genérico pelo menos oferece um caminho.
+        console.warn('⚠️ [Entrada] Odoo indisponível:', e.message);
+        this.menuPrincipal(from);
+        return;
+      }
+    }
+
+    if (encontrado) {
+      this.menuDizimista(from, encontrado);
+      return;
+    }
+
+    // Número novo: direto ao cadastro. `iniciar` manda o formulário quando
+    // ligado e cai na conversa quando não — e recebe o resultado da busca
+    // para não repetir a consulta ao Odoo.
+    CadastroHandler.iniciar(from, encontrado);
+  },
+
+  /**
+   * Lembra que o cadastro está em aberto, e oferece o que NÃO exige cadastro.
+   *
+   * BL-44 — POR QUE UM LEMBRETE, E NÃO O CADASTRO POR CONVERSA.
+   * Antes, escrever com o formulário aberto derrubava a pessoa no passo a
+   * passo de 19 mensagens. Atendia quem não conseguiu abrir o formulário e
+   * atropelava quem só fez uma pergunta — o gatilho não distinguia intenção
+   * (era o BL-34).
+   *
+   * Com o cadastro por conversa desligado, a resposta passa a ser este
+   * lembrete. E ele não é um beco: oferta não exige cadastro, e falar com a
+   * pastoral não exige nada. Quem escreveu porque travou tem para onde ir.
+   *
+   * UMA mensagem: os dois botões cabem no mesmo balão do texto.
+   *
+   * @param {string} texto - O que dizer antes dos botões
+   */
+  lembrarCadastroPendente(from, texto) {
+    Utils.enviarMenu(from, texto, [
+      { id: 'btn_oferta',     title: '🎁 Oferta'          },
+      { id: 'btn_secretaria', title: '📞 Contato Pastoral' }
+    ], { header: '💛 Pastoral do Dízimo' });
+  },
+
+  /**
+   * Convite para outro paroquiano (BL-41 · A10).
+   *
+   * POR QUE LINK EM TEXTO, E NÃO BOTÃO.
+   * O WhatsApp tem botão de URL (`cta_url`), mas uma mensagem interativa é *ou*
+   * de botões de resposta *ou* de botão de URL — nunca as duas. Um botão de
+   * convite exigiria mensagem própria, e este caminho já custa duas (submenu +
+   * esta). O link em texto o WhatsApp transforma em link sozinho, e a pessoa
+   * usa o "encaminhar" dele, que é o que realmente espalha.
+   */
+  convidar(from) {
+    const numero = this._numeroDoBot();
+
+    // ── O cartão, que é o que se encaminha ──────────────────────────────────
+    // Encaminhar um link exige que a outra pessoa toque nele; encaminhar um
+    // contato deixa o bot salvo na agenda dela. É a diferença entre uma visita
+    // e um vizinho.
+    //
+    // Vai numa mensagem própria porque `contacts` é um tipo de mensagem
+    // inteiro — não aceita corpo de texto junto, do mesmo modo que botões e
+    // formulário não se misturam. Duas mensagens, por decisão: este caminho é
+    // ocasional, e o alcance de um contato salvo compensa.
+    let mandouCartao = false;
+    if (numero) {
+      mandouCartao = Utils.enviarContatos(from, [{
+        nome:     'Meu Dízimo',
+        whatsapp: numero,
+        // Confirmado: veio do `metadata` da Meta, não de palpite nosso nem de
+        // campo digitado à mão. Sem isto, `enviarContatos` mandaria as duas
+        // formas do nono dígito — e o cartão do próprio bot é o último lugar
+        // onde se quer dois números.
+        waId:     numero,
+        cargo:    'Pastoral do Dízimo'
+      }]);
+    }
+
+    // ── O texto ─────────────────────────────────────────────────────────────
+    // Escrito DEPOIS do cartão, e conforme ele ter saído ou não: prometer um
+    // contato que a Meta recusou deixaria a pessoa procurando o que não existe.
+    let msg = '💛 *Convide alguém da paróquia*\n\n';
+
+    if (mandouCartao) {
+      msg += 'Encaminhe o contato acima para quem gostaria de contribuir com o ' +
+             'dízimo ou com uma oferta. 🙏\n\n' +
+             '_Toque e segure no contato para encaminhar._';
+    } else if (numero) {
+      msg += 'Se conhece alguém que gostaria de contribuir com o dízimo ou com ' +
+             'uma oferta, é só encaminhar esta mensagem. 🙏\n\n' +
+             `👉 https://wa.me/${numero}\n\n` +
+             '_Toque e pressione esta mensagem para encaminhar._';
+    } else {
+      msg += 'Se conhece alguém que gostaria de contribuir com o dízimo ou com ' +
+             'uma oferta, é só encaminhar esta mensagem. 🙏\n\n' +
+             '_Peça à secretaria o contato do nosso WhatsApp para compartilhar._';
+    }
+
+    Utils.enviarComBotaoMenu(from, msg);
+  },
+
+  /**
+   * O número do bot, em dígitos E.164 e sem o `+`.
+   *
+   * Duas fontes, nesta ordem, e a ordem é o ponto:
+   *
+   * 1. `WHATSAPP_NUMERO_BOT` — gravada pelo webhook a partir do `metadata` que
+   *    a Meta manda em todo callback. É o número dito por quem o registrou.
+   * 2. `WHATSAPP_NUMERO_EXIBICAO` — digitada à mão nas Propriedades do script.
+   *
+   * A segunda existia sozinha, e o link do convite saiu como
+   * `wa.me/86981622537`: sem o 55, o `wa.me` lê o 86 como código da China. O
+   * `_e164` conserta a falta do código de país; o que ele não conserta é um
+   * número digitado errado, e é por isso que a fonte da Meta vem primeiro.
+   * @private
+   */
+  _numeroDoBot() {
+    const props = PropertiesService.getScriptProperties();
+    let bruto = '';
+    try {
+      bruto = props.getProperty('WHATSAPP_NUMERO_BOT') ||
+              getConfig().WHATSAPP_NUMERO_EXIBICAO || '';
+    } catch (e) { /* segue sem número */ }
+
+    return bruto ? Utils._e164(bruto).replace('+', '') : '';
+  },
+
+  /**
+   * Menu de quem já é dizimista.
+   *
+   * Três botões é o máximo que o WhatsApp aceita, então o histórico não cabe
+   * aqui — ele virou contexto no início da devolução, onde a pessoa já está
+   * pensando em dízimo, e atalho digitando "histórico".
+   *
+   * @param {string} [aviso] - Texto que entra ANTES da saudação, na mesma
+   *   mensagem. Quem precisa avisar algo junto do menu usa isto em vez de
+   *   mandar uma mensagem própria — que seria uma mensagem cobrada a mais.
+   */
+  /**
+   * Os três botões de quem é dizimista — o teto do WhatsApp.
+   *
+   * Ficam num lugar só porque aparecem em três telas: o menu, a confirmação do
+   * cadastro e a confirmação de membro adicionado. Espalhados, divergiriam com
+   * o tempo — foi o que aconteceu com o menu de "já sou dizimista" antes do
+   * BL-38, que tinha um conjunto de botões diferente do menu principal.
+   *
+   * Devolvidos por função, e não como constante: um array exportado é
+   * compartilhado, e `Utils.enviarMenu` faz `slice`/`map` nele.
+   */
+  botoesDizimista() {
+    return [
+      { id: 'btn_devolver_dizimo', title: '💰 Dízimo'          },
+      { id: 'btn_oferta',          title: '🎁 Oferta'          },
+      { id: 'btn_outras_opcoes',   title: '⋯ Outras opções'    }
+    ];
+  },
+
+  /**
+   * O que não coube nos 3 botões.
+   *
+   * BL-41 — POR QUE LISTA, E POR QUE ISSO É BARATO.
+   * São 4 destinos e o WhatsApp aceita 3 botões, então aqui é lista
+   * obrigatoriamente. Ela custa uma mensagem a mais — mas só para quem entra:
+   * dízimo e oferta continuam a um toque, e são eles que se repetem. O submenu
+   * é usado por quem vai adicionar membro ou ver histórico, algumas dezenas de
+   * vezes por mês contra 500 devoluções.
+   */
+  menuOutrasOpcoes(from) {
+    StateManager.setEstado(from, ESTADOS.MENU);
+
+    Utils.enviarLista(from,
+      'O que você gostaria de fazer?',
+      [{
+        title: 'Mais opções',
+        rows: [
+          { id: 'opt_membro',    title: '➕ Adicionar membro', description: 'Cadastrar alguém da sua família' },
+          { id: 'opt_historico', title: '📊 Meu histórico',    description: 'Suas devoluções anteriores'      },
+          { id: 'opt_contato',   title: '📞 Contato Pastoral', description: 'Falar com a sua comunidade'      },
+          // "bot" é jargão nosso, não da pessoa do outro lado. E "membro" está
+          // duas linhas acima querendo dizer "da família" — repetir a palavra
+          // com outro sentido na mesma lista confunde.
+          { id: 'opt_convidar',  title: '💛 Convidar alguém',  description: 'Compartilhe com outra pessoa da paróquia' },
+          { id: 'opt_menu',      title: '🔙 Menu',             description: 'Voltar ao início'                }
+        ]
+      }],
+      { textoBotao: 'Ver opções' }
     );
-    Utilities.sleep(1000);
-    //this.menuPrincipal(from);
+  },
+
+  menuDizimista(from, dizimista, aviso, opcoes = {}) {
+    StateManager.setEstado(from, ESTADOS.MENU);
+
+    const nome = (dizimista && dizimista.x_name) || 'Dizimista';
+
+    // Com imagem no cabeçalho, o título em texto perde o lugar — `header` é um
+    // só. Não é perda: a arte do avatar já diz "Pastoral do Dízimo".
+    const cabecalho = opcoes.imagemId
+      ? { imagemId: opcoes.imagemId }
+      : { header: '💛 Pastoral do Dízimo' };
+
+    // `opcoes.texto` troca o corpo inteiro, em vez de só prefixar. O primeiro
+    // contato precisa disso: prefixar as boas-vindas deixaria dois "olá" no
+    // mesmo balão — o da Cidinha se apresentando e o "Olá, Fulano" daqui.
+    const corpo = opcoes.texto ||
+      ((aviso ? aviso + '\n\n' : '') + `Olá, *${nome}*! Como posso te ajudar hoje?`);
+
+    Utils.enviarMenu(from, corpo, this.botoesDizimista(), cabecalho);
   }
 
 };

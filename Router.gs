@@ -68,12 +68,39 @@ const Router = {
       return;
     }
 
+    // Resposta de um WhatsApp Flow. Chega como um subtipo próprio, então sem
+    // este ramo ela cairia no `menuPrincipal` do fim da função e o formulário
+    // inteiro seria descartado em silêncio.
+    if (subTipo === 'nfm_reply') {
+      FlowHandler.processar(from, message.interactive.nfm_reply);
+      return;
+    }
+
     if (subTipo === 'list_reply') {
       const itemId    = message.interactive.list_reply?.id;
       const itemTitle = message.interactive.list_reply?.title;
       console.log(`📋 Lista selecionada: ${itemId} - ${itemTitle}`);
 
       const estado = StateManager.getEstado(from);
+
+      // ── BL-41: o submenu "Outras opções" ──────────────────────────────────
+      // Roteia por id, não por estado: estes itens são sempre válidos, e uma
+      // lista antiga na conversa continua funcionando.
+      if (itemId && itemId.indexOf('opt_') === 0) {
+        switch (itemId) {
+          case 'opt_membro':    CadastroHandler.iniciarCadastroMembro(from); return;
+          case 'opt_historico': DevolucaoHandler.exibirHistorico(from);      return;
+          case 'opt_contato':   MenuHandler.infoSecretaria(from);            return;
+          case 'opt_convidar':  MenuHandler.convidar(from);                  return;
+          default:              MenuHandler.menuPrincipal(from);             return;
+        }
+      }
+
+      // ── BL-41: comunidade escolhida para a oferta ─────────────────────────
+      if (itemId && itemId.indexOf('ofc_') === 0) {
+        OfertaHandler.processarComunidade(from, itemId, itemTitle);
+        return;
+      }
 
       // ── Família: seleção de quem devolver / de quem é o histórico ──────────
       if (itemId && itemId.indexOf('fam_') === 0) {
@@ -132,8 +159,35 @@ const Router = {
         }
       }
 
-      MenuHandler.menuPrincipal(from);
+      // BL-28: cair aqui significa que a seleção não valia para o estado atual
+      // — quase sempre um toque numa lista ANTIGA, que o WhatsApp mantém
+      // clicável. Mandar para o menu apagaria um cadastro em andamento sem
+      // uma palavra. Se há cadastro, avisamos e repetimos a pergunta.
+      this._interativoForaDeContexto(from, `lista "${itemId}"`);
     }
+  },
+
+  /**
+   * Trata uma resposta interativa que não valia para o estado atual.
+   *
+   * Com cadastro em andamento, o cadastro VENCE: o toque é descartado e o
+   * passo atual é repetido. Sem cadastro, é o menu de sempre.
+   *
+   * @private
+   */
+  _interativoForaDeContexto(from, oQue) {
+    const estado = StateManager.getEstado(from);
+
+    if (ESTADOS_CADASTRO.includes(estado)) {
+      console.log(`↩️ [BL-28] ${oQue} fora de contexto em ${estado} — cadastro preservado`);
+      Utils.enviarSimples(from,
+        'Essa opção era de uma etapa anterior. 😊\n\n' +
+        'Seu cadastro continua de onde parou — é só responder à pergunta abaixo.'
+      );
+      if (CadastroHandler.reapresentarPasso(from)) return;
+    }
+
+    MenuHandler.menuPrincipal(from);
   },
 
   _rotearBotao(from, buttonId) {
@@ -155,7 +209,7 @@ const Router = {
       'btn_numero_cancelar':    'Cancelar número',
       'btn_foto_sim':           'Enviar foto: Sim',
       'btn_confirmar_cadastro': 'Confirmar cadastro',
-      'btn_cancelar_cadastro':  'Cancelar cadastro',
+      'btn_cancelar_cadastro':  'Corrigir cadastro',
       'btn_notificacao_sim':    'Notificação: Sim',
       'btn_notificacao_nao':    'Notificação: Não',
       'btn_sessao_continuar':   'Sessão: Continuar',
@@ -177,7 +231,11 @@ const Router = {
       case 'btn_numero_cancelar':    CadastroHandler.cancelar(from);          break;
       case 'btn_foto_sim':           CadastroHandler.solicitarFoto(from);     break;
       case 'btn_confirmar_cadastro': CadastroHandler.finalizar(from);         break;
-      case 'btn_cancelar_cadastro':  CadastroHandler.cancelar(from);          break;
+      // O botão diz "❌ Corrigir" — e até o BL-45 chamava `cancelar`, que
+      // apagava os sete campos preenchidos. O id ficou como estava de
+      // propósito: mensagens antigas na conversa ainda carregam esse valor, e
+      // renomear faria elas pararem de responder.
+      case 'btn_cancelar_cadastro':  CadastroHandler.corrigir(from);          break;
 
       // --- Cadastro de membro (família) ---
       case 'btn_end_mesmo':          CadastroHandler.usarEnderecoDoResponsavel(from); break;
@@ -185,12 +243,24 @@ const Router = {
       case 'btn_dia_mesmo':          CadastroHandler.usarDiaDoResponsavel(from);      break;
       case 'btn_dia_outro':          CadastroHandler.solicitarDiaDigitado(from);      break;
       case 'btn_foto_pular_membro':  CadastroHandler.pularFotoMembro(from);           break;
+      case 'btn_foto_pular':         CadastroHandler.pularFoto(from);                 break;
 
       // --- Devolução ---
+      // Os dois ids abaixo saíram dos menus, mas continuam vivos aqui: as
+      // mensagens antigas seguem na conversa das pessoas e o toque nelas chega
+      // ao webhook como sempre. Remover os `case` transformaria um botão antigo
+      // em silêncio.
       case 'btn_ja_sou_dizimista':   DevolucaoHandler.verificarDizimista(from); break;
       case 'btn_devolver_dizimo':    DevolucaoHandler.iniciarDevolucao(from);   break;
       case 'btn_dev_prosseguir':     DevolucaoHandler.prosseguirAposAviso(from); break;
       case 'btn_minhas_devolucoes':  DevolucaoHandler.exibirHistorico(from);    break;
+
+      // --- Oferta (BL-41) ---
+      case 'btn_oferta':             OfertaHandler.iniciar(from);           break;
+      case 'ofv_10':
+      case 'ofv_20':
+      case 'ofv_outro':              OfertaHandler.processarBotaoValor(from, buttonId); break;
+      case 'btn_outras_opcoes':      MenuHandler.menuOutrasOpcoes(from);    break;
 
       // --- Geral ---
       case 'btn_secretaria':         MenuHandler.infoSecretaria(from);  break;
@@ -225,8 +295,10 @@ const Router = {
       case 'btn_voltar_pendentes':  RelatorioHandler.voltarPendentes(from);  break;
 
       default:
+        // BL-28: mesmo raciocínio do list_reply. Um botão desconhecido quase
+        // sempre é um botão ANTIGO, de uma etapa que já passou.
         console.log(`⚠️ Botão desconhecido: ${buttonId}`);
-        MenuHandler.menuPrincipal(from);
+        this._interativoForaDeContexto(from, `botão "${buttonId}"`);
     }
   },
 
@@ -276,6 +348,13 @@ const Router = {
           RelatorioHandler.iniciar(from);
           return;
         }
+        // O histórico saiu do menu (3 botões é o teto do WhatsApp) e virou
+        // contexto no início da devolução. Este atalho é a porta para quem
+        // quer só consultar, sem começar uma devolução.
+        if (lower === 'historico' || lower === 'histórico') {
+          DevolucaoHandler.exibirHistorico(from);
+          return;
+        }
       }
     }
 
@@ -285,7 +364,66 @@ const Router = {
       StateManager.appendLog(from, texto);
     }
 
+    // BL-33: quem recebeu o formulário e escreveu em vez de preencher. Pode
+    // ter desistido, pode estar num aparelho que não o renderiza, pode não ter
+    // visto o botão. Não é caso de menu: a pessoa pediu para se cadastrar e
+    // continua querendo — só não pelo formulário. Segue por conversa.
+    if (estado === ESTADOS.AGUARDANDO_FLOW_CADASTRO) {
+      // O mesmo estado serve aos dois formulários; quem diz QUAL está em curso
+      // é a sessão. Retomar o cadastro de um dizimista quando a pessoa estava
+      // adicionando um familiar seria pior que o menu.
+      const ehMembro = !!StateManager.getCampo(from, 'cadastrandoMembro');
+      console.log(`↩️ [Flow] ${from} escreveu em vez de preencher ` +
+                  `(${ehMembro ? 'membro' : 'cadastro'}) — caindo para a conversa`);
+
+      // BL-44: com o cadastro por conversa desligado, escrever aqui não
+      // derruba mais ninguém no passo a passo de 19 mensagens. A pessoa fica
+      // ONDE ESTAVA — o formulário continua aberto e clicável na conversa —
+      // e recebe um lembrete com as duas portas que não exigem cadastro.
+      //
+      // O gatilho antigo não distinguia "não consegui abrir" de "quanto é o
+      // dízimo?", e tratava os dois como desistência (BL-34). Lembrar em vez
+      // de decidir não chuta a intenção de ninguém.
+      //
+      // Vale para os DOIS formulários — cadastro e membro. São a mesma coisa:
+      // cadastrar gente perguntando campo por campo, 19 e 14 mensagens contra
+      // 4 do formulário.
+      if (!CadastroHandler.conversaAtiva()) {
+        MenuHandler.lembrarCadastroPendente(from, ehMembro
+          ? '🙏 *Falta pouco para adicionar seu familiar!*\n\n' +
+            'Toque em *Preencher cadastro*, na mensagem do formulário aqui na ' +
+            'conversa. Leva menos de um minuto. 💛\n\n' +
+            'Se preferir, dá para fazer isto agora:'
+          : '🙏 *Falta pouco para concluir seu cadastro!*\n\n' +
+            'Toque em *Preencher cadastro*, na mensagem do formulário aqui na ' +
+            'conversa. Leva menos de um minuto. 💛\n\n' +
+            'Se preferir, dá para fazer isto agora:');
+        return;
+      }
+
+      Utils.enviarSimples(from,
+        'Sem problema, podemos fazer por aqui mesmo, passo a passo. 💛'
+      );
+
+      if (ehMembro) {
+        Utils.enviarSimples(from, '📝 *Nome Completo*\n\nDigite o nome completo do familiar:');
+        StateManager.setEstado(from, ESTADOS.AGUARDANDO_NOME);
+      } else {
+        CadastroHandler.confirmarNumero(from);
+      }
+      return;
+    }
+
     switch (estado) {
+      // ── Oferta (BL-41) ────────────────────────────────────────────────────
+      case ESTADOS.AGUARDANDO_NOME_OFERTA:
+        OfertaHandler.processarNome(from, texto);
+        break;
+
+      case ESTADOS.AGUARDANDO_VALOR_OFERTA:
+        OfertaHandler.processarValorDigitado(from, texto);
+        break;
+
       // ── Relatório v2 ──────────────────────────────────────────────────────
       case ESTADOS.AGUARDANDO_CODIGO_RELATORIO:
         RelatorioHandler.handleAuthCode(from, texto);
@@ -324,8 +462,12 @@ const Router = {
     if (estado === ESTADOS.AGUARDANDO_FOTO_PERFIL) {
       CadastroHandler.processarFotoPerfil(from, message.image);
     } else if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
-               estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
-      ComprovanteHandler.processar(from, message.image);
+               estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA ||
+               estado === ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA) {
+      // BL-37: o `message.id` vai junto porque é ele que o indicador de
+      // "digitando" precisa marcar como lido — o aviso de progresso que
+      // substituiu a mensagem "⏳ Analisando comprovante...".
+      ComprovanteHandler.processar(from, message.image, message.id);
     } else {
       MenuHandler.erro(from, 'Não estou esperando uma imagem agora. Digite *menu* para voltar.');
     }
@@ -340,8 +482,9 @@ const Router = {
     const estado = StateManager.getEstado(from);
 
     if (estado === ESTADOS.AGUARDANDO_COMPROVANTE ||
-        estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA) {
-      ComprovanteHandler.processar(from, message.document);
+        estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA ||
+        estado === ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA) {
+      ComprovanteHandler.processar(from, message.document, message.id);
     } else {
       MenuHandler.erro(from, 'Não estou esperando um documento agora. Digite *menu* para voltar.');
     }

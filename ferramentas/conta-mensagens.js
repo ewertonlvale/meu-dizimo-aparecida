@@ -1,0 +1,2128 @@
+#!/usr/bin/env node
+/**
+ * ============================================================================
+ * CONTA-MENSAGENS.JS — quantas mensagens o bot envia em cada entrada
+ * ============================================================================
+ *
+ * POR QUE EXISTE
+ *   A partir de 01/10/2026 a Meta cobra mensagem de serviço acima de 1.000 por
+ *   mês. Documentação/FLUXOS.md registra quantas mensagens cada fluxo custa —
+ *   e um número escrito num .md envelhece em silêncio: basta alguém acrescentar
+ *   um `Utils.enviarSimples` para o documento passar a mentir sem que nada
+ *   falhe. Este script conta de novo, no código, a cada execução.
+ *
+ *   Não substitui teste em aparelho: conta envios, não confere o que aparece na
+ *   tela. Mas é ele que pega a mensagem que voltou sem ninguém notar.
+ *
+ * COMO FUNCIONA
+ *   Carrega os .gs de verdade (Config, MenuHandler, CadastroHandler,
+ *   DevolucaoHandler) num contexto isolado e troca só a BORDA — Utils,
+ *   OdooService, MediaService, StateManager, FlowHandler. O que roda é a lógica
+ *   real de decisão; o que é falso é o que sai pela rede.
+ *
+ *   Nada é enviado, nada toca o Odoo. Pode rodar à vontade.
+ *
+ * USO
+ *   node ferramentas/conta-mensagens.js
+ *
+ *   Sai com código 1 se algum cenário fugir do esperado — serve em CI.
+ */
+
+const fs   = require('fs');
+const path = require('path');
+const vm   = require('vm');
+
+const RAIZ = path.join(__dirname, '..');
+
+// ---------------------------------------------------------------------------
+// A borda: tudo o que sai do processo vira contador
+// ---------------------------------------------------------------------------
+
+let enviadas = [];
+let gratis   = [];   // sinais que NÃO são mensagens cobradas
+let consultas = [];  // domínios enviados ao Odoo, para conferir os filtros
+const registra = (tipo, texto) => enviadas.push({ tipo, texto: String(texto || '') });
+
+/**
+ * Carrega o VisionService NUM CONTEXTO PRÓPRIO, só para os extratores puros.
+ *
+ * Não dá para carregá-lo junto dos handlers: `const VisionService = {...}` é
+ * declaração léxica e sombrearia o stub, fazendo o ComprovanteHandler chamar a
+ * API de OCR de verdade. Foi exatamente o que aconteceu ao tentar o atalho.
+ */
+function extratoresDoVision() {
+  const ctx = {
+    console: { log() {}, warn() {}, error() {} },
+    Utilities: {}, Utils: {}, getVisionConfig: () => ({})
+  };
+  vm.createContext(ctx);
+  return vm.runInContext(
+    fs.readFileSync(path.join(RAIZ, 'VisionService.gs'), 'utf8') + '\n;VisionService',
+    ctx, { filename: 'VisionService.gs' }
+  );
+}
+
+function montarContexto(cenario) {
+  // Só StateManager (cache/Properties), VisionService (OCR) e FlowHandler são
+  // simulados por inteiro. Utils, OdooService, MediaService e os handlers são
+  // carregados DE VERDADE — deles, apenas os métodos que falam com a rede são
+  // trocados, depois da carga. Foi essa escolha que pegou duas coisas: uma
+  // guarda que um stub de `criarDizimista` teria escondido, e um valor
+  // formatado que um stub de `formatarValor` teria deixado passar.
+  const StateManager = {
+    // O cenário escolhe o estado: sem isso o Router cai sempre no ramo do
+    // menu, e o de "escreveu com o formulário aberto" — o do BL-44 — nunca
+    // seria alcançado por teste nenhum.
+    setEstado: () => {}, getEstado: () => cenario.estado || null, limparDados: () => {},
+    iniciarSessaoCadastro: () => {}, registrarSessaoAtiva: () => {},
+    appendLog: () => {}, setDados: () => {}, getDados: () => ({}),
+    getCampo: (from, campo) => (cenario.sessao || {})[campo],
+    salvarMultiplosCampos: () => {}, getDadosTemporarios: () => (cenario.dadosCadastro || {}),
+    persistirLogCadastro: () => {}
+  };
+
+  const FlowHandler = {
+    // Os DADOS entram no texto registrado. Sem isso, "o formulário voltou"
+    // e "o formulário voltou preenchido" são indistinguíveis — e é toda a
+    // diferença do BL-45.
+    enviarFlowCadastro: (from, preenchido) => {
+      if (!cenario.flowLigado) return false;
+      registra('flow', 'formulário de cadastro ' + JSON.stringify(preenchido || {}));
+      return true;
+    },
+    // Era fixo em `false`, então o formulário de membro NUNCA saía no teste e
+    // só o caminho por conversa era exercitado. O cenário decide.
+    enviarFlowMembro: () => {
+      if (!cenario.flowMembroLigado) return false;
+      registra('flow', 'formulário de membro');
+      return true;
+    },
+    enviarFlowOferta: () => {
+      if (!cenario.flowOfertaLigado) return false;
+      registra('flow', 'formulário de oferta');
+      return true;
+    }
+  };
+
+  const ctx = {
+    StateManager, FlowHandler,
+    // OCR: um comprovante legítimo, com a MESMA chave da comunidade — assim o
+    // caminho exercitado é o do sucesso conferido (BL-26), não o de erro.
+    // Este stub cobre a chamada à API; os EXTRATORES puros do VisionService são
+    // testados à parte, com texto real de comprovante (seção do BL-14).
+    VisionService: {
+      // `cenario.ocr` sobrescreve campos. Sem isso não dá para exercitar
+      // divergência — o stub devolvia sempre a chave certa, e o ramo do
+      // alerta ficava inalcançável.
+      analisarComprovante: () => Object.assign({
+        valor: 50, data: '12/08/2026', tipo: 'PIX',
+        banco: 'Banco do Brasil', chavePix: 'pix@paroquia.org',
+        recebedor: { nome: 'Paróquia N. S. da Conceição', banco: 'Banco do Brasil' }
+      }, cenario.ocr || {}),
+      analisarPDF: () => null,
+      validarComprovante: () => ({ ehComprovante: true })
+    },
+    console: { log() {}, warn() {}, error() {} },
+    Utilities: {
+      sleep() {},
+      base64Encode: () => 'BASE64',
+      // `registrarDevolucao` usa formatDate para a data de hoje. Só o formato
+      // yyyy-MM-dd é usado no projeto, então o stub cobre esse caso.
+      formatDate: (d, _tz, _fmt) => new Date(d).toISOString().slice(0, 10)
+    },
+    Logger: { log() {} },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k) => (cenario.propriedades || {})[k] || null,
+        getProperties: () => cenario.propriedades || {},
+        setProperty: () => {}, deleteProperty: () => {}, setProperties: () => {}
+      })
+    },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
+  };
+  vm.createContext(ctx);
+
+  // Os .gs declaram `const Utils = {...}` no topo. Num contexto do `vm` isso é
+  // declaração léxica: não vira propriedade do objeto de contexto. Por isso
+  // tudo é carregado num script só e os objetos são devolvidos no fim — é a
+  // forma de alcançá-los sem tocar nos arquivos do projeto.
+  const ARQUIVOS = [
+    'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
+    'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
+    'OfertaHandler.gs', 'TestePixNativo.gs',
+    // O Router decide o que acontece com cada texto e cada botão. Ficou de
+    // fora até 19/09, e por isso o ramo "escreveu com o formulário aberto" —
+    // onde mora o BL-44 — não era executado por teste nenhum.
+    'Router.gs'
+  ];
+  const fontes = ARQUIVOS
+    .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
+    .join('\n;\n');
+
+  const mod = vm.runInContext(
+    fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
+             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, Router, ESTADOS, ' +
+             'statusDaDevolucao, ' +
+             'alertaDoador, exigeConferencia });',
+    ctx,
+    { filename: 'bot.gs' }
+  );
+
+  // ── A borda: só o que sai do processo ──────────────────────────────────────
+  Object.assign(mod.Utils, {
+    enviarSimples:      (to, t)         => registra('texto',  t),
+    enviarComBotaoMenu: (to, t)         => registra('texto',  t),
+    enviarConfirmar:    (to, t)         => registra('botoes', t),
+    // O tipo distingue `menu` de `menu+imagem`: é a diferença entre a entrada
+    // de 2 mensagens e a de 1 (A12), e sem isso nenhum teste veria a economia.
+    enviarMenu: (to, t, botoes, opcoes = {}) => registra(
+      opcoes.imagemId ? 'menu+imagem' : 'menu',
+      t + ' [' + (botoes || []).map(b => b.id).join(', ') + ']'
+    ),
+    // As LINHAS entram no texto registrado, não só o título. O "bot" que
+    // escapou para produção morava numa `description` de linha — com o stub
+    // guardando só o título, toda varredura passaria por cima dele sem ver.
+    enviarLista: (to, t, secoes) => registra('lista', t + ' ' +
+      (secoes || []).map(sec =>
+        (sec.rows || []).map(r => `${r.title} — ${r.description || ''}`).join(' | ')
+      ).join(' | ')),
+    // Indicador de digitação: NÃO é mensagem. Registrado à parte justamente
+    // para o teste provar que ele não entra na conta.
+    sinalizarProcessando: () => {
+      gratis.push('digitando');
+      return cenario.digitandoFunciona !== false;
+    },
+    // A API do QR Code. `getContent` alimenta o base64Encode acima.
+    fetchComRetry: () => ({ getResponseCode: () => 200, getContent: () => 'qr', getContentText: () => '' }),
+
+    // O card do BL-40 é montado no MediaService e vai direto pelo `_post`, sem
+    // passar pelos `enviar*`. Sem interceptar aqui ele não seria contado — e o
+    // fluxo que mais importa ficaria fora da conta.
+    _post: (payload) => {
+      if (payload.type === 'contacts') {
+        registra('contato', JSON.stringify(payload.contacts));
+        const ok = cenario.contatoAceito !== false;
+        return { getResponseCode: () => (ok ? 200 : 400), getContentText: () => '' };
+      }
+      const card = payload.interactive && payload.interactive.type === 'order_details';
+      registra(card ? 'card-pix' : 'outro', card
+        ? payload.interactive.body.text
+        : JSON.stringify(payload).slice(0, 80));
+      const aceita = cenario.cardAceito !== false;
+      return { getResponseCode: () => (aceita ? 200 : 400), getContentText: () => '' };
+    }
+  });
+  // formatarValor, formatarDataOdoo, variantesNumeroBR e o resto continuam reais.
+
+  Object.assign(mod.MediaService, {
+    enviarImagemFixa:   (to, id, legenda)  => registra('imagem+legenda', legenda),
+    // Sem avatar no Odoo não há id — é o que faz o A12 cair no caminho antigo.
+    mediaIdDoAvatar:    () => (cenario.temAvatar ? 'MEDIA_ID' : null),
+    enviarImagemBase64: (to, b64, caption) => { registra('imagem+legenda', caption); return {}; },
+    baixarArquivo:      () => ({ base64: 'BASE64DOCOMPROVANTE' })
+  });
+
+  // OdooService: trocado no nível do RPC, para que `criarDizimista` — onde mora
+  // a guarda contra o cadastro duplicado (BL-39) — rode de verdade.
+  Object.assign(mod.OdooService, {
+    searchRead: (modelo, campos, dominio) => {
+      if (cenario.odooForaDoAr) throw new Error('connection refused (simulado)');
+      consultas.push({ modelo, campos, dominio });
+      // BL-41: com `campoTipoExiste`, o harness simula o Odoo DEPOIS da
+      // migração. Sem isso, `_comTipo` nunca acrescenta o filtro e as regras
+      // abaixo passariam sem testar nada.
+      if (modelo === 'ir.model.fields') {
+        const nome = (dominio || []).find(d => d[0] === 'name');
+        const quer = nome && nome[2];
+        if (quer === 'x_studio_tipo_contribuicao' || quer === 'x_studio_telefone_ofertante') {
+          return cenario.camposNovos ? [{ id: 1, related: false, readonly: false }] : [];
+        }
+        if (quer === 'x_studio_comunidade') {
+          return cenario.comunidadeGravavel
+            ? [{ id: 2, related: false, readonly: false }]
+            : [{ id: 2, related: 'x_studio_dizimista.x_studio_comunidade', readonly: true }];
+        }
+        return [];
+      }
+      // Quem já escreveu ao bot: é aqui que mora o `wa_id` de verdade. O
+      // cenário diz quais formas existem, para o teste cobrir os dois casos —
+      // conta antiga (sem o nono dígito) e conta nova (com).
+      if (modelo === 'x_contato_bot') {
+        const alvo = (dominio || []).find(d => d[0] === 'x_name');
+        const querendo = (alvo && alvo[2]) || [];
+        return (cenario.contatoBotConhece || [])
+          .filter(n => querendo.indexOf(n) >= 0)
+          .map(n => ({ x_name: n }));
+      }
+      if (modelo === 'x_dizimista') {
+        const porTelefone = (dominio || []).some(d => d[0] === 'x_studio_partner_phone');
+        if (porTelefone) return cenario.dizimista ? [cenario.dizimista] : [];
+        // Busca por id — é como `registrarDevolucao` descobre a comunidade.
+        const porId = (dominio || []).some(d => d[0] === 'id');
+        if (porId) return cenario.dizimistaNoOdoo !== undefined
+          ? (cenario.dizimistaNoOdoo ? [cenario.dizimistaNoOdoo] : [])
+          : (cenario.dizimista ? [cenario.dizimista] : []);
+        return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
+      }
+      if (modelo === 'x_devolucao') {
+        // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
+        // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
+        // com histórico também dispararia o aviso de duplicata, e o teste
+        // passaria a medir outro caminho sem ninguém perceber.
+        const porPeriodo = (dominio || []).some(d => d[0] === 'x_studio_data_da_devolucao');
+        return (porPeriodo ? cenario.devolucoesDoMes : cenario.devolucoes) || [];
+      }
+      return [];
+    },
+    // O cenário pode espiar o que foi gravado. Sem isso, um campo calculado
+    // — como o status do BL-51 — não tem como ser conferido: o stub devolvia
+    // um id e jogava os dados fora.
+    create: (modelo, dados) => {
+      if (cenario.aoCriar) cenario.aoCriar(modelo, dados);
+      return 99;
+    },
+    buscarParametros:               () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
+    listarComunidades:              () => [{ id: 1, x_name: 'Matriz' }],
+    buscarDadosPagamentoComunidade: () => ({
+      x_studio_chave_pix:     'pix@paroquia.org',
+      x_studio_banco:         'Banco do Brasil',
+      x_studio_titular_conta: 'Paróquia N. S. da Conceição Aparecida'
+    }),
+    contatosDoDizimista: () => ({
+      comunidade: 'São José',
+      // Formato do cadastro padrão do Odoo: com máscara e SEM o 55. Era
+      // '5586988521231', já normalizado, e isso escondia um bug de produção —
+      // o `wa_id` saía sem código de país e o WhatsApp lia o DDD 86 como
+      // China. Um fixture já arrumado testa a si mesmo, não o código.
+      contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231' }]
+    }),
+    salvarFotoDizimista: () => {}
+    // `devolucoesDoMes`, `buscarDevolucoesDizimista`, `listarDevolucoesPorPeriodo`
+    // e `buscarDevolucoesPendentes` NÃO são trocadas: é nelas que vive o filtro
+    // por tipo do BL-41 (A5). Stub aqui esconderia exatamente o que precisa ser
+    // testado — foi o que aconteceu com `criarDizimista` (BL-39) e
+    // `registrarDevolucao` (A3), e é a terceira vez que este erro aparece.
+    // `registrarDevolucao` NÃO é trocado de propósito: é nele que vive a guarda
+    // do BL-41 contra devolução sem comunidade. Um stub a esconderia — foi o que
+    // aconteceu com `criarDizimista` e o BL-39 antes desta mudança.
+  });
+
+  return mod;
+}
+
+// ---------------------------------------------------------------------------
+// Os cenários, com o número que Documentação/FLUXOS.md promete
+// ---------------------------------------------------------------------------
+
+const DIZIMISTA = { id: 7, x_name: 'Maria', x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] };
+const COMPROVANTE = { id: 'media123', mime_type: 'image/jpeg', sha256: 'abc' };
+
+// Sessão de um cadastro já preenchido, pronto para o "✅ Confirmar" do resumo.
+const CADASTRO_PRONTO = {
+  nome: 'Thalles da Silva', nomeUsual: 'Thalles', whatsapp: '55',
+  dataNascimento: '15/03/1990', endereco: 'Rua A, 1', valorMensal: 50,
+  comunidadeId: 1, notificacaoAtiva: true, diaPreferido: 15
+};
+
+// O que a pessoa já preencheu quando chega na tela de confirmação — é isto
+// que o "Corrigir" apagava (BL-45).
+const DADOS_CADASTRO = {
+  nome: 'Ewerton Leal Vale', nomeUsual: 'Ewerton',
+  dataNascimento: '12/07/1987', endereco: 'R. Hegesipo Marques Sérvio, 5285',
+  valorMensal: 150, notificacaoAtiva: true, diaPreferido: 12,
+  comunidadeId: 3, comunidadeNome: 'N. Senhora do Desterro'
+};
+
+const CENARIOS = [
+  {
+    nome: 'Primeiro contato — número NOVO vê as TRÊS portas',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 1,
+    porque: 'A12: avatar, boas-vindas e os 3 botões num balão só. Cadastro ' +
+            'custa mais uma, uma vez na vida; oferta e contato deixam de ser ' +
+            'invisíveis para quem chega.'
+  },
+  {
+    nome: 'Entrada de número novo NÃO depende do formulário',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: false },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 1,
+    porque: 'o menu não é um flow: com o formulário desligado a entrada é a ' +
+            'mesma. Antes o interruptor do flow mexia na 1ª mensagem.'
+  },
+  {
+    nome: 'Quem toca "Ser Dizimista" recebe o formulário',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.CadastroHandler.iniciar('55', null),
+    esperado: 1,
+    porque: 'a mensagem a mais que o menu custa a quem quer cadastro — uma ' +
+            'vez na vida, e só para quem escolhe esse caminho'
+  },
+  {
+    nome: 'Primeiro contato — número JÁ CADASTRADO',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 1,
+    porque: 'A12: avatar, boas-vindas e os 3 botões num balão só. Eram 4, ' +
+            'depois 2. Toda pessoa passa por aqui, uma vez.'
+  },
+  {
+    nome: 'Primeiro contato — sem avatar no Odoo',
+    cenario: { dizimista: DIZIMISTA, temAvatar: false, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 2,
+    porque: 'texto simples no lugar da imagem — continua sendo uma mensagem'
+  },
+  {
+    nome: 'Botão antigo "Já sou Dizimista" (mensagem velha na conversa)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.verificarDizimista('55'),
+    esperado: 1,
+    porque: 'vai direto ao menu do dizimista. Eram 3 (buscando/encontrado/menu).'
+  },
+  {
+    nome: 'Botão antigo, de número que NÃO é dizimista',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.verificarDizimista('55'),
+    esperado: 1,
+    porque: 'cai no cadastro em vez de oferecer um menu para voltar ao mesmo lugar'
+  },
+  {
+    nome: 'Primeiro contato com o Odoo fora do ar',
+    cenario: { dizimista: null, temAvatar: false, flowLigado: true, odooForaDoAr: true },
+    roda: ctx => { ctx.MenuHandler.boasVindas('55'); ctx.MenuHandler.entrada('55'); },
+    esperado: 2,
+    porque: 'boas-vindas + menu genérico. O que não pode acontecer é a pessoa ficar sem resposta.'
+  },
+  {
+    nome: 'Devolução — dados de pagamento (metade 1)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    esperado: 1,
+    porque: 'card nativo: texto + botão "Copiar código Pix" juntos. Eram 3.'
+  },
+  {
+    nome: 'Devolução — card recusado pela Meta (rede de segurança)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, cardAceito: false },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    esperado: 3,
+    porque: 'volta ao QR + copia-e-cola. Custa 2 a mais, mas é a mensagem por onde o dinheiro passa'
+  },
+  {
+    nome: 'Devolução — comprovante analisado (metade 2)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    esperado: 1,
+    porque: 'só o resultado, com os dados do OCR dentro. Eram 3.'
+  },
+  {
+    nome: 'Devolução — comprovante com o indicador de digitação recusado',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, digitandoFunciona: false },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    esperado: 2,
+    porque: 'sem o balão, o "⏳ Analisando..." volta — silêncio de segundos parece travamento'
+  },
+  {
+    nome: 'Comprovante de OFERTA de quem não é cadastrado',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true,
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    esperado: 1,
+    porque: 'registra sem dizimista. O caminho normal responderia "não encontrei seu cadastro" DEPOIS de a pessoa ter pagado'
+  },
+  {
+    nome: 'Formulário antigo respondido por quem JÁ é dizimista (BL-39)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.CadastroHandler.finalizar('55'),
+    esperado: 1,
+    porque: 'o aviso vai junto do menu, numa mensagem só — e nada foi duplicado'
+  },
+  {
+    nome: 'Cadastro concluído — a confirmação já é o menu',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, dadosCadastro: CADASTRO_PRONTO },
+    roda: ctx => ctx.CadastroHandler.finalizar('55'),
+    esperado: 1,
+    porque: 'antes eram 2 até devolver: esta + a do menu, depois do toque em "🔙 Menu"'
+  },
+  {
+    nome: 'Contato Pastoral — cartão nativo',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    esperado: 1,
+    porque: 'cartão com "Conversar". Antes era texto com o número para copiar — mesma 1 mensagem'
+  },
+  {
+    nome: 'Contato Pastoral — cartão recusado (rede de segurança)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, contatoAceito: false },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    esperado: 2,
+    porque: 'volta ao texto. Quem pediu ajuda não pode ficar sem contato nenhum'
+  },
+  {
+    nome: 'Oferta de quem JÁ é dizimista — TAMBÉM escolhe a comunidade',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'a do cadastro é sugestão, não resposta: dá para ofertar para outra'
+  },
+  {
+    nome: 'Oferta de quem NÃO é cadastrado — pergunta a comunidade',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'oferta não exige cadastro — é o primeiro fluxo do bot nessa condição'
+  },
+  {
+    nome: 'Oferta — valor escolhido no botão leva ao pagamento',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               sessao: { ofertaComunidadeId: 1, ofertaComunidadeNome: 'Matriz' } },
+    roda: ctx => ctx.OfertaHandler.processarBotaoValor('55', 'ofv_20'),
+    esperado: 1,
+    porque: 'card nativo do BL-40, igual ao dízimo'
+  },
+  {
+    nome: 'Oferta com o formulário ligado — 2 perguntas viram 1',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, flowOfertaLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'comunidade e valor numa submissão, e a comunidade já vem selecionada'
+  },
+  {
+    nome: 'Oferta de não cadastrado — pede o nome depois da comunidade',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.processarComunidade('55', 'ofc_3', 'São José'),
+    esperado: 1,
+    porque: 'sem nome, a oferta chega à secretaria como um telefone solto'
+  },
+  {
+    nome: 'Oferta de dizimista — NÃO pede o nome (já se sabe)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               sessao: { ofertaNome: 'Maria' } },
+    roda: ctx => ctx.OfertaHandler.processarComunidade('55', 'ofc_3', 'São José'),
+    esperado: 1,
+    porque: 'vai direto ao valor'
+  },
+  {
+    nome: '"Corrigir" reabre o formulário em vez de cancelar o cadastro',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               dadosCadastro: DADOS_CADASTRO },
+    roda: ctx => ctx.Router.rotear('55',
+      { type: 'interactive', interactive: { type: 'button_reply',
+        button_reply: { id: 'btn_cancelar_cadastro', title: '❌ Corrigir' } } }),
+    esperado: 1,
+    porque: 'BL-45: o botão dizia "Corrigir" e apagava os sete campos'
+  },
+  {
+    nome: 'Membro: escreveu com o formulário aberto — lembrete, não as 14 mensagens',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO',
+               sessao: { cadastrandoMembro: true } },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'e aí?' } }),
+    esperado: 1,
+    porque: 'BL-44: cadastrar familiar por conversa é a mesma coisa que ' +
+            'cadastrar dizimista por conversa — campo por campo'
+  },
+  {
+    nome: 'Membro: formulário fora do ar e conversa desligada',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               flowMembroLigado: false },
+    roda: ctx => ctx.CadastroHandler.iniciarCadastroMembro('55'),
+    esperado: 1,
+    porque: 'o dizimista recebe desculpas e o contato da pastoral, não silêncio'
+  },
+  {
+    nome: 'Membro: com a CONVERSA ligada, o passo a passo volta',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               flowMembroLigado: false,
+               propriedades: { CADASTRO_CONVERSA_ATIVO: 'true' } },
+    roda: ctx => ctx.CadastroHandler.iniciarCadastroMembro('55'),
+    esperado: 1,
+    porque: 'a primeira pergunta do passo a passo — o interruptor é uma trava, ' +
+            'não uma remoção'
+  },
+  {
+    nome: 'Escreveu com o formulário aberto — lembrete, não as 19 mensagens',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO' },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'quanto é o dízimo?' } }),
+    esperado: 1,
+    porque: 'BL-44: a pessoa fica onde estava, o formulário continua clicável ' +
+            'na conversa, e o lembrete traz as portas que não exigem cadastro'
+  },
+  {
+    nome: 'Escreveu com o formulário aberto, mas a CONVERSA está ligada',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO',
+               propriedades: { CADASTRO_CONVERSA_ATIVO: 'true' } },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'não abre' } }),
+    esperado: 2,
+    porque: 'o interruptor devolve o caminho antigo inteiro — é uma trava, ' +
+            'não uma remoção'
+  },
+  {
+    nome: 'Ser Dizimista com o formulário fora do ar e a conversa desligada',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: false },
+    roda: ctx => ctx.CadastroHandler.iniciar('55', null),
+    esperado: 1,
+    porque: 'ninguém consegue se cadastrar agora — mas a pessoa recebe quem ' +
+            'procurar, em vez de ficar sem resposta'
+  },
+  {
+    nome: 'Convite — com o número do bot confirmado pela Meta',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    esperado: 2,
+    porque: 'o cartão do bot + o texto que manda encaminhá-lo. `contacts` é um ' +
+            'tipo de mensagem inteiro e não aceita corpo junto.'
+  },
+  {
+    nome: 'Convite — cartão recusado pela Meta cai no link',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               contatoAceito: false,
+               propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    esperado: 2,
+    porque: 'a tentativa do cartão ainda sai como mensagem; o texto vira o link'
+  },
+  {
+    nome: 'Convite — sem número nenhum',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               propriedades: {} },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    esperado: 1,
+    porque: 'sem número não há cartão nem link — só o texto que manda perguntar ' +
+            'à secretaria'
+  },
+  {
+    nome: 'Submenu "Outras opções"',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuOutrasOpcoes('55'),
+    esperado: 1,
+    porque: 'lista, porque 4 destinos não cabem em 3 botões. Custa só a quem entra'
+  },
+  {
+    nome: 'Menu principal de quem já é dizimista',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
+    esperado: 1,
+    porque: 'o menu decide pelo número — não pergunta quem é'
+  }
+];
+
+// ---------------------------------------------------------------------------
+
+// O histórico saiu do menu do dizimista (3 botões é o teto do WhatsApp) e virou
+// contexto dentro da devolução. Se voltar para lá, um destes dois quebra.
+const REGRAS_DE_BOTAO = [
+  {
+    nome: 'Menu do dizimista tem exatamente os 3 botões combinados',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuDizimista('55', DIZIMISTA),
+    confere: msgs => {
+      const ids = (msgs[0].texto.match(/\[(.*)\]/) || [, ''])[1];
+      const esperado = 'btn_devolver_dizimo, btn_oferta, btn_outras_opcoes';
+      return ids === esperado ? null : `botões "${ids}", esperado "${esperado}"`;
+    }
+  },
+  {
+    nome: 'Quem NÃO é dizimista também vê o botão de Oferta',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
+    confere: msgs => msgs[0].texto.includes('btn_oferta')
+      ? null
+      : 'oferta não exige cadastro, mas sumiu do menu de quem não é cadastrado'
+  },
+  {
+    nome: 'Menu de quem não é dizimista não oferece "Já sou Dizimista"',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
+    confere: msgs => msgs[0].texto.includes('btn_ja_sou_dizimista')
+      ? 'o botão de identificação voltou ao menu'
+      : null
+  }
+];
+
+// As fusões do BL-37 só valem se NADA sair da tela. Cada regra abaixo guarda
+// uma informação que antes tinha mensagem própria e agora divide espaço.
+const REGRAS_DE_CONTEUDO = [
+  {
+    nome: 'A entrada de número NOVO mostra as três portas, não só o cadastro',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    confere: msgs => {
+      const m = msgs.find(x => x.tipo === 'menu+imagem');
+      if (!m) return 'a entrada não saiu com cabeçalho de imagem';
+      if (!m.texto.includes('Cidinha')) return 'a Cidinha não se apresenta';
+      if (!m.texto.includes('Bem-vindo')) return 'faltou a boas-vindas';
+      // A regra que motivou esta tela: oferta não exige cadastro, e o contato
+      // da pastoral não exige nada. Se sobrar só o cadastro, quem chega para
+      // ofertar volta ao beco sem saída que isto veio corrigir.
+      const faltam = ['btn_ser_dizimista', 'btn_oferta', 'btn_secretaria']
+        .filter(b => !m.texto.includes(b));
+      return faltam.length ? `faltou porta: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'A entrada única carrega imagem, saudação e os 3 botões',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    confere: msgs => {
+      // Fundir três coisas num balão é fácil de desfazer por acidente: some a
+      // imagem e ninguém nota, porque a mensagem continua chegando.
+      const m = msgs.find(x => x.tipo === 'menu+imagem');
+      if (!m) return 'a entrada não saiu com cabeçalho de imagem';
+      if (!m.texto.includes('Cidinha')) return 'a Cidinha não se apresenta';
+      if (!m.texto.includes('Maria')) return 'a pessoa não é chamada pelo nome';
+      // Dois "olá" no mesmo balão foi o motivo de `_textoBoasVindasDizimista`
+      // existir; se voltarem, é porque alguém prefixou em vez de trocar.
+      if ((m.texto.match(/Olá/g) || []).length > 1) return 'dois "olá" no mesmo balão';
+      const faltam = ['btn_devolver_dizimo', 'btn_oferta', 'btn_outras_opcoes']
+        .filter(b => !m.texto.includes(b));
+      return faltam.length ? `faltou botão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'O card carrega os dados de pagamento inteiros',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: msgs => {
+      const card = (msgs.find(m => m.tipo === 'card-pix') || {}).texto || '';
+      const faltam = ['Banco do Brasil', 'Paróquia', 'pix@paroquia.org', 'comprovante']
+        .filter(t => !card.includes(t));
+      return faltam.length ? `faltou no card: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'Card recusado → o caminho antigo entrega tudo, sem faltar nada',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, cardAceito: false },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: (msgs, ctx) => {
+      // A regra que não pode quebrar: se o card falhar, a pessoa AINDA tem
+      // como pagar. Dados de pagamento + BR Code intacto.
+      const tem = msgs.some(m => m.texto.includes('pix@paroquia.org') && m.texto.includes('DADOS PARA PAGAMENTO'));
+      if (!tem) return 'os dados de pagamento não chegaram';
+      const esperado = ctx.MediaService._gerarPayloadPix(
+        'pix@paroquia.org', DIZIMISTA.x_studio_value, 'Paróquia N. S. da Conceição Aparecida'
+      );
+      return msgs.some(m => m.texto === esperado) ? null : 'o BR Code de reserva não veio intacto';
+    }
+  },
+  {
+    nome: 'No caminho de reserva, o copia-e-cola segue sozinho e sem formatação',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, cardAceito: false },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: (msgs, ctx) => {
+      // Um toque longo → Copiar precisa levar EXATAMENTE o código EMV. Qualquer
+      // texto em volta, ou negrito/crase envolvendo o código, entraria na cópia
+      // e o app do banco recusaria.
+      //
+      // A comparação é com o payload que o próprio MediaService gera, em vez de
+      // uma lista de caracteres proibidos. Duas versões anteriores deste teste
+      // acusaram o código à toa: uma proibia `*`, que é o campo txid do padrão
+      // PIX (`62070503***`), e a outra proibia espaço, que existe no nome do
+      // recebedor (`5925PAROQUIA N S DA CONCEICAO`). Comparar com o esperado
+      // não tem como errar assim.
+      const esperado = ctx.MediaService._gerarPayloadPix(
+        'pix@paroquia.org', DIZIMISTA.x_studio_value, 'Paróquia N. S. da Conceição Aparecida'
+      );
+      const ultima = msgs[msgs.length - 1];
+      return ultima.texto === esperado
+        ? null
+        : 'a última mensagem não é exatamente o BR Code (veio texto ou formatação junto)';
+    }
+  },
+  {
+    nome: 'O resultado mostra quem recebeu: nome, chave, banco e valor',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    confere: msgs => {
+      const m = msgs.map(x => x.texto).join('\n');
+      // Se a mensagem pode dizer "não confere", ela tem de mostrar em cima de
+      // QUE dado — senão a pessoa recebe uma acusação sem apelação.
+      const faltam = ['Valor devolvido', 'Quem recebeu', 'Nome:', 'Chave PIX:', 'Banco:']
+        .filter(t => !m.includes(t));
+      return faltam.length ? `faltou no resumo: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'Divergência avisa E oferece a pastoral no mesmo balão',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               // Chave de outra conta: o caso que o BL-46 já alertava.
+               ocr: { chavePix: 'outra@conta.com' } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    confere: msgs => {
+      const m = msgs.map(x => x.texto).join('\n');
+      if (!m.includes('não confere')) return 'não avisou que o pagamento não confere';
+      if (!m.includes('agente da Pastoral')) return 'não diz quem vai analisar';
+      // Avisar e deixar sem saída é pior que não avisar.
+      return m.includes('btn_secretaria')
+        ? null
+        : 'não ofereceu o contato da pastoral';
+    }
+  },
+  {
+    nome: 'O resultado mostra o que o OCR leu (valor, data, chave)',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      const faltam = ['DADOS IDENTIFICADOS', '50,00', '12/08/2026', 'pix@paroquia.org']
+        .filter(x => !t.includes(x));
+      return faltam.length ? `faltou no resultado: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'A devolução mostra a última devolução como contexto',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      devolucoes: [{ x_studio_data_da_devolucao: '12/08/2026', x_studio_value: 150 }]
+    },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: msgs => {
+      const card = (msgs.find(m => m.tipo === 'card-pix') || {}).texto || '';
+      return card.includes('última devolução') && card.includes('histórico')
+        ? null : 'a linha do histórico sumiu da mensagem de pagamento';
+    }
+  },
+  {
+    nome: 'A confirmação do cadastro oferece devolver o dízimo na hora',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, dadosCadastro: CADASTRO_PRONTO },
+    roda: ctx => ctx.CadastroHandler.finalizar('55'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (!t.includes('Cadastro realizado')) return 'a mensagem de sucesso não saiu';
+      const faltam = ['btn_devolver_dizimo', 'btn_oferta', 'btn_outras_opcoes']
+        .filter(b => !t.includes(b));
+      return faltam.length ? `faltou o botão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'As três telas de dizimista mostram os MESMOS botões',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, dadosCadastro: CADASTRO_PRONTO },
+    roda: ctx => {
+      // Menu, fim do cadastro e fim do cadastro de membro. Se um dia divergirem,
+      // é aqui que aparece — foi o que aconteceu antes do BL-38, quando o menu
+      // de "já sou dizimista" tinha botões diferentes do menu principal.
+      ctx.MenuHandler.menuDizimista('55', DIZIMISTA);
+      ctx.CadastroHandler.finalizar('55');
+    },
+    confere: msgs => {
+      const ids = msgs.map(m => (m.texto.match(/\[(.*)\]/) || [, ''])[1]);
+      return ids.every(x => x === ids[0]) ? null : `conjuntos diferentes: ${ids.join(' | ')}`;
+    }
+  },
+  {
+    nome: 'A lista de comunidades marca a da pessoa, mas traz todas',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    confere: msgs => {
+      const t = msgs[0].texto;
+      if (!t.includes('Para qual comunidade')) return 'não perguntou a comunidade';
+      return null;
+    }
+  },
+  {
+    nome: 'O lembrete do cadastro não é um beco sem saída',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO' },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'quanto é o dízimo?' } }),
+    confere: msgs => {
+      const m = msgs.find(x => x.tipo === 'menu');
+      if (!m) return 'não saiu o lembrete';
+      if (!m.texto.includes('cadastro')) return 'o lembrete não fala do cadastro';
+      // A regra que não pode quebrar: quem escreveu ali pode estar travado no
+      // formulário. Oferta não exige cadastro e falar com a pastoral não exige
+      // nada — sem essas duas portas, o lembrete vira um muro.
+      const faltam = ['btn_oferta', 'btn_secretaria'].filter(b => !m.texto.includes(b));
+      if (faltam.length) return `faltou saída: ${faltam.join(', ')}`;
+      // E não pode ter começado o passo a passo: é exatamente o que o BL-44
+      // veio impedir.
+      return msgs.some(x => x.texto.includes('passo a passo'))
+        ? 'caiu no cadastro por conversa mesmo assim'
+        : null;
+    }
+  },
+  {
+    nome: 'O convite manda o contato do bot, e o texto combina com ele',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    confere: msgs => {
+      const cartao = msgs.find(m => m.tipo === 'contato');
+      if (!cartao) return 'não saiu o cartão do bot';
+      if (!cartao.texto.includes('"wa_id":"5586981622537"'))
+        return 'o cartão não leva o número confirmado';
+      // Uma forma só: o número do bot é confirmado, então mandar as duas do
+      // nono dígito poluiria justamente o cartão que vai ser encaminhado.
+      const ids = cartao.texto.match(/"wa_id":"\d+"/g) || [];
+      if (ids.length !== 1) return `o cartão do bot levou ${ids.length} números`;
+
+      const texto = msgs.find(m => m.tipo === 'texto');
+      if (!texto) return 'não saiu o texto do convite';
+      // Prometer um contato que não saiu deixaria a pessoa procurando o que
+      // não existe — por isso o texto é escrito depois do cartão.
+      return texto.texto.includes('contato acima')
+        ? null
+        : 'o texto não aponta para o cartão';
+    }
+  },
+  {
+    nome: 'O link do convite nunca sai sem o código do país',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               contatoAceito: false,
+               // O valor que estava em produção: digitado à mão, sem o 55. O
+               // `wa.me` lia o 86 como China e o convite não levava a lugar
+               // nenhum.
+               // `getConfig()` exige token e phone id, ou lança — e o número
+               // de exibição só é lido por ele.
+               propriedades: { WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111',
+                               WHATSAPP_NUMERO_EXIBICAO: '86981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    confere: msgs => {
+      const texto = msgs.find(m => m.tipo === 'texto');
+      if (!texto) return 'não saiu o texto do convite';
+      const link = (texto.texto.match(/wa\.me\/(\d+)/) || [])[1];
+      if (!link) return 'o convite saiu sem link';
+      return link === '5586981622537'
+        ? null
+        : `o link saiu como wa.me/${link} — sem o código do país`;
+    }
+  },
+  {
+    nome: 'O cartão de contato leva nome, número e a comunidade',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      // DDD 86 não está em DDD_MANTEM_NONO, então o provável é sem o 9.
+      const faltam = ['João da Silva', '+558688521231', 'São José']
+        .filter(t => !c.texto.includes(t));
+      return faltam.length ? `faltou no cartão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'Todo wa_id do cartão leva o código do país',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      // Sem o 55, o WhatsApp lê o DDD 86 como código de país da China: o
+      // contato é salvo com o país errado e "Conversar" não abre nada. O
+      // `phone` pode estar certo e o `wa_id` errado — eram montados por
+      // caminhos diferentes, e foi assim que o bug passou.
+      const ids = (c.texto.match(/"wa_id":"(\d+)"/g) || [])
+        .map(x => x.replace(/\D/g, ''));
+      if (!ids.length) return 'o cartão não trouxe wa_id';
+      const ruins = ids.filter(id => id.indexOf('55') !== 0 || id.length < 12);
+      return ruins.length ? `wa_id sem código de país: ${ruins.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'wa_id NÃO confirmado → UM número só, o provável para o DDD',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      contatos: [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231' }]
+    },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      // Mandar as duas formas garantia que uma abrisse a conversa, mas o
+      // cartão chegava com o mesmo telefone repetido e um deles quebrado.
+      // Quem recebe não sabe que existe nono dígito.
+      const ids = (c.texto.match(/"wa_id":"\d+"/g) || []);
+      if (ids.length !== 1) return `mandou ${ids.length} números, devia mandar 1`;
+      // DDD 86 está fora de DDD_MANTEM_NONO: a conta antiga é sem o 9.
+      return c.texto.includes('"wa_id":"558688521231"')
+        ? null
+        : `mandou ${ids[0]} — no DDD 86 o provável é sem o nono dígito`;
+    }
+  },
+  {
+    nome: 'DDD que MANTÉM o nono dígito recebe a forma com 9',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      // São Paulo recebeu o 9 antes de o WhatsApp existir por lá, então as
+      // contas nasceram com ele. Uma regra fixa "tira o 9" quebraria aqui.
+      contatos: [{ nome: 'Ana Paulista', whatsapp: '(11) 98852-1231' }]
+    },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      return c.texto.includes('"wa_id":"5511988521231"')
+        ? null
+        : 'no DDD 11 o provável é COM o nono dígito';
+    }
+  },
+  {
+    nome: 'wa_id CONFIRMADO → o cartão manda só ele',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      contatos: [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231',
+                   waId: '558688521231' }]
+    },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      const ids = (c.texto.match(/"wa_id":"(\d+)"/g) || []);
+      if (ids.length !== 1) return `mandou ${ids.length} números, devia mandar 1`;
+      // Confirmado em x_contato_bot: quem entregou esse valor foi o próprio
+      // WhatsApp. Mandar a outra forma junto só poluiria o cartão.
+      return c.texto.includes('"wa_id":"558688521231"')
+        ? null
+        : 'o wa_id confirmado não foi o usado';
+    }
+  },
+  {
+    nome: 'A oferta grava o valor ESCOLHIDO, não o que o OCR leu',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true,
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      // O OCR devolve 50 no stub; a pessoa escolheu 20. Vale o que ela disse —
+      // a extração de valor é reconhecidamente frágil (BL-14).
+      const t = msgs[msgs.length - 1].texto;
+      if (!t.includes('Oferta recebida')) return 'não confirmou a oferta';
+      return t.includes('20,00') ? null : 'gravou o valor do OCR, não o escolhido';
+    }
+  },
+  {
+    nome: 'Reserva: legenda longa demais não derruba os dados de pagamento',
+    cenario: {
+      dizimista: { id: 7, x_name: 'M'.repeat(400), x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'] },
+      temAvatar: true, flowLigado: true, cardAceito: false
+    },
+    roda: ctx => ctx.DevolucaoHandler.iniciarDevolucao('55'),
+    confere: msgs => {
+      // Acima de 1024 caracteres a Meta recusa a imagem INTEIRA. A legenda
+      // volta a ser mensagem própria: gasta uma mensagem, mas nada se perde.
+      const tem = msgs.some(m => m.texto.includes('pix@paroquia.org') && m.texto.includes('DADOS PARA PAGAMENTO'));
+      return tem ? null : 'os dados de pagamento não chegaram';
+    }
+  }
+];
+
+let falhas = 0;
+
+console.log('\n📊 Mensagens enviadas por entrada no bot\n' + '─'.repeat(64));
+
+for (const c of CENARIOS) {
+  enviadas = [];
+  gratis   = [];
+  consultas = [];
+  const ctx = montarContexto(c.cenario);
+  c.roda(ctx);
+
+  const ok = enviadas.length === c.esperado;
+  if (!ok) falhas++;
+
+  console.log(`\n${ok ? '✅' : '❌'} ${c.nome}`);
+  console.log(`   ${enviadas.length} mensagem(ns)${ok ? '' : ` — FLUXOS.md diz ${c.esperado}`}`);
+  console.log(`   ${c.porque}`);
+  enviadas.forEach((m, i) => console.log(`     ${i + 1}. [${m.tipo}] ${m.texto.split('\n')[0].slice(0, 70)}`));
+  if (gratis.length) console.log(`     (+ ${gratis.join(', ')} — não é mensagem, não é cobrado)`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔘 Botões dos menus\n');
+
+for (const r of REGRAS_DE_BOTAO) {
+  enviadas = [];
+  gratis   = [];
+  consultas = [];
+  const ctx = montarContexto(r.cenario);
+  r.roda(ctx);
+  const erro = enviadas.length ? r.confere(enviadas) : 'nenhuma mensagem enviada';
+  if (erro) falhas++;
+  console.log(`${erro ? '❌' : '✅'} ${r.nome}${erro ? ' — ' + erro : ''}`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔑 tipoDaChavePix — o key_type que o card de pagamento exige\n');
+
+// 11 dígitos é ambíguo: CPF e celular brasileiro têm o mesmo tamanho. Uma
+// primeira versão classificava por tamanho e chamava TODO celular guardado sem
+// o '+' de CPF — a Meta recusaria o card sem dizer por quê. O desempate é o
+// dígito verificador, e estes casos guardam isso.
+const CHAVES = [
+  ['pix@paroquia.org',                      'EMAIL', 'e-mail'],
+  ['+5586988521231',                        'PHONE', 'telefone com +'],
+  ['39580525000189',                        'CNPJ',  '14 dígitos'],
+  ['11144477735',                           'CPF',   'CPF com DV válido'],
+  ['111.444.777-35',                        'CPF',   'CPF pontuado'],
+  ['86988521231',                           'PHONE', 'celular sem + (DV não fecha)'],
+  ['11987654321',                           'PHONE', 'celular de SP sem +'],
+  ['e7b8c9d0-1234-5678-9abc-def012345678',  'EVP',   'chave aleatória'],
+  ['',                                      'null',  'vazio'],
+  ['abc',                                   'null',  'lixo']
+];
+
+{
+  const ctx = montarContexto({ dizimista: null, temAvatar: false, flowLigado: false });
+  for (const [chave, esperado, oQue] of CHAVES) {
+    const obtido = String(ctx.Utils.tipoDaChavePix(chave));
+    const ok = obtido === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(30)} → ${obtido}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('☎️  _e164 — o número que faz o botão "Conversar" funcionar\n');
+
+// O Odoo guarda telefone em formatos variados: com máscara, sem DDI, com
+// espaços. O cartão de contato precisa de E.164, e um número mal formado não
+// falha — só gera um botão "Conversar" que não abre conversa nenhuma.
+const TELEFONES = [
+  ['5586988521231',    '+5586988521231', 'já com DDI'],
+  ['86988521231',      '+5586988521231', 'sem DDI (11 dígitos)'],
+  ['(86) 98852-1231',  '+5586988521231', 'com máscara'],
+  ['86 3221-1234',     '+558632211234',  'fixo, 10 dígitos'],
+  ['+55 86 98852-1231','+5586988521231', 'já em E.164'],
+  ['',                 '',               'vazio']
+];
+
+{
+  const ctx = montarContexto({ dizimista: null, temAvatar: false, flowLigado: false });
+  for (const [entrada, esperado, oQue] of TELEFONES) {
+    const obtido = ctx.Utils._e164(entrada);
+    const ok = obtido === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(24)} ${JSON.stringify(entrada).padEnd(22)} → ${obtido || '(vazio)'}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧭 Métodos chamados que não existem\n');
+
+// POR QUE ISTO EXISTE
+// Em 19/09, com o bot em produção, o Cloud Logging mostrou
+// "this._mesAtual is not a function" repetindo a cada 5 minutos. A função era
+// chamada em QUATRO lugares e nunca tinha sido definida.
+//
+// Ficou invisível porque as três chamadas estavam dentro de `try/catch` com
+// `console.warn`. O bot funcionava; só a medição de consumo estava morta — e
+// `registrarConsumoExterno` lançava na PRIMEIRA linha do try, então nem a cota
+// de UrlFetch chegava a ser gravada.
+//
+// Esta varredura é estática: lê o fonte de cada objeto, junta todo `this.x(`
+// e confere se `x` existe. Não substitui teste de comportamento — pega uma
+// classe de erro que só aparece em runtime, dentro de um catch que ninguém lê.
+{
+  const OBJETOS = [
+    ['Utils.gs',              'Utils'],
+    ['OdooService.gs',        'OdooService'],
+    ['MediaService.gs',       'MediaService'],
+    ['MenuHandler.gs',        'MenuHandler'],
+    ['CadastroHandler.gs',    'CadastroHandler'],
+    ['DevolucaoHandler.gs',   'DevolucaoHandler'],
+    ['ComprovanteHandler.gs', 'ComprovanteHandler'],
+    ['OfertaHandler.gs',      'OfertaHandler'],
+    ['FlowHandler.gs',        'FlowHandler'],
+    ['VisionService.gs',      'VisionService']
+  ];
+
+  // Contexto com TODOS os .gs carregados, para alcançar cada objeto por nome.
+  const ctxTudo = {
+    console: { log() {}, warn() {}, error() {} },
+    Utilities: { formatDate: () => '', sleep() {}, base64Encode: () => '' },
+    Logger: { log() {} },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, getProperties: () => ({}) }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
+    UrlFetchApp: { fetch: () => ({}) },
+    SpreadsheetApp: {}, DriveApp: {}, MailApp: {}, Session: {}
+  };
+  vm.createContext(ctxTudo);
+  const fontes = OBJETOS.map(([arq]) => fs.readFileSync(path.join(RAIZ, arq), 'utf8'));
+  const tudo = vm.runInContext(
+    [fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8')].concat(fontes).join('\n;\n') +
+    '\n;({' + OBJETOS.map(([, nome]) => nome).join(', ') + '});',
+    ctxTudo, { filename: 'todos.gs' }
+  );
+
+  let achados = 0;
+  OBJETOS.forEach(([arquivo, nome], i) => {
+    const obj = tudo[nome];
+    const fonte = fontes[i];
+    const usados = new Set();
+    let m;
+    const re = /this\.(_?[a-zA-Z][\w]*)\s*\(/g;
+    while ((m = re.exec(fonte)) !== null) usados.add(m[1]);
+
+    for (const metodo of usados) {
+      if (typeof obj[metodo] !== 'function') {
+        achados++;
+        falhas++;
+        console.log(`❌ ${nome}.${metodo}() é chamado e NÃO existe  (${arquivo})`);
+      }
+    }
+  });
+
+  if (!achados) {
+    console.log(`✅ ${OBJETOS.length} objetos varridos — todo this.metodo() chamado existe`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🛰️  As sondas rodam de ponta a ponta\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// As sondas nunca eram executadas por nada antes de rodarem em produção. Três
+// quebras seguidas saíram assim, e as três só apareceram no aparelho de quem
+// pediu o teste:
+//
+//   `NUMERO_TESTE is not defined`  — global de arquivo que o .claspignore corta
+//   `comImagem is not defined`     — definição apagada num refactor
+//   media ID lido sem as travas    — a sonda mentiu sobre o resultado
+//
+// `node --check` não pega nenhuma: são erros de runtime, não de sintaxe. A
+// varredura de `this.metodo()` também não, porque numa sonda tudo é função
+// solta. O único jeito de pegar é CHAMAR a função.
+//
+// Aqui cada sonda roda inteira contra stubs. Nada sai para a rede: o que se
+// afirma é só que ela chega ao fim sem ReferenceError e envia o que promete.
+{
+  const sondas = [
+    {
+      arquivo: 'TesteCabecalhoImagem.gs',
+      funcao:  'testarCabecalhoImagem',
+      envios:  3,   // imagem sozinha, botões com cabeçalho, botões sem
+      confere(enviados) {
+        const [img, comCab, semCab] = enviados;
+        if (!img || img.type !== 'image') return '1º envio devia ser a imagem sozinha';
+        if (!comCab || !comCab.interactive) return '2º envio devia ser interativo';
+        const h = comCab.interactive.header;
+        if (!h || h.type !== 'image') return '2º envio devia ter cabeçalho de imagem';
+        if (semCab.interactive.header) return '3º envio (controle) não pode ter cabeçalho';
+        return null;
+      }
+    },
+    {
+      arquivo: 'TesteCabecalhoFlow.gs',
+      funcao:  'testarCabecalhoFlow',
+      envios:  2,   // flow com cabeçalho de imagem, flow com cabeçalho de texto
+      confere(enviados) {
+        const [comImg, comTxt] = enviados;
+        if (!comImg || comImg.interactive.type !== 'flow') return '1º envio devia ser flow';
+        if (comImg.interactive.header.type !== 'image') return '1º envio devia ter cabeçalho de imagem';
+        if (comTxt.interactive.header.type !== 'text') return '2º envio (controle) devia ter cabeçalho de texto';
+        // O que distingue uma sonda útil de um envio qualquer: entre os dois
+        // envios só o cabeçalho pode mudar. Se o resto divergir, o resultado
+        // não prova nada sobre cabeçalho.
+        const semCabecalho = (p) => {
+          const c = JSON.parse(JSON.stringify(p));
+          delete c.interactive.header;
+          delete c.interactive.body;
+          delete c.interactive.action.parameters.flow_token;  // carrega Date.now()
+          return JSON.stringify(c);
+        };
+        return semCabecalho(comImg) === semCabecalho(comTxt)
+          ? null
+          : 'os dois envios diferem em mais do que o cabeçalho';
+      }
+    },
+    {
+      // A mesma sonda com AVATAR_URL configurada. Sem esta variante o braço 1b
+      // — o único que ainda responde alguma coisa — nunca seria executado por
+      // nada antes de rodar em produção.
+      arquivo: 'TesteCabecalhoFlow.gs',
+      funcao:  'testarCabecalhoFlow',
+      rotulo:  'testarCabecalhoFlow() com AVATAR_URL',
+      props:   { AVATAR_URL: 'https://meudizimo.pnscaparecida.com/avatar.png' },
+      envios:  3,   // por id, por link, e o controle de texto
+      confere(enviados) {
+        const porLink = enviados[1];
+        const img = porLink && porLink.interactive.header.image;
+        if (!img) return '2º envio devia ter cabeçalho de imagem';
+        if (!img.link) return '2º envio devia mandar a imagem por link';
+        if (img.id) return 'link e id juntos — a Meta recusa os dois no mesmo header';
+        return null;
+      }
+    },
+    {
+      // Duas URLs, e a primeira funciona: a segunda tem de ser PULADA. Cada
+      // tentativa é uma mensagem cobrada, então um laço que insiste depois de
+      // acertar gasta dinheiro à toa — e é o tipo de coisa que só apareceria
+      // na fatura.
+      arquivo: 'TesteCabecalhoFlow.gs',
+      funcao:  'testarCabecalhoFlow',
+      rotulo:  'testarCabecalhoFlow() para de tentar quando uma URL funciona',
+      props:   { AVATAR_URL: 'https://um.exemplo/a.png, https://dois.exemplo/b.png' },
+      envios:  3,   // id, a PRIMEIRA url, e o controle — a segunda não sai
+      confere(enviados) {
+        const links = enviados
+          .filter(p => (p.interactive.header.image || {}).link)
+          .map(p => p.interactive.header.image.link);
+        if (links.length !== 1) return `mandou ${links.length} links, devia mandar 1`;
+        return links[0] === 'https://um.exemplo/a.png'
+          ? null
+          : `tentou ${links[0]} — devia começar pela primeira da lista`;
+      }
+    },
+    {
+      // Não manda mensagem: o que ela faz é apagar cache, sessão e o registro
+      // no Odoo. Entra aqui pelo mesmo motivo das outras — é função que só
+      // roda no editor, e por isso ninguém a executa antes de você.
+      arquivo: 'Setup.gs',
+      funcao:  'reviverPrimeiroContato',
+      envios:  0,
+      confere: (_envios, apagados) => (apagados.includes('x_contato_bot')
+        ? null
+        : 'não apagou o x_contato_bot — limpar só o cache não revive o contato')
+    },
+    {
+      arquivo: 'TestePixNativo.gs',
+      funcao:  'testarPixNativo',
+      envios:  1,
+      confere(enviados) {
+        const p = enviados[0];
+        if (!p || p.type !== 'interactive') return 'devia enviar uma interativa';
+        if (p.interactive.type !== 'order_details') return 'devia ser order_details';
+        return null;
+      }
+    }
+  ];
+
+  for (const sonda of sondas) {
+    const enviados = [];
+    const apagados = [];
+    const respostaOk = {
+      getResponseCode: () => 200,
+      getContentText:  () => JSON.stringify({
+        messages: [{ id: 'wamid.TESTE' }],
+        // O que a Graph API devolve na consulta de um media ID vivo.
+        id: '123', url: 'https://exemplo/x', mime_type: 'image/png', file_size: 1
+      })
+    };
+
+    const PROPS = Object.assign({
+      NUMERO_TESTE:      '5586988521231',
+      WHATSAPP_TOKEN:    'tok',
+      WHATSAPP_PHONE_ID: '111',
+      FLOW_ID_CADASTRO:  '123456',
+      // Recém-guardado, para a sonda seguir pelo caminho do cache.
+      media_id_avatar: JSON.stringify({ id: '999', digital: 'x', em: Date.now() })
+    }, sonda.props || {});
+
+    const ctx = {
+      console: { log() {}, warn() {}, error() {} },
+      Logger:  { log() {} },
+      Utilities: {
+        formatDate: () => '2026-09-19',
+        base64Decode: () => [],
+        newBlob: () => ({}),
+        sleep() {}
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty(k) { return PROPS[k] || null; },
+          setProperty() {}, setProperties() {}, deleteProperty() {},
+          getProperties: () => PROPS
+        })
+      },
+      CacheService: {
+        getScriptCache: () => ({ get: () => null, put() {}, remove() {}, removeAll() {} })
+      },
+      StateManager: { PREFIXO_SESSAO: 'sessao_ativa_' },
+      FlowHandler:  { TOKEN_CADASTRO: 'cadastro:' },
+      LockService:  { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      UrlFetchApp:  { fetch: () => respostaOk },
+      Utils: {
+        _post(payload) { enviados.push(payload); return respostaOk; },
+        fetchComRetry: () => respostaOk,
+        tipoDaChavePix: () => 'CPF'
+      },
+      MediaService: {
+        MEDIA_ID_VALIDADE_MS: 7 * 24 * 60 * 60 * 1000,
+        _descartarMediaId() {},
+        mediaIdDoAvatar: () => '999',
+        subirImagem: () => '999',
+        _gerarPayloadPix: () => '00020126...BR.GOV.BCB.PIX...6304ABCD'
+      },
+      OdooService: {
+        buscarParametros: () => ({ x_studio_avatar: 'base64', x_studio_chave_pix: 'chave' }),
+        buscarContatoBot: () => ({ id: 7, x_name: '5586988521231' }),
+        listarComunidades: () => [{ id: 1, x_name: 'Matriz' }],
+        unlink: (modelo) => { apagados.push(modelo); },
+        buscarDizimistaPorWhatsapp: () => ({
+          id: 1, x_name: 'Fulano',
+          x_studio_comunidade: [1, 'Matriz']
+        }),
+        buscarDadosPagamentoComunidade: () => ({
+          id: 1, x_name: 'Matriz',
+          x_studio_chave_pix: '12345678900',
+          x_studio_titular_conta: 'Paroquia',
+          x_studio_cidade: 'TERESINA'
+        })
+      }
+    };
+    vm.createContext(ctx);
+
+    let erro = null;
+    try {
+      vm.runInContext(
+        fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8') + '\n;\n' +
+        fs.readFileSync(path.join(RAIZ, sonda.arquivo), 'utf8') + '\n;\n' +
+        sonda.funcao + '();',
+        ctx, { filename: sonda.arquivo }
+      );
+    } catch (e) {
+      erro = e.message;
+    }
+
+    if (!erro && enviados.length !== sonda.envios) {
+      erro = `enviou ${enviados.length} mensagem(ns), esperava ${sonda.envios}`;
+    }
+    if (!erro) erro = sonda.confere(enviados, apagados);
+
+    if (erro) falhas++;
+    const ok = sonda.envios
+      ? 'roda inteira e envia o previsto'
+      : 'roda inteira e faz o que promete, sem enviar nada';
+    const nome = sonda.rotulo || (sonda.funcao + '()');
+    console.log(`${erro ? '❌' : '✅'} ${nome} ${erro ? '— ' + erro : ok}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📦 Globais que só existem fora do deploy\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A armadilha: `.claspignore` decide o que chega ao Apps Script. `Tests.gs`
+// está lá, e é onde mora `const NUMERO_TESTE`. Um arquivo que É enviado podia
+// escrever `numero || NUMERO_TESTE`, passar em toda revisão de código, rodar
+// no harness — e explodir em produção com `NUMERO_TESTE is not defined`,
+// porque a linha que declara a constante nunca subiu junto.
+//
+// Foi exatamente o que aconteceu com as sondas S1 e BL-40. O jeito certo é
+// ler a Script Property direto, como Setup.gs e NotificacaoHandler.gs fazem.
+//
+// Esta varredura lê o .claspignore, coleta o que os arquivos EXCLUÍDOS
+// declaram no topo, e acusa quem é enviado e depende disso.
+{
+  const padroes = fs.readFileSync(path.join(RAIZ, '.claspignore'), 'utf8')
+    .split('\n').map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'));
+
+  // Só precisamos dos .gs: são os únicos que compartilham escopo global no GAS.
+  const todosGs = fs.readdirSync(RAIZ).filter(f => f.endsWith('.gs'));
+  const excluidos = todosGs.filter(f => padroes.includes(f));
+  const enviados  = todosGs.filter(f => !padroes.includes(f));
+
+  // O que cada arquivo excluído declara no nível do arquivo. No V8 do Apps
+  // Script todo .gs compartilha um escopo, então isto seria visível — se o
+  // arquivo subisse.
+  const DECL = /^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm;
+  const foraDoDeploy = new Map();
+  for (const arq of excluidos) {
+    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    let m;
+    while ((m = DECL.exec(fonte)) !== null) foraDoDeploy.set(m[1], arq);
+  }
+
+  let achados = 0;
+  for (const arq of enviados) {
+    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8')
+      // Comentários e strings citam esses nomes o tempo todo; só o código conta.
+      // Uma passada só, com alternância: quem começa primeiro vence. Em duas
+      // passadas o `//` de uma URL dentro de string comeria o resto da linha e
+      // desalinharia as aspas seguintes — foi assim que a varredura acusou
+      // Setup.gs, que só cita o nome em comentário e em string.
+      .replace(
+        /\/\*[\s\S]*?\*\/|\/\/[^\n]*|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g,
+        ' '
+      );
+
+    for (const [nome, origem] of foraDoDeploy) {
+      // Se o próprio arquivo enviado também declara o nome, não há dependência.
+      if (new RegExp('^(?:const|let|var|function)\\s+' + nome + '\\b', 'm').test(fonte)) continue;
+      // Ignora `obj.NOME` e `NOME:` — só o uso como global solto quebra.
+      if (new RegExp('(?<![.\\w$])' + nome + '(?![\\w$:])').test(fonte)) {
+        achados++;
+        falhas++;
+        console.log(`❌ ${arq} usa \`${nome}\`, declarado só em ${origem} (fora do deploy)`);
+      }
+    }
+  }
+
+  if (!achados) {
+    console.log(`✅ ${enviados.length} arquivos enviados não dependem de nenhum dos ` +
+                `${foraDoDeploy.size} globais de ${excluidos.join(', ')}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A Meta recusa a mensagem inteira se um campo declarado em `data` não vier,
+// ou se vier com o tipo errado — `valor_mensal` é `input-type: number`, e
+// mandar "150" como texto derruba o envio. Como o cadastro é hoje o ÚNICO
+// caminho de entrada, um erro aqui não degrada: fecha a porta.
+{
+  // O `FlowHandler` é stub no resto do arnês — é a borda que fala com a Meta.
+  // Aqui o arquivo REAL é carregado num contexto próprio, só para exercitar a
+  // conversão de tipos. Nada sai: `_dadosPreenchidos` só monta um objeto.
+  const ctxFlow = {
+    console: { log() {}, warn() {}, error() {} },
+    Logger:  { log() {} },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    Utils: {}, OdooService: {}, StateManager: {}, CadastroHandler: {},
+    MenuHandler: {}, OfertaHandler: {}, ESTADOS: {}
+  };
+  vm.createContext(ctxFlow);
+  const FlowReal = vm.runInContext(
+    fs.readFileSync(path.join(RAIZ, 'FlowHandler.gs'), 'utf8') + '\n;FlowHandler;',
+    ctxFlow, { filename: 'FlowHandler.gs' }
+  );
+
+  const casos = [
+    {
+      nome: 'correção: os sete campos voltam, e os números como número',
+      dados: {
+        nome: 'Ewerton Leal Vale', nomeUsual: 'Ewerton',
+        dataNascimento: '12/07/1987', endereco: 'R. Hegesipo, 5285',
+        valorMensal: '150', notificacaoAtiva: true, diaPreferido: '12'
+      },
+      confere: (d) => {
+        if (d.nome_padrao !== 'Ewerton Leal Vale') return 'o nome não voltou';
+        if (typeof d.valor_padrao !== 'number') return `valor_padrao é ${typeof d.valor_padrao}, devia ser number`;
+        if (d.valor_padrao !== 150) return `valor_padrao é ${d.valor_padrao}`;
+        if (typeof d.dia_padrao !== 'number') return `dia_padrao é ${typeof d.dia_padrao}`;
+        if (d.notificacao_padrao !== 'sim') return `notificacao_padrao é ${d.notificacao_padrao}`;
+        return null;
+      }
+    },
+    {
+      nome: 'primeiro envio: tudo presente e vazio, nada faltando',
+      dados: undefined,
+      confere: (d) => {
+        const esperados = ['nome_padrao', 'nome_usual_padrao', 'nascimento_padrao',
+                           'endereco_padrao', 'valor_padrao', 'notificacao_padrao',
+                           'dia_padrao'];
+        const faltam = esperados.filter(k => !(k in d));
+        if (faltam.length) return `faltou no payload: ${faltam.join(', ')}`;
+        // Vazio, mas do TIPO certo: um '' num campo number é recusa na hora.
+        return typeof d.valor_padrao === 'number' && typeof d.dia_padrao === 'number'
+          ? null
+          : 'número vazio saiu como texto';
+      }
+    },
+    {
+      nome: 'notificação desativada vira "nao", não some',
+      dados: { notificacaoAtiva: false },
+      confere: (d) => (d.notificacao_padrao === 'nao'
+        ? null : `saiu "${d.notificacao_padrao}"`)
+    }
+  ];
+
+  for (const c of casos) {
+    const d = FlowReal._dadosPreenchidos(c.dados);
+    const erro = c.confere(d);
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} ${c.nome}${erro ? ' — ' + erro : ''}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🏦 Comprovantes REAIS, um por layout de banco — BL-49\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Transcrições de comprovantes que chegaram de verdade. Cada um quebrou algo
+// diferente, e é por isso que estão todos aqui em vez de um exemplo genérico:
+//
+//   Nubank sem chave no destino  → o CNPJ do RODAPÉ virava a chave. Como
+//                                  divergência avisa a pessoa (BL-46), isso
+//                                  era acusação falsa contra quem pagou certo.
+//   Banco do Brasil              → Agência e Conta empurram a Chave Pix para
+//                                  fora da janela; e a chave vem sem pontuação
+//                                  ("08070690356"), numa linha separada do
+//                                  rótulo.
+//   Inter empresas               → o rótulo "Quem recebeu" tem duas palavras e
+//                                  só letras: saía como se fosse o nome.
+//   Nubank em geral              → "Nome THALLES BOITEUX VALE" sem dois-pontos
+//                                  deixava o rótulo colado no nome.
+{
+  const V = extratoresDoVision();
+  const COMPROVANTES = [
+  { nome: 'Nubank — Destino sem Chave Pix (o do CNPJ do rodapé)',
+    texto: ['Comprovante de transferência','24 JUL 2026 - 17:01:03','Valor R$ 32,00',
+      'Tipo de transferência Pix','ID da transação E18236120202607242000s19bb9e8416',
+      'Destino','Nome THALLES BOITEUX VALE','CPF ***.706.903-**','Instituição BANCO INTER',
+      'Origem','Nome Marlice Martins Soares','Instituição NU PAGAMENTOS - IP','CPF ***.431.643-**',
+      'Nu Pagamentos S.A. - Instituição de Pagamento','CNPJ 18.236.120/0001-58',
+      'ID da transação:','E18236120202607242000s19bb9e8416'].join('\n'),
+    chave: null, nomeRec: 'THALLES BOITEUX VALE', banco: 'Inter' },
+
+  { nome: 'Itaú — Para, com Chave Pix de telefone',
+    texto: ['itaú','Comprovante de Pix','R$ 10,00','Realizado em 24/07/2026 às 09:34:12',
+      'De','MARIA PERPETUO S F FERREIRA','CPF: ***.043.053-**','Instituição: ITAÚ UNIBANCO S.A',
+      'Para','ROSINEIDE DOS ANJOS COSTA RODR','CPF: ***316233**',
+      'Instituição: CAIXA ECONOMICA FEDERAL','Chave Pix: +5586999913204',
+      'Dados da transação','Autenticação:','195315132778695F24DCE340A974E33775078','ID da transação:',
+      'E60701190202607241233DY5HUNVR4GW'].join('\n'),
+    chave: '+5586999913204', nomeRec: 'ROSINEIDE DOS ANJOS COSTA RODR', banco: 'Caixa' },
+
+  { nome: 'Nubank — Destino COM Chave Pix',
+    texto: ['Comprovante de transferência','24 JUL 2026 - 09:48:10','Valor R$ 20,00',
+      'Tipo de transferência Pix','ID da transação E18236120202607241247s1626e2ac1e',
+      'Destino','Nome ROSINEIDE DOS ANJOS COSTA RODRIGUES','CPF ***.316.233-**',
+      'Instituição CAIXA ECONOMICA FEDERAL','Chave Pix +5586999913204',
+      'Origem','Nome Marcia Adriana da Silva Santos','Instituição NU PAGAMENTOS - IP',
+      'CNPJ 18.236.120/0001-58'].join('\n'),
+    chave: '+5586999913204', nomeRec: 'ROSINEIDE DOS ANJOS COSTA RODRIGUES', banco: 'Caixa' },
+
+  { nome: 'Banco do Brasil — Agência e Conta antes da Chave Pix',
+    texto: ['Comprovante BB','R$ 64,00','18/07/2026 às 10:23:50','Pix Enviado',
+      'Recebedor','Thalles Boiteux Vale','CPF','***.706.903-**','Agência','0001','Conta','331033577',
+      'Instituição','00416968 BANCO INTER','Tipo de conta','Conta Corrente','Chave Pix','08070690356',
+      'Pagador','Andressa Suellem da Silva','CPF','***.840.533-**','Agência','5602-2',
+      'Instituição','00000000 BCO DO BRASIL S.A.'].join('\n'),
+    chave: '08070690356', nomeRec: 'Thalles Boiteux Vale', banco: 'Inter' },
+
+  { nome: 'Inter empresas — Quem recebeu / Quem pagou',
+    texto: ['inter empresas','Pix enviado','R$ 64,00','Sobre a transação',
+      'Data da transação Quarta-feira, 15/07/2026','Horário 19h50',
+      'ID da transação E00416968202607152249MMIICzeJuat',
+      'Quem recebeu','Nome Thalles Boiteux Vale','CPF/CNPJ ***.706.903-**',
+      'Instituição BANCO INTER','Chave Pix 080.706.903-56',
+      'Quem pagou','Nome CLAUDENIRA VIVEIROS','CPF/CNPJ 54.169.161/0001-32',
+      'Instituição BANCO INTER'].join('\n'),
+    chave: '080.706.903-56', nomeRec: 'Thalles Boiteux Vale', banco: 'Inter' },
+
+  { nome: 'Nubank — Destino com Agência e Conta (bloco longo)',
+    texto: ['Comprovante de transferência','13 JUL 2026 - 09:58:31','Valor R$ 32,00',
+      'Tipo de transferência Pix','ID da transação E18236120202607131258s08d669ae21',
+      'Destino','Nome Thalles Boiteux Vale','CPF ***.706.903-**','Instituição BANCO INTER',
+      'Agência 0001','Conta 33103357-7','Tipo de conta Conta corrente',
+      'Origem','Nome Maria das Mercês Soares Dias','Instituição NU PAGAMENTOS - IP',
+      'CNPJ 18.236.120/0001-58'].join('\n'),
+    chave: null, nomeRec: 'Thalles Boiteux Vale', banco: 'Inter' }
+];
+
+  for (const c of COMPROVANTES) {
+    const k = V._extrairChavePix(c.texto);
+    const r = V._extrairRecebedor(c.texto);
+    const errs = [];
+    if (k !== c.chave)        errs.push(`chave: ${JSON.stringify(k)}`);
+    if (r.nome !== c.nomeRec) errs.push(`nome: ${JSON.stringify(r.nome)}`);
+    if (r.banco !== c.banco)  errs.push(`banco: ${JSON.stringify(r.banco)}`);
+    if (errs.length) falhas++;
+    console.log(`${errs.length ? '❌' : '✅'} ${c.nome}` +
+                (errs.length ? `\n     ${errs.join('  ')}` : ''));
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔑 A chave PIX no BR Code vai sem máscara — BL-48\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O Odoo guarda a chave como a pessoa digitou: "160.740.093-68". Isso é bom
+// para ler na tela e ERRADO no BR Code, onde o campo 01 de um CPF tem 11
+// dígitos. Com a máscara, o copia-e-cola sai fora do padrão e o banco de quem
+// paga pode recusar — sem dizer por quê.
+//
+// O BL-40 foi testado com uma chave de e-mail, que não tem máscara para
+// atrapalhar. Foi por isso que passou.
+{
+  const ctx = montarContexto({ dizimista: DIZIMISTA });
+
+  const casos = [
+    ['160.740.093-68',      '16074009368',      'CPF com máscara'],
+    ['16074009368',         '16074009368',      'CPF já limpo'],
+    ['12.345.678/0001-90',  '12345678000190',   'CNPJ com máscara'],
+    ['(86) 98852-1231',     '+5586988521231',   'telefone vira E.164 com +'],
+    ['PIX@Paroquia.ORG',    'pix@paroquia.org', 'e-mail em minúsculas'],
+    ['123e4567-e89b-12d3-a456-426614174000',
+     '123e4567-e89b-12d3-a456-426614174000',    'chave aleatória fica intacta']
+  ];
+
+  for (const [entrada, esperado, nome] of casos) {
+    const r = ctx.Utils.chavePixCanonica(entrada);
+    const ok = r === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}${ok ? '' : ` — veio "${r}", esperava "${esperado}"`}`);
+  }
+
+  // A prova que importa: o código gerado carrega a chave SEM máscara.
+  const codigo = ctx.MediaService._gerarPayloadPix('160.740.093-68', 100,
+                                                   'Marlize Ferreira', 'TERESINA');
+  const temMascara = codigo.indexOf('160.740.093-68') >= 0;
+  const temLimpa   = codigo.indexOf('011116074009368') >= 0;   // tag 01, len 11
+  const ok = !temMascara && temLimpa;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} O BR Code leva a chave limpa, no campo 01 com 11 dígitos` +
+              (ok ? '' : ` — máscara: ${temMascara}, campo certo: ${temLimpa}`));
+}
+
+console.log('─'.repeat(64));
+console.log('🧾 Conferência do comprovante — BL-46\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Aqui o erro tem lados MUITO desiguais. Deixar passar um comprovante errado
+// custa uma conferência da secretaria. Acusar um comprovante certo custa
+// dizer a alguém que acabou de devolver o dízimo que ela pagou errado.
+//
+// Por isso a maioria dos casos abaixo é do lado "NÃO pode acusar".
+{
+  const ctx = montarContexto({ dizimista: DIZIMISTA });
+  const CH = ctx.ComprovanteHandler;
+
+  const COMUNIDADE = {
+    x_studio_chave_pix:     'pix@paroquia.org',
+    x_studio_titular_conta: 'Paróquia Nossa Senhora da Conceição Aparecida',
+    x_studio_banco:         'Banco do Brasil'
+  };
+
+  const casos = [
+    // ── O que NÃO pode virar acusação ────────────────────────────────────
+    { nome: 'tudo confere',
+      dados: { chavePix: 'pix@paroquia.org',
+               recebedor: { nome: 'Paróquia N. S. da Conceição', banco: 'Banco do Brasil' } },
+      motivo: 'ok' },
+
+    { nome: 'nome abreviado pelo banco ainda é a mesma conta',
+      dados: { chavePix: 'pix@paroquia.org',
+               recebedor: { nome: 'PAROQUIA N S CONCEICAO APARECIDA', banco: null } },
+      motivo: 'ok' },
+
+    { nome: 'layout não reconhecido: recebedor vazio não conta contra ninguém',
+      dados: { chavePix: 'pix@paroquia.org', recebedor: { nome: null, banco: null } },
+      motivo: 'ok' },
+
+    { nome: 'sem recebedor E sem chave: conferência, nunca alerta',
+      dados: { chavePix: null, recebedor: { nome: null, banco: null } },
+      motivo: 'ausente' },
+
+    { nome: 'só o banco diverge: conferência calada, não alerta',
+      dados: { chavePix: null,
+               recebedor: { nome: 'Paróquia Nossa Senhora da Conceição', banco: 'Nubank' } },
+      motivo: 'ausente' },
+
+    // ── O que DEVE alertar ────────────────────────────────────────────────
+    { nome: 'chave de outra conta: alerta',
+      dados: { chavePix: 'outro@banco.com', recebedor: { nome: null, banco: null } },
+      motivo: 'divergente' },
+
+    { nome: 'sem chave, mas nome E banco divergem: alerta',
+      dados: { chavePix: null,
+               recebedor: { nome: 'João Carlos Ferreira', banco: 'Nubank' } },
+      motivo: 'tudo_divergente' },
+
+    // ── Chave certa, resto estranho: conferir, sem acusar ────────────────
+    { nome: 'chave certa e nome estranho: conferência, não alerta',
+      dados: { chavePix: 'pix@paroquia.org',
+               recebedor: { nome: 'João Carlos Ferreira', banco: 'Banco do Brasil' } },
+      motivo: 'titular_divergente' }
+  ];
+
+  for (const c of casos) {
+    const r = CH._conferirComprovante(c.dados, COMUNIDADE);
+    const ok = r.motivo === c.motivo;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : ` — veio "${r.motivo}", esperava "${c.motivo}"`}`);
+  }
+
+  // A regra que dá sentido a tudo acima: quem é avisado e quem não é.
+  //
+  // BL-50 alargou: QUALQUER campo lido que divirja passa a avisar, não só o
+  // caso extremo. O que tornou isso aceitável foi a mensagem mostrar nome,
+  // chave e banco lidos — a pessoa vê em cima de que dado a dúvida se apoia.
+  //
+  // O que NÃO mudou, e é o que segura tudo: campo não lido continua fora.
+  // 'ausente' e 'sem_referencia' não avisam, porque ali não se sabe de nada.
+  const alertam    = ['divergente', 'tudo_divergente',
+                      'titular_divergente', 'banco_divergente'];
+  const naoAlertam = ['ok', 'ausente', 'sem_referencia', 'codigo_que_nao_existe'];
+  const err = alertam.filter(m => !ctx.alertaDoador(m))
+    .concat(naoAlertam.filter(m => ctx.alertaDoador(m)));
+  if (err.length) falhas++;
+  console.log(`${err.length ? '❌' : '✅'} Só os graves avisam a pessoa` +
+              (err.length ? ` — errou em: ${err.join(', ')}` : ''));
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📌 O status com que a devolução nasce — BL-51\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A linha do meio é a que não pode sumir. Marcar 'Rejeitado' o que não foi
+// LIDO rejeitaria pagamento legítimo em massa: o comprovante do Nubank sem
+// chave no destino é o caso mais comum que existe (BL-49), e ali não se sabe
+// de nada. Ausência de informação não é prova de erro.
+{
+  const ctx = montarContexto({ dizimista: DIZIMISTA });
+
+  const casos = [
+    ['ok',                  'Confirmado', 'tudo confere'],
+    ['divergente',          'Rejeitado',  'chave de outra conta'],
+    ['tudo_divergente',     'Rejeitado',  'nome e banco divergem'],
+    ['titular_divergente',  'Rejeitado',  'nome lido diverge'],
+    ['banco_divergente',    'Rejeitado',  'banco lido diverge'],
+    ['ausente',             'Pendente',   'não deu para ler a chave'],
+    ['sem_referencia',      'Pendente',   'a comunidade não tem chave cadastrada'],
+    ['codigo_que_nao_existe', 'Pendente', 'código desconhecido não condena ninguém']
+  ];
+
+  for (const [codigo, esperado, nome] of casos) {
+    const r = ctx.statusDaDevolucao(codigo);
+    const ok = r === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${codigo.padEnd(21)} → ${esperado.padEnd(10)} (${nome})` +
+                (ok ? '' : `  — veio ${r}`));
+  }
+
+  // E o status precisa chegar ao Odoo, não só existir na função.
+  consultas = [];
+  let gravado = null;
+  const ctx2 = montarContexto({
+    dizimista: DIZIMISTA,
+    aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados.x_studio_status; }
+  });
+  ctx2.OdooService.registrarDevolucao(1, { valor: 50 }, null, 'imagem', 'divergente');
+  const ok = gravado === 'Rejeitado';
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} O status chega ao registro no Odoo` +
+              (ok ? '' : ` — gravou ${JSON.stringify(gravado)}`));
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📇 O wa_id do contato vem do Odoo, não de palpite\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// `contatosDoDizimista` é stubado no resto do harness, então `_comWaId` —
+// que mora dentro de `buscarContatosComunidade` — não roda em nenhum cenário
+// acima. Foi a quinta vez nesta sessão que um stub cômodo escondeu a lógica
+// sob teste; aqui o método é chamado direto, com o `searchRead` controlado.
+{
+  const casos = [
+    {
+      nome: 'conta antiga: o wa_id sem o nono dígito é o que existe',
+      conhece: ['558688521231'],
+      espera:  '558688521231'
+    },
+    {
+      nome: 'conta nova: o wa_id COM o nono dígito é o que existe',
+      conhece: ['5586988521231'],
+      espera:  '5586988521231'
+    },
+    {
+      nome: 'número que nunca escreveu ao bot fica sem wa_id',
+      conhece: [],
+      espera:  undefined
+    },
+    {
+      // O palpite por DDD diria "sem o 9" para o 86. Se algum dia alguém
+      // trocar a confirmação pela heurística, este caso quebra.
+      nome: 'o confirmado vence a heurística de DDD',
+      conhece: ['5586988521231'],
+      espera:  '5586988521231'
+    }
+  ];
+
+  for (const c of casos) {
+    const ctx = montarContexto({ dizimista: DIZIMISTA, contatoBotConhece: c.conhece });
+    const res = ctx.OdooService._comWaId([
+      { nome: 'João da Silva', whatsapp: '(86) 98852-1231' }
+    ]);
+    const obtido = res[0].waId;
+    const ok = obtido === c.espera;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : ` — veio ${obtido}`}`);
+  }
+
+  // O Odoo fora do ar não pode custar o cartão inteiro.
+  const ctxErro = montarContexto({ dizimista: DIZIMISTA, odooForaDoAr: true });
+  let sobreviveu = false;
+  try {
+    const r = ctxErro.OdooService._comWaId([{ nome: 'X', whatsapp: '(86) 98852-1231' }]);
+    sobreviveu = r.length === 1 && !r[0].waId;
+  } catch (e) { /* sobreviveu = false */ }
+  if (!sobreviveu) falhas++;
+  console.log(`${sobreviveu ? '✅' : '❌'} Odoo fora do ar → cartão sai sem wa_id, em vez de não sair`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🗣️  Nada de jargão nosso na boca da Cidinha\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// "Compartilhar o bot da paróquia" ficou meses num submenu. Ninguém do outro
+// lado chama a Cidinha de bot — quem chama somos nós, e a palavra escapou de
+// dentro para fora sem que nada reclamasse.
+//
+// Esta varredura lê os textos que o paroquiano REALMENTE recebe: o que o
+// harness capturou em todos os cenários acima, e não o fonte — assim ela não
+// acusa comentário nem nome de variável, que é onde o jargão é legítimo.
+{
+  const JARGAO = [
+    'bot', 'webhook', 'api', 'token', 'payload', 'flow', 'json',
+    'endpoint', 'timeout', 'cache', 'deploy', 'script'
+  ];
+
+  // Tudo o que saiu em qualquer cenário — as mensagens já vêm acumuladas nos
+  // textos que cada regra conferiu, então rodamos os cenários de novo, de
+  // graça, só para ler o que foi dito.
+  const ditos = [];
+  for (const c of CENARIOS) {
+    enviadas = [];
+    try { c.roda(montarContexto(c.cenario)); } catch (e) { continue; }
+    enviadas.forEach(m => ditos.push({ cenario: c.nome, texto: m.texto }));
+  }
+
+  let achados = 0;
+  for (const d of ditos) {
+    for (const j of JARGAO) {
+      // Fronteira de palavra, e sem acento nem caixa: "robot" e "botão" não
+      // são jargão, e `\bbot\b` já os exclui.
+      if (new RegExp(`\\b${j}\\b`, 'i').test(d.texto)) {
+        achados++;
+        falhas++;
+        console.log(`❌ "${j}" apareceu para o usuário em: ${d.cenario}`);
+        console.log(`   ${d.texto.slice(0, 90)}`);
+      }
+    }
+  }
+
+  if (!achados) {
+    console.log(`✅ ${ditos.length} mensagens varridas — nenhuma usa palavra nossa`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('⛔ Lista de bloqueio — BL-36\n');
+
+// A regra que não pode quebrar: bloqueado não recebe NADA. Nem o aviso de
+// pausa do freio de taxa — por isso o portão vem antes dele.
+{
+  const casos = [
+    { nome: 'Número bloqueado não recebe resposta nenhuma', bloqueado: true,  espera: 0 },
+    { nome: 'Número normal continua sendo atendido',        bloqueado: false, espera: 1 }
+  ];
+  for (const c of casos) {
+    enviadas = [];
+    const ctx = montarContexto({ dizimista: DIZIMISTA, propriedades: c.bloqueado ? { 'bloqueado_55': '{}' } : {} });
+    if (!ctx.Utils.estaBloqueado('55')) ctx.MenuHandler.menuDizimista('55', DIZIMISTA);
+    const ok = enviadas.length === c.espera;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : `  (esperava ${c.espera}, veio ${enviadas.length})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔍 Extração do comprovante — BL-14\n');
+
+// O BL-14 nasceu de uma falha REAL: o extrator devolveu "4339441920260" como
+// chave PIX, que não é chave nenhuma — são os 13 primeiros dígitos do ID da
+// transação (E**4339441920260**4052103uuGZ7BZQ3g5). O padrão de telefone vinha
+// primeiro no array e casava com o trecho numérico antes de chegar à chave de
+// verdade. Isso grava dado enganoso no Odoo e inviabiliza a conferência do
+// BL-26.
+//
+// O código já foi corrigido, mas nada guardava a correção. Estes casos guardam.
+const COMPROVANTES = [
+  {
+    nome: 'ID da transação NÃO vira chave PIX',
+    texto: 'Comprovante de transferência\n' +
+           'ID da transação: E43394419202604052103uuGZ7BZQ3g5\n' +
+           'Valor: R$ 150,00\n' +
+           'Chave Pix: 160.740.093-68\n',
+    chave: '160.740.093-68',
+    valor: 150
+  },
+  {
+    nome: 'Tarifa não é confundida com o valor pago',
+    texto: 'Tarifa: R$ 2,50\nValor: R$ 80,00\n',
+    chave: null,
+    valor: 80
+  },
+  {
+    nome: 'Saldo não é confundido com o valor pago',
+    texto: 'Saldo disponível: R$ 4.320,15\nPix enviado\nR$ 45,00\n',
+    chave: null,
+    valor: 45
+  },
+  {
+    nome: 'Chave de e-mail com domínio multinível',
+    texto: 'Chave Pix: tesouraria@paroquia.org.br\nValor: R$ 30,00\n',
+    chave: 'tesouraria@paroquia.org.br',
+    valor: 30
+  },
+  {
+    nome: 'Chave aleatória (UUID)',
+    texto: 'Chave Pix: e7b8c9d0-1234-5678-9abc-def012345678\nValor: R$ 10,00\n',
+    chave: 'e7b8c9d0-1234-5678-9abc-def012345678',
+    valor: 10
+  },
+  {
+    nome: 'Telefone só conta como chave com o +55',
+    texto: 'Chave Pix: +55 86 98852-1231\nValor: R$ 25,00\n',
+    chave: '+55 86 98852-1231',
+    valor: 25
+  }
+];
+
+{
+  const V = extratoresDoVision();
+  for (const c of COMPROVANTES) {
+    const chave = V._extrairChavePix(c.texto);
+    const valor = V._extrairValor(c.texto);
+    const okC = chave === c.chave;
+    const okV = valor === c.valor;
+    if (!okC || !okV) falhas++;
+    console.log(`${okC && okV ? '✅' : '❌'} ${c.nome}`);
+    if (!okC) console.log(`   ⚠️ chave: esperado ${JSON.stringify(c.chave)}, veio ${JSON.stringify(chave)}`);
+    if (!okV) console.log(`   ⚠️ valor: esperado ${c.valor}, veio ${valor}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧾 Filtro por tipo de contribuição (BL-41 · A5)\n');
+
+// Depois que a oferta passou a morar no mesmo modelo do dízimo, toda consulta a
+// x_devolucao devolve os dois. Não existe default bom para todas — e errar aqui
+// NÃO FALHA, só faz o número do coordenador mentir. Daí as regras.
+const filtroTipo = dominio =>
+  (dominio || []).filter(d => d[0] === 'x_studio_tipo_contribuicao').map(d => d[2])[0] || null;
+
+const FILTROS = [
+  {
+    nome: 'Aviso de duplicata olha só dízimo',
+    porque: 'quem ofertou não pode levar "você já devolveu este mês"',
+    roda: ctx => ctx.OdooService.devolucoesDoMes(7),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Histórico do dizimista olha só dízimo',
+    porque: 'a linha "sua última devolução" vive dentro do fluxo de dízimo',
+    roda: ctx => ctx.OdooService.buscarDevolucoesDizimista(7),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Relatório do coordenador olha só dízimo por padrão',
+    porque: 'somar oferta no total do dízimo faz os números da paróquia mentirem',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30'),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Relatório aceita pedir oferta explicitamente',
+    porque: 'sem isso não haveria como a paróquia ver o que arrecadou em ofertas',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30', 'oferta'),
+    espera: 'oferta'
+  },
+  {
+    nome: 'Relatório aceita o consolidado dos dois',
+    porque: 'null = sem filtro',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30', null),
+    espera: null
+  },
+  {
+    nome: 'Fila de conferência NÃO filtra',
+    porque: 'comprovante de oferta também precisa ser conferido pela secretaria',
+    roda: ctx => ctx.OdooService.buscarDevolucoesPendentes(1),
+    espera: null
+  }
+];
+
+for (const f of FILTROS) {
+  consultas = [];
+  const ctx = montarContexto({ dizimista: DIZIMISTA, camposNovos: true });
+  let errFiltro = ''; try { f.roda(ctx); } catch (e) { errFiltro = e.message; }
+  const dev = consultas.filter(c => c.modelo === 'x_devolucao').pop();
+  const obtido = dev ? filtroTipo(dev.dominio) : 'NENHUMA CONSULTA';
+  const ok = obtido === f.espera;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} ${f.nome}`);
+  console.log(`   ${f.porque}${ok ? '' : `\n   ⚠️ filtro esperado ${f.espera}, veio ${obtido}${errFiltro ? ' — ' + errFiltro : ''}`}`);
+}
+
+// E a trava que impede o filtro de derrubar tudo antes da migração.
+{
+  consultas = [];
+  const ctx = montarContexto({ dizimista: DIZIMISTA, camposNovos: false });
+  ctx.OdooService.devolucoesDoMes(7);
+  const dev = consultas.filter(c => c.modelo === 'x_devolucao').pop();
+  const semFiltro = dev && filtroTipo(dev.dominio) === null;
+  if (!semFiltro) falhas++;
+  console.log(`${semFiltro ? '✅' : '❌'} Antes da migração, NÃO filtra`);
+  console.log('   o campo ainda não existe; filtrar por ele faria o search_read inteiro falhar');
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🏛️  registrarDevolucao — a comunidade é obrigatória (BL-41)\n');
+
+// Antes da migração, a comunidade era espelhada do dizimista e o bot nunca a
+// gravava. Depois, quem não gravar deixa o campo vazio EM SILÊNCIO: nada falha,
+// e a linha some dos relatórios do coordenador. Por isso é erro, não omissão.
+const GRAVACAO = [
+  {
+    nome: 'Dízimo: herda a comunidade do dizimista',
+    cenario: { dizimista: DIZIMISTA },
+    roda: ctx => ctx.OdooService.registrarDevolucao(7, { valor: 50, data: '12/08/2026' }),
+    espera: 'ok'
+  },
+  {
+    nome: 'Oferta sem dizimista, com comunidade informada',
+    cenario: { dizimista: null },
+    roda: ctx => ctx.OdooService.registrarDevolucao(null, { valor: 20 }, null, 'imagem', '',
+      { comunidadeId: 3, tipo: 'oferta', telefoneOfertante: '5586988521231' }),
+    espera: 'ok'
+  },
+  {
+    nome: 'Oferta SEM comunidade → recusa, em vez de gravar linha órfã',
+    cenario: { dizimista: null },
+    roda: ctx => ctx.OdooService.registrarDevolucao(null, { valor: 20 }, null, 'imagem', '',
+      { tipo: 'oferta' }),
+    espera: 'erro'
+  },
+  {
+    nome: 'Dizimista sem comunidade no Odoo → recusa',
+    cenario: { dizimista: DIZIMISTA, dizimistaNoOdoo: { id: 7, x_studio_comunidade: false } },
+    roda: ctx => ctx.OdooService.registrarDevolucao(7, { valor: 50 }),
+    espera: 'erro'
+  }
+];
+
+for (const g of GRAVACAO) {
+  enviadas = [];
+  gratis   = [];
+  const ctx = montarContexto(g.cenario);
+  let obtido;
+  let motivo = '';
+  try { g.roda(ctx); obtido = 'ok'; } catch (e) { obtido = 'erro'; motivo = e.message; }
+  const ok = obtido === g.espera;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} ${g.nome}${ok ? '' : `  (esperado ${g.espera}, veio ${obtido}: ${motivo})`}`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧩 Conteúdo que não pode se perder nas fusões\n');
+
+for (const r of REGRAS_DE_CONTEUDO) {
+  enviadas = [];
+  gratis   = [];
+  consultas = [];
+  const ctx = montarContexto(r.cenario);
+  r.roda(ctx);
+  const erro = enviadas.length ? r.confere(enviadas, ctx) : 'nenhuma mensagem enviada';
+  if (erro) falhas++;
+  console.log(`${erro ? '❌' : '✅'} ${r.nome}${erro ? ' — ' + erro : ''}`);
+}
+
+console.log('\n' + '─'.repeat(64));
+if (falhas) {
+  console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
+  console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');
+  console.log('   ou voltou uma mensagem que tinha sido cortada.\n');
+  process.exit(1);
+}
+console.log('✅ Tudo conforme Documentação/FLUXOS.md.\n');

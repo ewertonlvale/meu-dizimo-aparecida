@@ -42,14 +42,16 @@ const VisionService = {
     console.log('📤 [VisionService] Enviando requisição para Vision API...');
 
     try {
-      const response = UrlFetchApp.fetch(
+      // BL-24: OCR é análise pura, sem efeito colateral — seguro repetir.
+      const response = Utils.fetchComRetry(
         `${cfg.ENDPOINT}?key=${cfg.API_KEY}`,
         {
           method:      'post',
           contentType: 'application/json',
           payload:     JSON.stringify(payload),
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'Vision imagem' }
       );
 
       const statusCode = response.getResponseCode();
@@ -129,14 +131,16 @@ const VisionService = {
     console.log('📤 [VisionService] Enviando PDF para Vision API (files:annotate)...');
 
     try {
-      const response = UrlFetchApp.fetch(
+      // BL-24: OCR é análise pura, sem efeito colateral — seguro repetir.
+      const response = Utils.fetchComRetry(
         `${cfg.ENDPOINT_FILES}?key=${cfg.API_KEY}`,
         {
           method:      'post',
           contentType: 'application/json',
           payload:     JSON.stringify(payload),
           muteHttpExceptions: true
-        }
+        },
+        { idempotente: true, rotulo: 'Vision PDF' }
       );
 
       const statusCode = response.getResponseCode();
@@ -193,6 +197,7 @@ const VisionService = {
       data:         this._extrairData(texto),
       chavePix:     this._extrairChavePix(texto),
       banco:        this._extrairBanco(texto),
+      recebedor:    this._extrairRecebedor(texto),
       tipo:         this._extrairTipoTransacao(texto),
       textoCompleto: texto
     };
@@ -275,23 +280,62 @@ const VisionService = {
   },
 
   _extrairChavePix(texto) {
-    // 1) Preferir a chave ancorada pelo rótulo "Chave Pix: ..." (a mais confiável).
-    const rotulo = texto.match(/chave\s*pix[:\s]*([^\n\r]+)/i);
-    if (rotulo) {
-      const chave = this._detectarFormatoChave(rotulo[1]);
-      if (chave) { console.log('   ✓ Chave PIX encontrada (rótulo)'); return chave; }
+    // BL-49: a chave é de QUEM RECEBEU. Procurar no comprovante inteiro fazia
+    // o CNPJ da instituição, lá no rodapé, virar "a chave do recebedor" — no
+    // Nubank, cujo bloco de destino não traz chave, saía
+    // `18.236.120/0001-58` (Nu Pagamentos S.A.). Comparado com a chave da
+    // comunidade dava divergência, e desde o BL-46 divergência AVISA A PESSOA
+    // de que o pagamento dela parece errado. Acusação falsa, em cima de quem
+    // pagou certo.
+    const bloco = this._blocoDoRecebedor(texto);
+    if (bloco.length) {
+      const chave = this._chaveEmLinhas(bloco);
+      if (chave) { console.log('   ✓ Chave PIX encontrada (bloco do recebedor)'); return chave; }
+
+      // O bloco existe e não tem chave — como no Nubank. Isso é resposta:
+      // "não há chave para conferir". Cair para o resto do comprovante seria
+      // justamente voltar a pegar o rodapé.
+      console.log('   ✗ Bloco do recebedor sem chave — não vou procurar no rodapé');
+      return null;
     }
 
-    // 2) Varrer linha a linha, PULANDO linhas de identificadores de transação
-    //    (foi aqui que a versão antiga confundiu o ID da transação com a chave:
-    //     "E43394419202604052103..." → "4339441920260").
-    for (const linha of texto.split(/[\n\r]+/)) {
-      if (/id\s*da\s*transa|identificad|autentica[çc][ãa]o|e2e|comprovante\s*n[ºo]/i.test(linha)) continue;
+    // Sem bloco reconhecido, vale o comprovante inteiro: é o melhor que dá,
+    // e o resultado só alimenta conferência, nunca alerta sozinho.
+    const chave = this._chaveEmLinhas(texto.split(/[\n\r]+/));
+    console.log(chave ? '   ✓ Chave PIX encontrada' : '   ✗ Chave PIX não encontrada');
+    return chave;
+  },
+
+  /**
+   * A chave PIX dentro de um conjunto de linhas (BL-49).
+   *
+   * O rótulo "Chave Pix" vem antes do valor, e nem sempre na mesma linha: o
+   * Banco do Brasil quebra em duas. Por isso olhamos o resto da linha do
+   * rótulo E a linha seguinte.
+   *
+   * Depois do rótulo, um número de 11 ou 14 dígitos sem pontuação é aceito
+   * como chave — o BB escreve `08070690356`. Fora dali NÃO é: número de conta
+   * também tem esse tamanho, e um palpite ali vira divergência falsa.
+   * @private
+   */
+  _chaveEmLinhas(linhas) {
+    for (let i = 0; i < linhas.length; i++) {
+      const m = String(linhas[i]).match(/chave\s*(?:pix)?[:\s]*(.*)$/i);
+      if (!m) continue;
+      const candidatos = [m[1], linhas[i + 1] || ''];
+      for (const c of candidatos) {
+        const chave = this._detectarFormatoChave(c, true);
+        if (chave) return chave;
+      }
+    }
+
+    // Sem rótulo: reconhece só formatos inequívocos, e pula as linhas de
+    // identificador — foi ali que o ID da transação já virou chave (BL-14).
+    for (const linha of linhas) {
+      if (/id\s*da\s*transa|identificad|autentica[çc][ãa]o|e2e|comprovante\s*n[ºo]|ag[êe]ncia|conta/i.test(linha)) continue;
       const chave = this._detectarFormatoChave(linha);
-      if (chave) { console.log('   ✓ Chave PIX encontrada'); return chave; }
+      if (chave) return chave;
     }
-
-    console.log('   ✗ Chave PIX não encontrada');
     return null;
   },
 
@@ -301,7 +345,14 @@ const VisionService = {
    * (ex.: o ID da transação), causa do bug corrigido no BL-14.
    * @private
    */
-  _detectarFormatoChave(txt) {
+  _detectarFormatoChave(txt, aposRotulo) {
+    // Só depois do rótulo "Chave Pix": CPF/CNPJ sem pontuação. Número de conta
+    // tem o mesmo tamanho, e aceitar em qualquer linha traria conta por chave.
+    if (aposRotulo) {
+      const nu = String(txt).match(/(?<!\d)(\d{11}|\d{14})(?!\d)/);
+      if (nu) return nu[1];
+    }
+
     const padroes = [
       /[\w.+-]+@[\w.-]+\.[a-z]{2,}/i,                                                 // e-mail (aceita domínio multinível, ex: .org.br)
       /(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)/,                                       // CPF formatado
@@ -312,6 +363,99 @@ const VisionService = {
     for (const padrao of padroes) {
       const match = txt.match(padrao);
       if (match) return match[0].trim();
+    }
+    return null;
+  },
+
+  /**
+   * Nome e instituição de QUEM RECEBEU (BL-46).
+   *
+   * POR QUE NÃO DÁ PARA USAR `_extrairBanco` NEM VARRER O TEXTO INTEIRO.
+   * Num comprovante aparecem DOIS bancos e DOIS nomes — o de quem paga e o de
+   * quem recebe. `_extrairBanco` devolve o primeiro que encontra, que é quase
+   * sempre o app de quem pagou, no topo da tela. Comparar aquilo com a conta
+   * da paróquia reprovaria quase todo comprovante legítimo.
+   *
+   * Então ancoramos: procuramos o rótulo que abre o bloco do recebedor e só
+   * lemos DALI PARA A FRENTE, parando no bloco do pagador. É o mesmo caminho
+   * que `_extrairChavePix` já fazia com "Chave Pix:".
+   *
+   * Devolve `{ nome: null, banco: null }` quando não reconhece o layout — e
+   * isso é um resultado legítimo, não uma falha. A diversidade de modelos é
+   * grande demais para prometer sempre achar; quem chama trata a ausência
+   * como "não sei", nunca como "não confere".
+   *
+   * @returns {{nome: string|null, banco: string|null}}
+   * @private
+   */
+  _extrairRecebedor(texto) {
+    const bloco = this._blocoDoRecebedor(texto);
+    if (!bloco.length) return { nome: null, banco: null };
+    return {
+      nome:  this._nomeNoBloco(bloco),
+      banco: this._extrairBanco(bloco.join('\n'))
+    };
+  },
+
+  /**
+   * As linhas do comprovante que falam de QUEM RECEBEU (BL-49).
+   *
+   * Do rótulo que abre o bloco até o que abre o do pagador. O teto de linhas
+   * existe porque em alguns layouts o bloco do pagador não é rotulado, e a
+   * varredura invadiria o rodapé — onde mora o CNPJ da instituição, que já foi
+   * confundido com a chave PIX do recebedor.
+   *
+   * 14 linhas, e não 8: o comprovante do Banco do Brasil gasta Agência, Conta
+   * e Tipo de conta ANTES da Chave Pix, e com o teto antigo o bloco acabava
+   * cedo demais.
+   * @private
+   */
+  _blocoDoRecebedor(texto) {
+    const linhas = String(texto || '').split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+
+    const ABRE  = /^(para|destino|destinat[áa]rio|recebedor|benefici[áa]rio|quem recebeu|dados de quem recebeu|institui[çc][ãa]o de destino|cr[ée]dito)\b/i;
+    const FECHA = /^(de|origem|pagador|quem pagou|dados de quem pagou|debitado|d[ée]bito|remetente)\b/i;
+
+    const inicio = linhas.findIndex(l => ABRE.test(l));
+    if (inicio < 0) return [];
+
+    const bloco = [];
+    for (let i = inicio; i < linhas.length && bloco.length < 14; i++) {
+      if (i > inicio && FECHA.test(linhas[i])) break;
+      bloco.push(linhas[i]);
+    }
+    return bloco;
+  },
+
+  /**
+   * O primeiro texto do bloco que se parece com nome de pessoa ou instituição.
+   *
+   * Descarta rótulo, valor, data, documento e chave — tudo o que num bloco de
+   * recebedor NÃO é o nome. Exige duas palavras: "Paróquia" sozinho não
+   * identifica ninguém, e um falso positivo aqui vira acusação contra alguém
+   * que pagou certo.
+   * @private
+   */
+  _nomeNoBloco(bloco) {
+    const LIXO = /r\$|\d{2}\/\d{2}|cpf|cnpj|chave|ag[êe]ncia|conta|institui|tipo|valor|data|id\s*da|autentica/i;
+
+    for (const bruto of bloco) {
+      // Tira o rótulo quando ele divide a linha com o nome. Com dois-pontos
+      // ("Para: Fulano") e sem ("Nome    THALLES BOITEUX VALE") — o Nubank usa
+      // a segunda forma, e o rótulo vinha colado no nome.
+      const linha = bruto
+        .replace(/^[^:]{0,30}:\s*/, '')
+        .replace(/^(nome|nome do favorecido|favorecido|recebedor|benefici[áa]rio)\s+/i, '')
+        .trim();
+      if (!linha || LIXO.test(linha)) continue;
+      // O rótulo da seção também tem duas palavras e só letras: "Quem
+      // recebeu" saía como se fosse o nome de quem recebeu.
+      if (/^(quem\s+(recebeu|pagou)|destino|origem|recebedor|benefici[áa]rio|destinat[áa]rio|pagador|remetente|dados\s)/i.test(linha)) continue;
+      if (/\d/.test(linha)) continue;                       // nome não tem dígito
+      if (linha.split(/\s+/).length < 2) continue;          // uma palavra não basta
+      if (linha.length < 5 || linha.length > 80) continue;
+      if (!/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\s'-]+$/.test(linha)) continue;
+      return linha;
     }
     return null;
   },

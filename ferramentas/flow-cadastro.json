@@ -1,0 +1,181 @@
+{
+  "version": "7.1",
+  "screens": [
+    {
+      "id": "CADASTRO",
+      "title": "Cadastro de Dizimista",
+      "terminal": true,
+      "data": {
+        "comunidades": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "1",
+              "title": "Comunidade Exemplo"
+            },
+            {
+              "id": "2",
+              "title": "Outra Comunidade"
+            }
+          ]
+        },
+        "nome_padrao": {
+          "type": "string",
+          "__example__": "Maria da Silva"
+        },
+        "nome_usual_padrao": {
+          "type": "string",
+          "__example__": "Maria"
+        },
+        "nascimento_padrao": {
+          "type": "string",
+          "__example__": "15/03/1990"
+        },
+        "endereco_padrao": {
+          "type": "string",
+          "__example__": "Rua A, 100"
+        },
+        "valor_padrao": {
+          "type": "number",
+          "__example__": 50
+        },
+        "notificacao_padrao": {
+          "type": "string",
+          "__example__": "sim"
+        },
+        "dia_padrao": {
+          "type": "number",
+          "__example__": 10
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form_cadastro",
+            "children": [
+              {
+                "type": "TextSubheading",
+                "text": "Seus dados"
+              },
+              {
+                "type": "Dropdown",
+                "name": "comunidade_id",
+                "label": "Comunidade",
+                "required": true,
+                "data-source": "${data.comunidades}"
+              },
+              {
+                "type": "TextInput",
+                "name": "nome",
+                "label": "Nome completo",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 3,
+                "max-chars": 80
+              },
+              {
+                "type": "TextInput",
+                "name": "nome_usual",
+                "label": "Como chamar você",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 2,
+                "max-chars": 40,
+                "helper-text": "Apelido ou nome de preferência"
+              },
+              {
+                "type": "TextInput",
+                "name": "data_nascimento",
+                "label": "Nascimento",
+                "input-type": "text",
+                "required": true,
+                "min-chars": 8,
+                "max-chars": 10,
+                "helper-text": "Formato DD/MM/AAAA. Exemplo: 15/03/1990"
+              },
+              {
+                "type": "TextArea",
+                "name": "endereco",
+                "label": "Endereço completo",
+                "required": true,
+                "max-length": 200,
+                "helper-text": "Rua, número, bairro e um ponto de referência"
+              },
+              {
+                "type": "TextInput",
+                "name": "valor_mensal",
+                "label": "Dízimo mensal (R$)",
+                "input-type": "number",
+                "required": true,
+                "helper-text": "Só o valor. É uma referência, pode variar a cada mês."
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "notificacao",
+                "label": "Receber lembrete?",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "sim",
+                    "title": "Sim"
+                  },
+                  {
+                    "id": "nao",
+                    "title": "Não"
+                  }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "dia_preferido",
+                "label": "Dia do lembrete",
+                "input-type": "number",
+                "required": false,
+                "helper-text": "De 1 a 28. Preencha só se escolheu Sim acima."
+              },
+              {
+                "type": "Footer",
+                "label": "Enviar cadastro",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "comunidade_id": "${form.comunidade_id}",
+                    "nome": "${form.nome}",
+                    "nome_usual": "${form.nome_usual}",
+                    "data_nascimento": "${form.data_nascimento}",
+                    "endereco": "${form.endereco}",
+                    "valor_mensal": "${form.valor_mensal}",
+                    "notificacao": "${form.notificacao}",
+                    "dia_preferido": "${form.dia_preferido}"
+                  }
+                }
+              }
+            ],
+            "init-values": {
+              "nome": "${data.nome_padrao}",
+              "nome_usual": "${data.nome_usual_padrao}",
+              "data_nascimento": "${data.nascimento_padrao}",
+              "endereco": "${data.endereco_padrao}",
+              "valor_mensal": "${data.valor_padrao}",
+              "notificacao": "${data.notificacao_padrao}",
+              "dia_preferido": "${data.dia_padrao}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

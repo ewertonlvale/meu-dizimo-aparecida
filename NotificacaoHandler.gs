@@ -54,18 +54,19 @@ const NotificacaoHandler = {
     };
     
     try {
-      const response = UrlFetchApp.fetch(
-        getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/messages`),
-        {
-          method: 'post',
-          contentType: 'application/json',
-          headers: {
-            'Authorization': `Bearer ${config.WHATSAPP_TOKEN}`
-          },
-          payload: JSON.stringify(payload),
-          muteHttpExceptions: true
-        }
-      );
+      // BL-24/BL-25: o disparo em lote é onde o throttling da Meta aparece, e
+      // é o maior consumidor de cota do projeto. Não idempotente — só repete
+      // em 429, que é exatamente o caso em que o lembrete não foi entregue.
+      // Passa por Utils._post como todo o resto. O detalhe importa: este é o
+      // ÚNICO fluxo que envia para número gravado no Odoo — o cenário do
+      // BL-32 — e enquanto montava o POST por conta própria era justamente o
+      // que escapava da conferência de destinatário. A proteção estava
+      // instalada no caminho seguro e faltava no perigoso.
+      const response = Utils._post(payload, {
+        rotulo:   'WhatsApp template',
+        mensagem: 'template'
+      });
+      if (!response) throw new Error('Falha ao enviar o template (sem resposta)');
       
       const statusCode = response.getResponseCode();
       const corpo      = response.getContentText();
@@ -197,6 +198,10 @@ function executarNotificacoesDiarias() {
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
     console.error(`💥 [Notif] ERRO CRÍTICO após ${dt}s — a rotina foi abortada: ${erro.message}`);
     if (erro.stack) console.error(`💥 [Notif] Stack: ${erro.stack}`);
+  } finally {
+    // BL-25: o disparo mensal é, de longe, o maior consumidor de chamadas
+    // externas do projeto — é ele que pode encostar na cota diária.
+    Utils.registrarConsumoExterno();
   }
 }
 
@@ -420,6 +425,13 @@ function testarNotificacaoAgora() {
     console.log('✅ [Notif][TESTE] Lembrete de teste enviado — verifique o WhatsApp.');
   } catch (e) {
     console.error(`❌ [Notif][TESTE] Falha no envio de teste: ${e.message}`);
+  } finally {
+    // Este teste entrega um TEMPLATE COBRADO. Sem descarregar o contador aqui,
+    // ele nunca entrava no total do mês — e `verificarConsumoMensagens` projeta
+    // a fatura em cima desse número. O erro não era aleatório: subestimava
+    // sempre, justamente porque só os pontos de entrada automáticos
+    // descarregavam.
+    Utils.registrarConsumoExterno();
   }
 }
 
