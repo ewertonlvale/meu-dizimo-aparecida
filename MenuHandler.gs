@@ -594,7 +594,10 @@ const MenuHandler = {
           { id: 'opt_membro',    title: '➕ Adicionar membro', description: 'Cadastrar alguém da sua família' },
           { id: 'opt_historico', title: '📊 Meu histórico',    description: 'Suas devoluções anteriores'      },
           { id: 'opt_contato',   title: '📞 Contato Pastoral', description: 'Falar com a sua comunidade'      },
-          { id: 'opt_convidar',  title: '💛 Convidar alguém',  description: 'Compartilhar o bot da paróquia'  },
+          // "bot" é jargão nosso, não da pessoa do outro lado. E "membro" está
+          // duas linhas acima querendo dizer "da família" — repetir a palavra
+          // com outro sentido na mesma lista confunde.
+          { id: 'opt_convidar',  title: '💛 Convidar alguém',  description: 'Compartilhe com outra pessoa da paróquia' },
           { id: 'opt_menu',      title: '🔙 Menu',             description: 'Voltar ao início'                }
         ]
       }],

@@ -159,7 +159,13 @@ function montarContexto(cenario) {
       opcoes.imagemId ? 'menu+imagem' : 'menu',
       t + ' [' + (botoes || []).map(b => b.id).join(', ') + ']'
     ),
-    enviarLista:        (to, t)         => registra('lista',  t),
+    // As LINHAS entram no texto registrado, não só o título. O "bot" que
+    // escapou para produção morava numa `description` de linha — com o stub
+    // guardando só o título, toda varredura passaria por cima dele sem ver.
+    enviarLista: (to, t, secoes) => registra('lista', t + ' ' +
+      (secoes || []).map(sec =>
+        (sec.rows || []).map(r => `${r.title} — ${r.description || ''}`).join(' | ')
+      ).join(' | ')),
     // Indicador de digitação: NÃO é mensagem. Registrado à parte justamente
     // para o teste provar que ele não entra na conta.
     sinalizarProcessando: () => {
@@ -1337,6 +1343,52 @@ console.log('📇 O wa_id do contato vem do Odoo, não de palpite\n');
   } catch (e) { /* sobreviveu = false */ }
   if (!sobreviveu) falhas++;
   console.log(`${sobreviveu ? '✅' : '❌'} Odoo fora do ar → cartão sai sem wa_id, em vez de não sair`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🗣️  Nada de jargão nosso na boca da Cidinha\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// "Compartilhar o bot da paróquia" ficou meses num submenu. Ninguém do outro
+// lado chama a Cidinha de bot — quem chama somos nós, e a palavra escapou de
+// dentro para fora sem que nada reclamasse.
+//
+// Esta varredura lê os textos que o paroquiano REALMENTE recebe: o que o
+// harness capturou em todos os cenários acima, e não o fonte — assim ela não
+// acusa comentário nem nome de variável, que é onde o jargão é legítimo.
+{
+  const JARGAO = [
+    'bot', 'webhook', 'api', 'token', 'payload', 'flow', 'json',
+    'endpoint', 'timeout', 'cache', 'deploy', 'script'
+  ];
+
+  // Tudo o que saiu em qualquer cenário — as mensagens já vêm acumuladas nos
+  // textos que cada regra conferiu, então rodamos os cenários de novo, de
+  // graça, só para ler o que foi dito.
+  const ditos = [];
+  for (const c of CENARIOS) {
+    enviadas = [];
+    try { c.roda(montarContexto(c.cenario)); } catch (e) { continue; }
+    enviadas.forEach(m => ditos.push({ cenario: c.nome, texto: m.texto }));
+  }
+
+  let achados = 0;
+  for (const d of ditos) {
+    for (const j of JARGAO) {
+      // Fronteira de palavra, e sem acento nem caixa: "robot" e "botão" não
+      // são jargão, e `\bbot\b` já os exclui.
+      if (new RegExp(`\\b${j}\\b`, 'i').test(d.texto)) {
+        achados++;
+        falhas++;
+        console.log(`❌ "${j}" apareceu para o usuário em: ${d.cenario}`);
+        console.log(`   ${d.texto.slice(0, 90)}`);
+      }
+    }
+  }
+
+  if (!achados) {
+    console.log(`✅ ${ditos.length} mensagens varridas — nenhuma usa palavra nossa`);
+  }
 }
 
 console.log('\n' + '─'.repeat(64));
