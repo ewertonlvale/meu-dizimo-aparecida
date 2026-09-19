@@ -461,6 +461,81 @@ const Utils = {
    * @param {string} from
    * @returns {boolean} true se a mensagem deve ser DESCARTADA.
    */
+  // ── BL-36: lista de bloqueio ──────────────────────────────────────────────
+  // Uma propriedade por número (`bloqueado_<numero>`), e não uma lista JSON
+  // numa chave só. Mesmo raciocínio do BL-22: com chave por usuário cada
+  // execução escreve só a sua, some o read-modify-write compartilhado e o lock
+  // fica desnecessário. Numa paróquia a lista tem punhados de números, muito
+  // longe dos 500 KB do store.
+  BLOQUEIO_PREFIXO: 'bloqueado_',
+  SUSPEITO_PREFIXO: 'suspeito_',
+
+  /**
+   * Este número está bloqueado? Consultado antes de QUALQUER resposta.
+   *
+   * O resultado vai para o cache porque isto roda em toda mensagem recebida, e
+   * uma leitura de Properties por mensagem pesaria no caminho quente. TTL curto
+   * quando não está bloqueado: um bloqueio recém-criado passa a valer em
+   * minutos, e não em horas.
+   */
+  estaBloqueado(from) {
+    const chave = `${this.BLOQUEIO_PREFIXO}${from}`;
+    try {
+      const cache    = CacheService.getScriptCache();
+      const cacheado = cache.get(chave);
+      if (cacheado !== null) return cacheado === '1';
+
+      const bloqueado = !!PropertiesService.getScriptProperties().getProperty(chave);
+      cache.put(chave, bloqueado ? '1' : '0', bloqueado ? 3600 : 300);
+      return bloqueado;
+    } catch (e) {
+      // Na dúvida, NÃO bloqueia: um falso positivo cala um dizimista em
+      // silêncio, e ninguém descobre até ele reclamar pessoalmente.
+      console.warn('⚠️ [Bloqueio] Não consegui verificar:', e.message);
+      return false;
+    }
+  },
+
+  /**
+   * Marca o número como suspeito quando ele estoura o freio — sem bloquear.
+   *
+   * BL-36: por que só marcar. Um falso positivo bloqueia um dizimista, que
+   * NÃO recebe aviso (avisar custa exatamente o que o bloqueio evita), some em
+   * silêncio, e o sintoma não aponta para a causa. Então o sistema registra o
+   * candidato e a inclusão na lista é humana — pelo menos até existir dado real
+   * sobre quais critérios são seguros, que hoje não existe.
+   *
+   * O que se guarda é o número de DIAS DISTINTOS em que o número estourou o
+   * freio. Estourar uma vez é gente confusa; estourar em dias diferentes é
+   * padrão.
+   */
+  marcarSuspeito(from) {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const chave = `${this.SUSPEITO_PREFIXO}${from}`;
+      const hoje  = this._hoje();
+
+      const atual = props.getProperty(chave);
+      const dados = atual ? JSON.parse(atual) : { dias: [], total: 0 };
+
+      dados.total++;
+      if (dados.dias.indexOf(hoje) < 0) {
+        dados.dias.push(hoje);
+        if (dados.dias.length > 10) dados.dias.shift();
+      }
+
+      props.setProperty(chave, JSON.stringify(dados));
+
+      if (dados.dias.length >= 3) {
+        console.warn(`🚩 [Spam] ${from} estourou o freio em ${dados.dias.length} dias ` +
+                     `distintos (${dados.total} vezes). Candidato a bloqueio — ` +
+                     'rode listarSuspeitos() para revisar.');
+      }
+    } catch (e) {
+      console.warn('⚠️ [Spam] Não consegui marcar suspeito:', e.message);
+    }
+  },
+
   excedeuTaxa(from) {
     try {
       const props  = PropertiesService.getScriptProperties();
@@ -492,6 +567,11 @@ const Utils = {
 
       const qual = nMin > porMin ? `${nMin} em 1 min` : `${nHora} em 1 h`;
       console.warn(`🛑 [Taxa] ${from} excedeu o limite (${qual}) — não vamos responder`);
+
+      // BL-36: registra o candidato. Só na PRIMEIRA vez da janela de aviso,
+      // senão um laço de 200 mensagens contaria 200 estouros e o número de
+      // "vezes" perderia o sentido.
+      if (!cache.get(`taxa_aviso_${from}`)) this.marcarSuspeito(from);
 
       // Um aviso por hora, no máximo. Ele também é uma mensagem cobrada: se
       // fosse enviado a cada mensagem descartada, o freio viraria o vazamento.

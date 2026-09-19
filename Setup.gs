@@ -706,3 +706,115 @@ function limparCacheContatos(numeros) {
 
 // Ver todas as propriedades (apenas nomes, sem valores):
 // listarPropriedades();
+
+
+// ============================================================================
+// BL-36 — LISTA DE BLOQUEIO
+// ============================================================================
+
+/**
+ * Bloqueia um número: ele deixa de receber QUALQUER resposta do bot.
+ *
+ * ⚠️ O bloqueado NÃO é avisado. Do lado dele, o bot simplesmente para de
+ * responder. É de propósito — avisar custa a mensagem que o bloqueio evita e
+ * informa ao abusador que foi detectado —, mas significa que **um engano aqui
+ * cala um dizimista em silêncio**, e ninguém descobre até ele reclamar
+ * pessoalmente na paróquia. Rode `listarSuspeitos()` antes e confira se o
+ * número não é de alguém cadastrado.
+ *
+ * @param {string} numero - Formato internacional, sem '+'. Ex.: '5586988521231'
+ * @param {string} [motivo] - Fica registrado, para quem for revisar depois
+ */
+function bloquearNumero(numero, motivo) {
+  if (!numero) {
+    Logger.log("❌ Informe o número. Ex.: bloquearNumero('5586988521231', 'spam em 3 dias')");
+    return;
+  }
+
+  // Aviso, não impedimento: há casos legítimos (um dizimista cujo número foi
+  // clonado, por exemplo). Mas quem bloqueia precisa saber o que está fazendo.
+  try {
+    const d = OdooService.buscarDizimistaPorWhatsapp(numero);
+    if (d) {
+      Logger.log(`⚠️ ATENÇÃO: ${numero} é de um DIZIMISTA CADASTRADO — ${d.x_name}.`);
+      Logger.log('   Ele deixará de receber lembretes e não conseguirá devolver pelo bot,');
+      Logger.log('   sem nenhum aviso. Confirme que é isso mesmo que você quer.');
+    }
+  } catch (e) { /* Odoo fora do ar não impede o bloqueio */ }
+
+  PropertiesService.getScriptProperties().setProperty(
+    `${Utils.BLOQUEIO_PREFIXO}${numero}`,
+    JSON.stringify({ em: new Date().toISOString(), motivo: motivo || '' })
+  );
+  try { CacheService.getScriptCache().remove(`${Utils.BLOQUEIO_PREFIXO}${numero}`); } catch (e) {}
+
+  Logger.log(`⛔ ${numero} bloqueado.${motivo ? ' Motivo: ' + motivo : ''}`);
+  Logger.log('   Pode levar até 5 min para valer em todas as execuções (cache).');
+}
+
+/** Remove o bloqueio. O número volta a ser atendido normalmente. */
+function desbloquearNumero(numero) {
+  if (!numero) return Logger.log("❌ Informe o número.");
+  PropertiesService.getScriptProperties().deleteProperty(`${Utils.BLOQUEIO_PREFIXO}${numero}`);
+  try { CacheService.getScriptCache().remove(`${Utils.BLOQUEIO_PREFIXO}${numero}`); } catch (e) {}
+  Logger.log(`✅ ${numero} desbloqueado.`);
+}
+
+/** Lista quem está bloqueado, com data e motivo. Só lê. */
+function listarBloqueados() {
+  const todas = PropertiesService.getScriptProperties().getProperties();
+  const linhas = Object.keys(todas)
+    .filter(k => k.indexOf(Utils.BLOQUEIO_PREFIXO) === 0)
+    .map(k => {
+      let info = {};
+      try { info = JSON.parse(todas[k]); } catch (e) {}
+      return { numero: k.slice(Utils.BLOQUEIO_PREFIXO.length), em: info.em || '?', motivo: info.motivo || '' };
+    });
+
+  if (!linhas.length) return Logger.log('✅ Nenhum número bloqueado.');
+
+  Logger.log(`⛔ ${linhas.length} número(s) bloqueado(s):`);
+  linhas.forEach(l => Logger.log(`   • ${l.numero} — desde ${l.em.slice(0, 10)}${l.motivo ? ' · ' + l.motivo : ''}`));
+}
+
+/**
+ * Candidatos a bloqueio: quem estourou o freio de taxa (BL-35), com em quantos
+ * DIAS DISTINTOS isso aconteceu. Só lê — nada é bloqueado automaticamente.
+ *
+ * Estourar uma vez é gente confusa apertando botão repetido. Estourar em dias
+ * diferentes é padrão. A decisão continua sendo humana: não existe ainda dado
+ * real sobre qual critério seria seguro o bastante para agir sozinho.
+ */
+function listarSuspeitos() {
+  const todas = PropertiesService.getScriptProperties().getProperties();
+  const linhas = Object.keys(todas)
+    .filter(k => k.indexOf(Utils.SUSPEITO_PREFIXO) === 0)
+    .map(k => {
+      let d = { dias: [], total: 0 };
+      try { d = JSON.parse(todas[k]); } catch (e) {}
+      return { numero: k.slice(Utils.SUSPEITO_PREFIXO.length), dias: (d.dias || []).length, total: d.total || 0 };
+    })
+    .sort((a, b) => b.dias - a.dias || b.total - a.total);
+
+  if (!linhas.length) return Logger.log('✅ Nenhum número suspeito registrado.');
+
+  Logger.log(`🚩 ${linhas.length} número(s) já estouraram o freio de taxa:`);
+  linhas.forEach(l => {
+    const marca = l.dias >= 3 ? '  ⚠️ CANDIDATO' : '';
+    Logger.log(`   • ${l.numero} — ${l.dias} dia(s) distinto(s), ${l.total} vez(es)${marca}`);
+  });
+  Logger.log('');
+  Logger.log('Para bloquear: bloquearNumero(\'<numero>\', \'<motivo>\')');
+  Logger.log('Confira antes se o número não é de um dizimista — o bloqueado não é avisado.');
+}
+
+/** Apaga o histórico de suspeitos. Útil depois de revisar a lista. */
+function limparSuspeitos() {
+  const props = PropertiesService.getScriptProperties();
+  const todas = props.getProperties();
+  let n = 0;
+  Object.keys(todas)
+    .filter(k => k.indexOf(Utils.SUSPEITO_PREFIXO) === 0)
+    .forEach(k => { props.deleteProperty(k); n++; });
+  Logger.log(`🧹 ${n} registro(s) de suspeita apagado(s).`);
+}

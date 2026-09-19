@@ -60,14 +60,16 @@
 | BL-31 | Webhook descartava os callbacks de entrega da Meta | 🟠 | P | ✅ Concluído — `_registrarStatusEntrega`; sem isso, "não chegou" ficava sem diagnóstico |
 | BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
 | BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — inclui o formulário de membro, com endereço e dia pré-preenchidos |
+| BL-12 · BL-13 · BL-15 | Itens baixos de manutenção | 🟡 | P | ✅ Confirmados resolvidos (19/09) — estavam feitos e não marcados |
+| BL-14 | Extração frágil de valor e chave PIX do OCR | 🟠 | M | ✅ Concluído (19/09) — heurística já refeita; entraram os 6 testes de regressão que faltavam |
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
-| BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
+| BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | ✅ Parte 1 (19/09) — lista + portão + administração. Detecção só MARCA; bloqueio automático depende de dado que não existe |
 | BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
-| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | 🔄 **Em execução agendada** — fila abaixo, trilha A automática |
+| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Trilha A completa (19/09)** — PR #44. Falta a trilha B: migração do Odoo, 2 Script Properties e 2 sondas |
 
 ---
 
@@ -401,7 +403,7 @@ de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
 
 ---
 
-### BL-36 — Lista de bloqueio de telefones e detecção automática de spam 🟠 (M) — 📋 **pedido em 18/09/2026, não iniciado**
+### BL-36 — Lista de bloqueio de telefones e detecção automática de spam 🟠 (M) — ✅ **parte 1 concluída em 19/09/2026**
 **Arquivos previstos:** `Utils.gs` (junto de `excedeuTaxa`) · `Webhook.gs` · `Setup.gs` (administração)
 
 Segundo nível sobre o freio do **BL-35**. O freio corta o **laço** — 12 por minuto, 60 por hora — mas zera a cada janela: quem insiste volta a consumir resposta indefinidamente, em ondas. Falta poder dizer "este número não fala mais com o bot".
@@ -423,6 +425,18 @@ Sinais possíveis, do mais para o menos confiável:
 **Recomendação para quando for feito:** começar com **sugestão, não bloqueio automático**. O sistema marca o número como suspeito e registra; a inclusão na lista é humana. Só depois de ver os candidatos reais por um tempo é que dá para saber se algum critério é seguro o bastante para agir sozinho — e esse dado não existe hoje.
 
 **Aceite:** um número na lista não gera resposta nenhuma; nenhum dizimista ativo entra na lista sem decisão humana.
+
+#### ✅ Implementado em 19/09
+
+**Onde guardar — decidido:** uma propriedade por número (`bloqueado_<numero>`), não uma lista JSON numa chave só. Mesmo raciocínio do BL-22: com chave por usuário, cada execução escreve só a sua, some o read-modify-write compartilhado e o lock fica desnecessário. Numa paróquia a lista tem punhados de números, longe dos 500 KB do store. O Odoo ficou de fora: ~225 ms por mensagem recebida não se paga para um dado que quase não cresce.
+
+**O portão** (`Utils.estaBloqueado`) roda no `_processarMensagemWebhook` **antes do freio de taxa** — de propósito: o freio ainda responde uma vez por hora com o aviso de pausa, e para quem está bloqueado nem isso deve sair. O resultado vai para o cache, com TTL curto quando não está bloqueado, para um bloqueio novo valer em minutos.
+
+**Administração** (`Setup.gs`): `bloquearNumero(numero, motivo)`, `desbloquearNumero`, `listarBloqueados`, `listarSuspeitos`, `limparSuspeitos`. O `bloquearNumero` **avisa se o número for de um dizimista cadastrado** — não impede, porque há casos legítimos, mas quem bloqueia precisa saber que aquela pessoa vai parar de receber lembretes e não conseguirá devolver, sem nenhum aviso.
+
+**Parte 2 — detecção automática: marcada, não automatizada.** Seguindo a recomendação deste próprio item. `Utils.marcarSuspeito` registra quantos **dias distintos** o número estourou o freio; a partir de 3, o log avisa que há candidato. **Nada é bloqueado sozinho.** A razão continua valendo: um falso positivo cala um dizimista em silêncio, o sintoma não aponta para a causa, e não existe dado real sobre qual critério seria seguro. O `listarSuspeitos()` existe justamente para produzir esse dado.
+
+⏭️ **PULADO (execução automática):** o bloqueio automático. Precisa de meses de `listarSuspeitos()` com tráfego real antes de qualquer critério agir sozinho — é decisão que depende de dado que ainda não existe, não de código.
 
 ---
 
@@ -692,9 +706,29 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 2. A oferta exibia o valor do OCR e gravava o valor escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00. Corrigido: a mensagem mostra o que foi gravado.
 3. `campoExiste` não bastava para a comunidade, porque ela **já existe** e só muda de readonly para gravável. Escrever antes da migração faria o Odoo recusar a gravação inteira e a devolução se perderia. Daí o `campoGravavel()` novo.
 
-**Aguardando PR:** tudo. Esta execução não tem as ferramentas do GitHub, então os 9 commits estão no branch `claude/ecstatic-edison-ea2b5t`, sem PR aberto.
+**PR:** #44, aberto e mergeado. As ferramentas do GitHub existiam nesta execução, ao contrário do previsto.
 
-**Nada foi enviado para `staging`.**
+---
+
+#### 📋 EXECUÇÃO 2026-09-19 08:01 UTC — **a fila automática acabou**
+
+**Concluídos:** BL-14 (testes de regressão) e BL-36 parte 1 (lista de bloqueio).
+
+**Confirmados já resolvidos, backlog desatualizado:** BL-12, BL-13, BL-15 e BL-22. A execução foi implementá-los e encontrou os quatro já feitos em ciclos anteriores, sem marcação. Verificado lendo o código.
+
+**⏭️ Pulados, e por quê:**
+
+| Item | Motivo |
+|---|---|
+| **A12** (BL-41) | depende da sonda **S1** — cabeçalho de imagem em mensagem de botões |
+| **BL-34** | depende de dado de uso que não existe |
+| **BL-36 parte 2** (bloqueio automático) | depende de meses de `listarSuspeitos()` com tráfego real. É decisão sobre dado, não código |
+| **BL-17** (uid Odoo dedicado) | administração no Odoo |
+| **BL-21 / BL-29** (resto) | acoplados: a saída é tirar o processamento do webhook, mudança de arquitetura que não cabe numa execução autônoma sem decisão sua |
+
+**Nada mais na fila é implementável sem você.** O que resta depende de credencial de Odoo, de sonda no aparelho, ou de dado que ainda não foi coletado.
+
+**Um achado que vale a leitura:** três vezes nesta madrugada um stub do harness escondeu justamente a lógica sob teste (`criarDizimista`/BL-39, `registrarDevolucao`/A3, `devolucoesDoMes`/A5). E ao adicionar os testes do BL-14, carregar o `VisionService` junto dos handlers fez o `const` dele sombrear o stub — o `ComprovanteHandler` passou a chamar a API de OCR de verdade e três cenários quebraram. O padrão é consistente o bastante para merecer atenção: **stub cômodo esconde o que importa testar.**
 
 ---
 
@@ -728,11 +762,13 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 ## Itens baixos / manutenção
 
-### BL-12 — `ASSETS` não declarado 🟡 (P)
-`Assets.gs:23` usa `ASSETS.AVATAR_DRIVE_ID`, nunca definido → `getAvatar()` sempre cai no catch. Definir o objeto `ASSETS` ou remover a função (boas-vindas usa avatar do Odoo).
+### BL-12 — `ASSETS` não declarado 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
+O objeto `ASSETS` existe em `Assets.gs`, e `getAvatar()` degrada em silêncio enquanto o id começar com `COLE_AQUI` — em vez do `ReferenceError` original.
 
-### BL-13 — Secretaria com placeholder 🟡 (P)
-`MenuHandler.gs:52-53` mostra `(00) 0000-0000` / `secretaria@exemplo.com`. Buscar de `OdooService.buscarParametros()` (`x_studio_secretaria_whatsapp`, `x_studio_secretaria_email`).
+**Nota:** `getAvatar()` hoje só é chamado por `Tests.gs`. As boas-vindas usam o avatar do Odoo (`x_studio_avatar`), que é reaproveitado entre contatos pelo BL-21. Ou seja, a função é um caminho alternativo mantido para quem preferir hospedar o avatar no Drive. Não é código morto, mas também não está no caminho de produção — vale saber antes de mexer nela.
+
+### BL-13 — Secretaria com placeholder 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
+Não há mais `(00) 0000-0000` nem `secretaria@exemplo.com` no projeto. `MenuHandler._enviarContatoGeral` lê `x_studio_secretaria_whatsapp` e `x_studio_secretaria_email` de `OdooService.buscarParametros()`, e omite a linha quando o parâmetro está vazio — em vez de exibir um telefone falso.
 
 ### BL-14 — Extração frágil de valor e chave PIX do OCR 🟠 (M) — *refinado por simulação*
 `VisionService.gs:218-272`. Dois problemas confirmados na simulação real:
@@ -740,8 +776,23 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - **Chave PIX:** `_extrairChavePix` retornou `4339441920260` — que **não é uma chave**, mas os 13 primeiros dígitos do *ID da transação* (`E**4339441920260**4052103uuGZ7BZQ3g5`). O padrão de telefone (primeiro do array) casa com o trecho numérico do ID antes de chegar à chave real (`160.740.093-68`). Isso grava dado enganoso no Odoo e inviabiliza o BL-26.
 **Correção:** melhorar heurística de valor (proximidade de "valor"/"total"/"pix", maior valor, contexto) e de chave (ignorar sequências dentro do "ID da transação"/"identificador"; priorizar padrões ancorados por rótulo "Chave Pix:"; reordenar padrões para não deixar telefone capturar IDs). Elevada de 🟡 para 🟠 por bloquear a validação do BL-26.
 
-### BL-15 — Efeito colateral em busca 🟡 (P)
-`OdooService.gs:171` — `buscarDizimistaPorWhatsapp` grava telefone no Odoo dentro de uma leitura. Extrair a atualização para o chamador ou documentar explicitamente.
+✅ **Concluído em 19/09.** A heurística já havia sido refeita em ciclo anterior — o que faltava era **guarda**: a correção existia e nada impedia que uma mexida futura a desfizesse, em silêncio, do jeito que só aparece num comprovante real meses depois.
+
+Seis casos entraram no harness, a partir do texto que de fato falhou:
+
+| Caso | O que guarda |
+|---|---|
+| `E43394419202604052103uuGZ7BZQ3g5` + `160.740.093-68` | o ID da transação não vira chave |
+| Tarifa R$ 2,50 · Valor R$ 80,00 | tarifa não vira valor pago |
+| Saldo R$ 4.320,15 · Pix R$ 45,00 | saldo não vira valor pago |
+| `tesouraria@paroquia.org.br` | e-mail com domínio multinível |
+| UUID | chave aleatória |
+| `+55 86 98852-1231` | telefone só conta com o `+55` |
+
+**Nota do harness:** o `VisionService` é carregado num contexto próprio, só para os extratores. Junto dos handlers, o `const VisionService` sombrearia o stub e o `ComprovanteHandler` passaria a chamar a API de OCR de verdade — foi o que aconteceu ao tentar o atalho.
+
+### BL-15 — Efeito colateral em busca 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
+A gravação saiu de `buscarDizimistaPorWhatsapp`. O comentário no código explica por que ela não pode voltar: `x_studio_partner_phone` é related e gravável, então um write ali propagaria para `res.partner.phone` — efeito colateral indevido numa função de leitura. A busca com e sem o nono dígito (BL-32) já encontra o registro sem precisar normalizar nada.
 
 ### BL-16 — Testes no deploy de produção 🟡 (M)
 `Tests.gs` (~175 KB), `TestesComprovantes.gs` (~93 KB, com base64), `TesteRelatorio.gs` (~34 KB) somam a maior parte do que o clasp envia. Mover para um projeto GAS separado ou excluir do push.

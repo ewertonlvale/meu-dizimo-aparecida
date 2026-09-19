@@ -295,6 +295,17 @@ function _processarMensagemWebhook(message) {
   // Freio de gasto. Vem ANTES de tudo — inclusive das boas-vindas e do
   // primeiro contato — porque cada coisa daqui para baixo pode gerar resposta,
   // e resposta é o que custa. Mensagem recebida é grátis; a nossa, não.
+  // BL-36: número bloqueado não recebe NADA — nem o aviso de que está
+  // bloqueado. Avisar custaria exatamente a mensagem que o bloqueio existe para
+  // evitar, e ainda informaria ao abusador que ele foi detectado.
+  //
+  // Vem antes do freio de taxa de propósito: o freio ainda responde uma vez por
+  // hora com o aviso de pausa, e para quem está bloqueado nem isso deve sair.
+  if (Utils.estaBloqueado(from)) {
+    console.warn(`⛔ [Bloqueio] Mensagem de ${from} descartada`);
+    return;
+  }
+
   if (Utils.excedeuTaxa(from)) return;
 
   // BL-37: guarda o id desta mensagem para o indicador de "digitando". Ele é o

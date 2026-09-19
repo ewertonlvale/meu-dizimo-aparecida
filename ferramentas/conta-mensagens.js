@@ -43,6 +43,25 @@ let gratis   = [];   // sinais que NÃO são mensagens cobradas
 let consultas = [];  // domínios enviados ao Odoo, para conferir os filtros
 const registra = (tipo, texto) => enviadas.push({ tipo, texto: String(texto || '') });
 
+/**
+ * Carrega o VisionService NUM CONTEXTO PRÓPRIO, só para os extratores puros.
+ *
+ * Não dá para carregá-lo junto dos handlers: `const VisionService = {...}` é
+ * declaração léxica e sombrearia o stub, fazendo o ComprovanteHandler chamar a
+ * API de OCR de verdade. Foi exatamente o que aconteceu ao tentar o atalho.
+ */
+function extratoresDoVision() {
+  const ctx = {
+    console: { log() {}, warn() {}, error() {} },
+    Utilities: {}, Utils: {}, getVisionConfig: () => ({})
+  };
+  vm.createContext(ctx);
+  return vm.runInContext(
+    fs.readFileSync(path.join(RAIZ, 'VisionService.gs'), 'utf8') + '\n;VisionService',
+    ctx, { filename: 'VisionService.gs' }
+  );
+}
+
 function montarContexto(cenario) {
   // Só StateManager (cache/Properties), VisionService (OCR) e FlowHandler são
   // simulados por inteiro. Utils, OdooService, MediaService e os handlers são
@@ -77,6 +96,8 @@ function montarContexto(cenario) {
     StateManager, FlowHandler,
     // OCR: um comprovante legítimo, com a MESMA chave da comunidade — assim o
     // caminho exercitado é o do sucesso conferido (BL-26), não o de erro.
+    // Este stub cobre a chamada à API; os EXTRATORES puros do VisionService são
+    // testados à parte, com texto real de comprovante (seção do BL-14).
     VisionService: {
       analisarComprovante: () => ({
         valor: 50, data: '12/08/2026', tipo: 'PIX',
@@ -95,7 +116,13 @@ function montarContexto(cenario) {
     },
     Logger: { log() {} },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k) => (cenario.propriedades || {})[k] || null,
+        getProperties: () => cenario.propriedades || {},
+        setProperty: () => {}, deleteProperty: () => {}, setProperties: () => {}
+      })
+    },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
   };
@@ -670,6 +697,93 @@ const TELEFONES = [
     const ok = obtido === esperado;
     if (!ok) falhas++;
     console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(24)} ${JSON.stringify(entrada).padEnd(22)} → ${obtido || '(vazio)'}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('⛔ Lista de bloqueio — BL-36\n');
+
+// A regra que não pode quebrar: bloqueado não recebe NADA. Nem o aviso de
+// pausa do freio de taxa — por isso o portão vem antes dele.
+{
+  const casos = [
+    { nome: 'Número bloqueado não recebe resposta nenhuma', bloqueado: true,  espera: 0 },
+    { nome: 'Número normal continua sendo atendido',        bloqueado: false, espera: 1 }
+  ];
+  for (const c of casos) {
+    enviadas = [];
+    const ctx = montarContexto({ dizimista: DIZIMISTA, propriedades: c.bloqueado ? { 'bloqueado_55': '{}' } : {} });
+    if (!ctx.Utils.estaBloqueado('55')) ctx.MenuHandler.menuDizimista('55', DIZIMISTA);
+    const ok = enviadas.length === c.espera;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : `  (esperava ${c.espera}, veio ${enviadas.length})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔍 Extração do comprovante — BL-14\n');
+
+// O BL-14 nasceu de uma falha REAL: o extrator devolveu "4339441920260" como
+// chave PIX, que não é chave nenhuma — são os 13 primeiros dígitos do ID da
+// transação (E**4339441920260**4052103uuGZ7BZQ3g5). O padrão de telefone vinha
+// primeiro no array e casava com o trecho numérico antes de chegar à chave de
+// verdade. Isso grava dado enganoso no Odoo e inviabiliza a conferência do
+// BL-26.
+//
+// O código já foi corrigido, mas nada guardava a correção. Estes casos guardam.
+const COMPROVANTES = [
+  {
+    nome: 'ID da transação NÃO vira chave PIX',
+    texto: 'Comprovante de transferência\n' +
+           'ID da transação: E43394419202604052103uuGZ7BZQ3g5\n' +
+           'Valor: R$ 150,00\n' +
+           'Chave Pix: 160.740.093-68\n',
+    chave: '160.740.093-68',
+    valor: 150
+  },
+  {
+    nome: 'Tarifa não é confundida com o valor pago',
+    texto: 'Tarifa: R$ 2,50\nValor: R$ 80,00\n',
+    chave: null,
+    valor: 80
+  },
+  {
+    nome: 'Saldo não é confundido com o valor pago',
+    texto: 'Saldo disponível: R$ 4.320,15\nPix enviado\nR$ 45,00\n',
+    chave: null,
+    valor: 45
+  },
+  {
+    nome: 'Chave de e-mail com domínio multinível',
+    texto: 'Chave Pix: tesouraria@paroquia.org.br\nValor: R$ 30,00\n',
+    chave: 'tesouraria@paroquia.org.br',
+    valor: 30
+  },
+  {
+    nome: 'Chave aleatória (UUID)',
+    texto: 'Chave Pix: e7b8c9d0-1234-5678-9abc-def012345678\nValor: R$ 10,00\n',
+    chave: 'e7b8c9d0-1234-5678-9abc-def012345678',
+    valor: 10
+  },
+  {
+    nome: 'Telefone só conta como chave com o +55',
+    texto: 'Chave Pix: +55 86 98852-1231\nValor: R$ 25,00\n',
+    chave: '+55 86 98852-1231',
+    valor: 25
+  }
+];
+
+{
+  const V = extratoresDoVision();
+  for (const c of COMPROVANTES) {
+    const chave = V._extrairChavePix(c.texto);
+    const valor = V._extrairValor(c.texto);
+    const okC = chave === c.chave;
+    const okV = valor === c.valor;
+    if (!okC || !okV) falhas++;
+    console.log(`${okC && okV ? '✅' : '❌'} ${c.nome}`);
+    if (!okC) console.log(`   ⚠️ chave: esperado ${JSON.stringify(c.chave)}, veio ${JSON.stringify(chave)}`);
+    if (!okV) console.log(`   ⚠️ valor: esperado ${c.valor}, veio ${valor}`);
   }
 }
 
