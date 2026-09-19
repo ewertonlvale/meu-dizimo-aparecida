@@ -466,8 +466,11 @@ const MediaService = {
 
     let codigo;
     try {
-      codigo = this._gerarPayloadPix(chaveCanonica, valor, titular,
-                                      comunidade.x_studio_cidade);
+      // Sem cidade: o campo 60 do BR Code fica com o padrão de
+      // `_gerarPayloadPix`. A cidade do recebedor não é usada pelo banco de
+      // quem paga para nada além de exibição, e `x_comunidade` não tem esse
+      // campo — decidido em 19/09 que não vale criá-lo.
+      codigo = this._gerarPayloadPix(chaveCanonica, valor, titular);
     } catch (e) {
       console.warn('⚠️ [Card PIX] Falhei ao gerar o BR Code:', e.message);
       return false;
