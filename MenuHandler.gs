@@ -182,6 +182,9 @@ const MenuHandler = {
     const enviou = Utils.enviarContatos(from, contatos.map(c => ({
       nome:     c.nome,
       whatsapp: c.whatsapp,
+      // Sem repassar o `waId`, o cartão volta a adivinhar o nono dígito: este
+      // `map` reconstrói o objeto, e o que não for citado aqui se perde.
+      waId:     c.waId,
       cargo:    org
     })));
 

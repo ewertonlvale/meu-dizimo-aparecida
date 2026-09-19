@@ -218,6 +218,16 @@ function montarContexto(cenario) {
         }
         return [];
       }
+      // Quem já escreveu ao bot: é aqui que mora o `wa_id` de verdade. O
+      // cenário diz quais formas existem, para o teste cobrir os dois casos —
+      // conta antiga (sem o nono dígito) e conta nova (com).
+      if (modelo === 'x_contato_bot') {
+        const alvo = (dominio || []).find(d => d[0] === 'x_name');
+        const querendo = (alvo && alvo[2]) || [];
+        return (cenario.contatoBotConhece || [])
+          .filter(n => querendo.indexOf(n) >= 0)
+          .map(n => ({ x_name: n }));
+      }
       if (modelo === 'x_dizimista') {
         const porTelefone = (dominio || []).some(d => d[0] === 'x_studio_partner_phone');
         if (porTelefone) return cenario.dizimista ? [cenario.dizimista] : [];
@@ -665,21 +675,59 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
-    nome: 'O wa_id do cartão leva o código do país',
+    nome: 'Todo wa_id do cartão leva o código do país',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
     confere: msgs => {
       const c = msgs.find(m => m.tipo === 'contato');
       if (!c) return 'não saiu cartão de contato';
       // Sem o 55, o WhatsApp lê o DDD 86 como código de país da China: o
-      // contato é salvo com o país errado e "Conversar" abre um número que
-      // não existe. O `phone` pode estar certo e o `wa_id` errado — eram
-      // montados por caminhos diferentes, e foi assim que o bug passou.
-      const m = c.texto.match(/"wa_id":"(\d+)"/);
-      if (!m) return 'o cartão não trouxe wa_id';
-      return m[1] === '5586988521231'
+      // contato é salvo com o país errado e "Conversar" não abre nada. O
+      // `phone` pode estar certo e o `wa_id` errado — eram montados por
+      // caminhos diferentes, e foi assim que o bug passou.
+      const ids = (c.texto.match(/"wa_id":"(\d+)"/g) || [])
+        .map(x => x.replace(/\D/g, ''));
+      if (!ids.length) return 'o cartão não trouxe wa_id';
+      const ruins = ids.filter(id => id.indexOf('55') !== 0 || id.length < 12);
+      return ruins.length ? `wa_id sem código de país: ${ruins.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'wa_id NÃO confirmado → o cartão manda as duas formas do número',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      contatos: [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231' }]
+    },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      // O nono dígito não se adivinha: `variantesNumeroBR` avisa que o
+      // `provavel` é heurística por DDD e quebraria os números em que o 9 está
+      // certo. Mandando as duas, o WhatsApp reconhece a que existe.
+      const faltam = ['"wa_id":"5586988521231"', '"wa_id":"558688521231"']
+        .filter(t => !c.texto.includes(t));
+      return faltam.length ? `faltou a variante: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'wa_id CONFIRMADO → o cartão manda só ele',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      contatos: [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231',
+                   waId: '558688521231' }]
+    },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      const ids = (c.texto.match(/"wa_id":"(\d+)"/g) || []);
+      if (ids.length !== 1) return `mandou ${ids.length} números, devia mandar 1`;
+      // Confirmado em x_contato_bot: quem entregou esse valor foi o próprio
+      // WhatsApp. Mandar a outra forma junto só poluiria o cartão.
+      return c.texto.includes('"wa_id":"558688521231"')
         ? null
-        : `wa_id saiu como ${m[1]} — devia ser 5586988521231`;
+        : 'o wa_id confirmado não foi o usado';
     }
   },
   {
@@ -1160,6 +1208,62 @@ console.log('📦 Globais que só existem fora do deploy\n');
     console.log(`✅ ${enviados.length} arquivos enviados não dependem de nenhum dos ` +
                 `${foraDoDeploy.size} globais de ${excluidos.join(', ')}`);
   }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📇 O wa_id do contato vem do Odoo, não de palpite\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// `contatosDoDizimista` é stubado no resto do harness, então `_comWaId` —
+// que mora dentro de `buscarContatosComunidade` — não roda em nenhum cenário
+// acima. Foi a quinta vez nesta sessão que um stub cômodo escondeu a lógica
+// sob teste; aqui o método é chamado direto, com o `searchRead` controlado.
+{
+  const casos = [
+    {
+      nome: 'conta antiga: o wa_id sem o nono dígito é o que existe',
+      conhece: ['558688521231'],
+      espera:  '558688521231'
+    },
+    {
+      nome: 'conta nova: o wa_id COM o nono dígito é o que existe',
+      conhece: ['5586988521231'],
+      espera:  '5586988521231'
+    },
+    {
+      nome: 'número que nunca escreveu ao bot fica sem wa_id',
+      conhece: [],
+      espera:  undefined
+    },
+    {
+      // O palpite por DDD diria "sem o 9" para o 86. Se algum dia alguém
+      // trocar a confirmação pela heurística, este caso quebra.
+      nome: 'o confirmado vence a heurística de DDD',
+      conhece: ['5586988521231'],
+      espera:  '5586988521231'
+    }
+  ];
+
+  for (const c of casos) {
+    const ctx = montarContexto({ dizimista: DIZIMISTA, contatoBotConhece: c.conhece });
+    const res = ctx.OdooService._comWaId([
+      { nome: 'João da Silva', whatsapp: '(86) 98852-1231' }
+    ]);
+    const obtido = res[0].waId;
+    const ok = obtido === c.espera;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : ` — veio ${obtido}`}`);
+  }
+
+  // O Odoo fora do ar não pode custar o cartão inteiro.
+  const ctxErro = montarContexto({ dizimista: DIZIMISTA, odooForaDoAr: true });
+  let sobreviveu = false;
+  try {
+    const r = ctxErro.OdooService._comWaId([{ nome: 'X', whatsapp: '(86) 98852-1231' }]);
+    sobreviveu = r.length === 1 && !r[0].waId;
+  } catch (e) { /* sobreviveu = false */ }
+  if (!sobreviveu) falhas++;
+  console.log(`${sobreviveu ? '✅' : '❌'} Odoo fora do ar → cartão sai sem wa_id, em vez de não sair`);
 }
 
 console.log('\n' + '─'.repeat(64));

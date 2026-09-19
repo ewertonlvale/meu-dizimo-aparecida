@@ -531,7 +531,64 @@ const OdooService = {
       });
     }
 
-    return { comunidade: com.x_name || null, contatos };
+    return { comunidade: com.x_name || null, contatos: this._comWaId(contatos) };
+  },
+
+  /**
+   * Acrescenta a cada contato o `wa_id` REAL, quando ele é conhecido.
+   *
+   * O PROBLEMA. Celular brasileiro tem duas formas — com e sem o nono dígito —
+   * e o `wa_id` de uma conta antiga costuma ser a de 8 dígitos. O cartão de
+   * contato só abre a conversa se o `wa_id` bater exatamente; com a forma
+   * errada, o WhatsApp mostra "Salvar" em vez de "Conversar".
+   *
+   * POR QUE NÃO USAR O PALPITE. `Utils.variantesNumeroBR` devolve um
+   * `provavel`, mas o próprio comentário dele avisa: é heurística por DDD, e
+   * uma conta criada depois da mudança mantém o 9 mesmo fora da lista. Aplicar
+   * como regra consertaria uns e quebraria outros.
+   *
+   * O QUE FAZEMOS. Procuramos as DUAS formas em `x_contato_bot`, onde ficam os
+   * números que já escreveram ao bot. Ali o `x_name` é o `wa_id` de verdade —
+   * foi o WhatsApp que o entregou, não nós que o deduzimos. Quem não está lá
+   * fica sem `wa_id`, e o cartão trata disso à sua maneira.
+   *
+   * Uma consulta só para todos os contatos.
+   * @private
+   */
+  _comWaId(contatos) {
+    if (!contatos.length) return contatos;
+
+    // Todas as formas possíveis, de todos os contatos, numa busca só.
+    const formas = [];
+    const porContato = contatos.map(c => {
+      const v = Utils.variantesNumeroBR(Utils._e164(c.whatsapp));
+      if (v) formas.push(v.comNove, v.semNove);
+      return v;
+    });
+    if (!formas.length) return contatos;
+
+    let achados = [];
+    try {
+      achados = this.searchRead('x_contato_bot', ['x_name'],
+                                [['x_name', 'in', formas]], { limit: 50 }) || [];
+    } catch (e) {
+      // Sem o wa_id o cartão ainda sai; falhar aqui seria trocar um contato
+      // imperfeito por contato nenhum.
+      console.warn('⚠️ [OdooService] Falha ao resolver wa_id dos contatos:', e.message);
+      return contatos;
+    }
+
+    const conhecidos = {};
+    achados.forEach(a => { conhecidos[String(a.x_name)] = true; });
+
+    return contatos.map((c, i) => {
+      const v = porContato[i];
+      if (!v) return c;
+      const waId = conhecidos[v.comNove] ? v.comNove
+                 : conhecidos[v.semNove] ? v.semNove
+                 : null;
+      return waId ? Object.assign({}, c, { waId }) : c;
+    });
   },
 
   /**
