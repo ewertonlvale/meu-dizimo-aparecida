@@ -22,22 +22,31 @@
  *
  *   Daí a sonda: uma pergunta, um envio, resposta definitiva.
  *
- * ⚠️ ENVIA DUAS MENSAGENS DE VERDADE, cobradas, para o número informado.
- *    A segunda é a de controle. Nada é gravado no Odoo.
+ * ⚠️ ENVIA TRÊS MENSAGENS DE VERDADE, cobradas, para o número informado.
+ *    Duas são controles. Nada é gravado no Odoo.
  *
  * COMO RODAR (editor do Apps Script)
  *   Selecione `testarCabecalhoImagem` e aperte ▶. Sem argumento usa a Script
  *   Property `NUMERO_TESTE`, como as demais sondas deste projeto.
  *
- * COMO LER O RESULTADO — no aparelho, não só no log:
- *   ✅ chegaram DUAS mensagens, a primeira com imagem em cima dos botões
- *      → funciona. Libera o A12 (entrada 2 → 1).
- *   ❌ a primeira não chegou, ou chegou sem imagem
- *      → não funciona. O A12 morre e a entrada fica em 2 mensagens.
+ * COMO LER O RESULTADO — CONTANDO O QUE CHEGOU NO APARELHO, não no log.
+ *   A Meta devolve HTTP 200 e um wamid para mensagem que ela depois descarta
+ *   na entrega. Na primeira rodada desta sonda foi exatamente o que houve: as
+ *   duas aceitas, uma só entregue. Por isso são três braços, e não dois.
  *
- *   O log traz a resposta crua da Meta nos dois casos.
+ *   1. a imagem SOZINHA, com o mesmo media ID   ← controle da mídia
+ *   2. os botões COM cabeçalho de imagem        ← a pergunta
+ *   3. os MESMOS botões sem cabeçalho           ← controle do envio
  *
- * Versão: 1.0
+ *   3 de 3          → cabeçalho funciona. Libera o A12 (entrada 2 → 1).
+ *   1 e 3, sem a 2  → cabeçalho não é suportado. O A12 morre.
+ *   só a 3          → o media ID está morto; a sonda não respondeu nada.
+ *
+ *   O braço 1 existe porque sem ele "a 2 não chegou" tem duas causas e
+ *   nenhuma forma de separá-las. O motivo da Meta para cada descarte chega no
+ *   webhook, e `Webhook.gs` o loga como "❌ [Entrega] <wamid> FALHOU".
+ *
+ * Versão: 2.0
  * Data: Setembro 2026
  */
 
@@ -60,15 +69,31 @@ function testarCabecalhoImagem(numero) {
   // ── O media ID da imagem ────────────────────────────────────────────────
   // Reaproveita o que as boas-vindas já guardam (BL-21): é a MESMA imagem que
   // a entrada usaria, então a sonda testa o caso real e não um genérico.
+  //
+  // ⚠️ Ler a Script Property crua NÃO basta. `MediaService._mediaIdEmCache`
+  // guarda o ID atrás de duas travas — a digital da imagem e a validade de
+  // 7 dias — e a primeira versão desta sonda pulava as duas. Um ID vencido é
+  // aceito pela Meta com HTTP 200 e some na entrega: a sonda acusaria
+  // "cabeçalho recusado" quando o problema era a imagem. Aqui a validade é
+  // respeitada e a idade vai para o log.
   let mediaId = null;
   try {
     const bruto = PropertiesService.getScriptProperties().getProperty('media_id_avatar');
-    if (bruto) mediaId = JSON.parse(bruto).id;
+    if (bruto) {
+      const guardado = JSON.parse(bruto);
+      const idadeMs = Date.now() - (guardado.em || 0);
+      const idadeH  = Math.round(idadeMs / 36e5);
+      if (idadeMs <= MediaService.MEDIA_ID_VALIDADE_MS) {
+        mediaId = guardado.id;
+        Logger.log(`♻️ Media ID do avatar em cache: ${mediaId}  (${idadeH} h de idade)`);
+      } else {
+        Logger.log(`🗑️ Media ID em cache tem ${idadeH} h — passou da validade ` +
+                   `de ${MediaService.MEDIA_ID_VALIDADE_MS / 36e5} h. Subindo de novo.`);
+      }
+    }
   } catch (e) { /* segue para o upload */ }
 
-  if (mediaId) {
-    Logger.log(`♻️ Usando o media ID do avatar já em cache: ${mediaId}`);
-  } else {
+  if (!mediaId) {
     Logger.log('ℹ️ Sem media ID em cache — subindo o avatar do Odoo agora.');
     try {
       const p = OdooService.buscarParametros();
@@ -111,7 +136,26 @@ function testarCabecalhoImagem(numero) {
     }
   };
 
-  Logger.log('\n📤 1/2 — enviando botões COM cabeçalho de imagem…');
+  // ── 0. O CONTROLE DA IMAGEM ─────────────────────────────────────────────
+  // O braço que faltava. Sem ele, "a mensagem 1 não chegou" tem duas causas
+  // possíveis — cabeçalho não suportado ou media ID morto — e nenhuma forma
+  // de separar as duas. Esta manda a MESMA imagem, com o MESMO id, sozinha.
+  Logger.log('\n📤 1/3 — enviando a imagem SOZINHA (controle da mídia)…');
+  const r0 = Utils._post({
+    messaging_product: 'whatsapp',
+    recipient_type:    'individual',
+    to:                destino,
+    type:              'image',
+    image: {
+      id:      mediaId,
+      caption: '🖼️ *Controle da mídia*\n\nEsta é a imagem sozinha, com o ' +
+               'mesmo media ID. Se ela chegou, o id está vivo.'
+    }
+  }, { rotulo: 'Sonda controle da mídia' });
+  const code0 = r0 ? r0.getResponseCode() : null;
+  Logger.log(`HTTP ${code0} (imagem sozinha)`);
+
+  Logger.log('\n📤 2/3 — enviando botões COM cabeçalho de imagem…');
   const r1 = Utils._post(comImagem, { rotulo: 'Sonda cabeçalho imagem' });
   const code1 = r1 ? r1.getResponseCode() : null;
 
@@ -124,7 +168,7 @@ function testarCabecalhoImagem(numero) {
   // Sem ele, uma falha de token, de janela de 24 h ou de número não se
   // distingue de "cabeçalho de imagem não é suportado" — e a conclusão errada
   // mataria o A12 sem motivo.
-  Logger.log('\n📤 2/2 — enviando os MESMOS botões sem cabeçalho (controle)…');
+  Logger.log('\n📤 3/3 — enviando os MESMOS botões sem cabeçalho (controle)…');
   const semImagem = JSON.parse(JSON.stringify(comImagem));
   delete semImagem.interactive.header;
   semImagem.interactive.body.text =
@@ -136,24 +180,48 @@ function testarCabecalhoImagem(numero) {
   Logger.log(`HTTP ${code2} (controle)`);
 
   // ── Veredito ────────────────────────────────────────────────────────────
+  // A Meta devolve 200 para mensagem que ela depois descarta na entrega — foi
+  // o que aconteceu na primeira rodada desta sonda. Por isso o veredito do
+  // código só cobre a RECUSA no envio; quem decide o resto é o aparelho.
   Logger.log('\n' + '═'.repeat(60));
-  if (code1 === 200 && code2 === 200) {
-    Logger.log('✅ A META ACEITOU AS DUAS.');
-    Logger.log('   👉 CONFIRA NO APARELHO: a primeira mensagem tem a imagem');
-    Logger.log('      em cima dos botões? Aceitar o envio e renderizar são');
-    Logger.log('      coisas diferentes — foi assim com o card PIX do BL-40.');
-    Logger.log('   Se a imagem apareceu: A12 liberado, entrada 2 → 1 mensagem.');
-  } else if (code1 !== 200 && code2 === 200) {
-    Logger.log('❌ O CABEÇALHO DE IMAGEM FOI RECUSADO.');
-    Logger.log('   O controle passou, então não é token, janela nem número:');
-    Logger.log('   é o cabeçalho mesmo. O A12 morre e a entrada fica em 2.');
-    Logger.log('   Registre no BL-41 e siga — não é perda, é resposta.');
-  } else {
-    Logger.log('⚠️ AS DUAS FALHARAM — o problema NÃO é o cabeçalho.');
+
+  if (code1 !== 200 && code2 === 200) {
+    Logger.log('❌ O CABEÇALHO DE IMAGEM FOI RECUSADO NO ENVIO.');
+    Logger.log('   O controle passou, então não é token, janela nem número.');
+    Logger.log('   O A12 morre e a entrada fica em 2 mensagens.');
+    Logger.log('═'.repeat(60));
+    return false;
+  }
+
+  if (code2 !== 200) {
+    Logger.log('⚠️ ATÉ O CONTROLE FALHOU — o problema NÃO é o cabeçalho.');
     Logger.log('   Olhe o corpo do erro acima: token expirado, janela de 24 h');
     Logger.log('   fechada, ou número errado. Conserte e repita a sonda.');
+    Logger.log('═'.repeat(60));
+    return false;
   }
+
+  Logger.log('✅ A META ACEITOU AS TRÊS (HTTP 200).');
+  Logger.log('   Aceitar e entregar são coisas diferentes: o que ela descarta');
+  Logger.log('   depois some sem erro no retorno. Quem responde é o aparelho.');
+  Logger.log('');
+  Logger.log('   👉 CONTE QUANTAS DAS 3 CHEGARAM:');
+  Logger.log('');
+  Logger.log('   3 de 3  → cabeçalho de imagem FUNCIONA.');
+  Logger.log('             A12 liberado: entrada de 2 → 1 mensagem.');
+  Logger.log('');
+  Logger.log('   1 (imagem) e 3 (controle), sem a 2 → cabeçalho NÃO suportado.');
+  Logger.log('             A imagem viva prova que o media ID não é a causa.');
+  Logger.log('             A12 morre; a entrada fica em 2 mensagens.');
+  Logger.log('');
+  Logger.log('   só a 3 (controle), sem imagem nenhuma → o MEDIA ID está morto.');
+  Logger.log('             A sonda não disse nada sobre cabeçalho. Rode');
+  Logger.log('             `MediaService._descartarMediaId(\'avatar\')` e repita.');
+  Logger.log('');
+  Logger.log(`   O status real de cada uma chega no webhook e Webhook.gs o loga`);
+  Logger.log(`   como "❌ [Entrega] <wamid> FALHOU — código N". Procure no Cloud`);
+  Logger.log('   Logging pelos wamid acima se quiser o motivo da Meta.');
   Logger.log('═'.repeat(60));
 
-  return code1 === 200;
+  return true;
 }
