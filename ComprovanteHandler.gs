@@ -157,6 +157,112 @@ const ComprovanteHandler = {
    *          motivo: 'ok' | 'divergente' | 'ausente' | 'sem_referencia'
    * @private
    */
+  /**
+   * Confere o comprovante contra o cadastro da comunidade (BL-46).
+   *
+   * Três sinais, de forças MUITO diferentes:
+   *
+   *   chave PIX  — forte. Se diverge, o dinheiro foi para outra conta.
+   *   nome       — médio. Depende de o layout do comprovante ser reconhecido.
+   *   banco      — fraco. Idem, e nomes de banco variam ("Itaú" x "Itaú
+   *                Unibanco"); serve para confirmar, mal serve para acusar.
+   *
+   * A chave manda. Nome e banco só decidem quando ela não pôde ser lida, e
+   * ainda assim precisam divergir OS DOIS — é o "totalmente divergente".
+   *
+   * O que NÃO foi extraído nunca conta contra ninguém: `null` é "não sei",
+   * não "não confere". Com a variedade de modelos de comprovante, tratar
+   * ausência como divergência reprovaria gente que pagou certo.
+   *
+   * @param {Object} dados      - `resultado.dados` do Vision
+   * @param {Object} comunidade - Registro x_comunidade
+   * @returns {{conferido: boolean, motivo: string}}
+   * @private
+   */
+  /**
+   * A frase de desfecho, conforme o que a conferência encontrou (BL-46).
+   *
+   * Três desfechos, e a diferença entre o segundo e o terceiro é o pedido do
+   * usuário: avisar que *as informações não conferem* só quando forem
+   * totalmente divergentes. Nos casos duvidosos a pessoa não precisa saber que
+   * houve dúvida — a secretaria confere e pronto. Dizer "seu comprovante não
+   * confere" a quem pagou certo é pior que conferir calado.
+   *
+   * Estava escrito em três lugares (individual, família e oferta), e já
+   * divergia entre eles.
+   *
+   * @param {string} motivo - Código de CONFERENCIA
+   * @param {string} oQue   - 'Sua devolução' | 'Sua oferta' | 'Ela'
+   * @private
+   */
+  _fraseDesfecho(motivo, oQue) {
+    if (motivo === 'ok') return `${oQue} foi registrada e será confirmada em breve.`;
+
+    if (alertaDoador(motivo)) {
+      return '⚠️ *Confira se pagou para a conta certa:* os dados de quem ' +
+             'recebeu não batem com os da sua comunidade.\n\n' +
+             `${oQue} foi registrada e passará por *verificação manual* da ` +
+             'secretaria. Se estiver tudo certo, é só aguardar — eles confirmam.';
+    }
+
+    return `${oQue} foi registrada e passará por *conferência da secretaria* ` +
+           'antes de ser confirmada.';
+  },
+
+  _conferirComprovante(dados, comunidade) {
+    dados = dados || {};
+    comunidade = comunidade || {};
+
+    const chave = this._conferirChave(dados.chavePix, comunidade.x_studio_chave_pix);
+
+    // Chave confere: nada acima disso muda o desfecho para a pessoa. Uma
+    // divergência de nome ou banco aqui vira conferência da secretaria, não
+    // alerta — pode ser o layout que não entendemos.
+    const rec = dados.recebedor || {};
+    const nomeDif  = this._textoDivergente(rec.nome,  comunidade.x_studio_titular_conta);
+    const bancoDif = this._textoDivergente(rec.banco, comunidade.x_studio_banco);
+
+    if (chave.motivo === 'ok') {
+      if (nomeDif)  return { conferido: false, motivo: 'titular_divergente' };
+      if (bancoDif) return { conferido: false, motivo: 'banco_divergente' };
+      return chave;
+    }
+
+    // Chave divergente já é o caso mais grave; nome e banco não agravam.
+    if (chave.motivo === 'divergente') return chave;
+
+    // Sem chave legível, nome E banco divergindo juntos é o sinal que sobra.
+    if (nomeDif && bancoDif) return { conferido: false, motivo: 'tudo_divergente' };
+
+    return chave;
+  },
+
+  /**
+   * Os dois textos divergem de verdade? (BL-46)
+   *
+   * `false` sempre que houver dúvida: sem um dos lados, ou com qualquer
+   * palavra significativa em comum. "PAROQUIA N S CONCEICAO" e "Paróquia
+   * Nossa Senhora da Conceição Aparecida" são a mesma conta escrita por dois
+   * sistemas, e um comparador exato acusaria as duas de divergentes.
+   *
+   * Divergente é só quando NENHUMA palavra significativa coincide.
+   * @private
+   */
+  _textoDivergente(a, b) {
+    const partes = (t) => String(t || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // tira acento
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(p => p.length > 2 && ['DOS', 'DAS', 'LTDA'].indexOf(p) < 0);
+
+    const pa = partes(a);
+    const pb = partes(b);
+    if (!pa.length || !pb.length) return false;        // faltou um lado: não sei
+
+    return !pa.some(p => pb.indexOf(p) >= 0);
+  },
+
   _conferirChave(extraida, esperada) {
     if (!esperada) return { conferido: false, motivo: 'sem_referencia' };
     if (!extraida) return { conferido: false, motivo: 'ausente' };
@@ -208,14 +314,13 @@ const ComprovanteHandler = {
     let conferido   = false;
     let conferencia = '';
     if (responsavel) {
-      let chaveEsperada = null;
+      let comunidadeRef = null;
       try {
-        const comunidade = OdooService.buscarDadosPagamentoComunidade(responsavel);
-        chaveEsperada = comunidade && comunidade.x_studio_chave_pix;
+        comunidadeRef = OdooService.buscarDadosPagamentoComunidade(responsavel);
       } catch (e) {
         console.warn('⚠️ [Família] Não obtive a chave da comunidade:', e.message);
       }
-      const conf  = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+      const conf  = this._conferirComprovante(resultado.dados, comunidadeRef);
       conferido   = conf.conferido;
       conferencia = conf.motivo;
     }
@@ -248,9 +353,8 @@ const ComprovanteHandler = {
       const base  = `✅ *Comprovante recebido!*\n\n${blocoDados || ''}` +
                     `Registrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
       const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
-      Utils.enviarComBotaoMenu(from, conferido
-        ? `${base}\n\nSerá confirmada em breve.${fecho}`
-        : `${base}\n\nPassará por *conferência da secretaria* antes de ser confirmada.${fecho}`);
+      Utils.enviarComBotaoMenu(from,
+        `${base}\n\n${this._fraseDesfecho(conferencia, 'Ela')}${fecho}`);
       return;
     }
 
@@ -294,14 +398,13 @@ const ComprovanteHandler = {
     // como saber qual dos dois vale.
     blocoDados = this._blocoDados(dados);
 
-    let chaveEsperada = null;
+    let comunidadeRef = null;
     try {
-      const com = OdooService.buscarDadosPagamentoComunidade({ x_studio_comunidade: [comunidadeId] });
-      chaveEsperada = com && com.x_studio_chave_pix;
+      comunidadeRef = OdooService.buscarDadosPagamentoComunidade({ x_studio_comunidade: [comunidadeId] });
     } catch (e) {
       console.warn('⚠️ [Oferta] Não obtive a chave da comunidade:', e.message);
     }
-    const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+    const conf = this._conferirComprovante(resultado.dados, comunidadeRef);
 
     let id = null;
     try {
@@ -333,9 +436,7 @@ const ComprovanteHandler = {
     StateManager.limparDados(from);
     Utils.enviarComBotaoMenu(from,
       '🎁 *Oferta recebida!*\n\n' + blocoDados +
-      (conf.conferido
-        ? 'Sua oferta foi registrada e será confirmada em breve.'
-        : 'Sua oferta foi registrada e passará por *conferência da secretaria*.') +
+      this._fraseDesfecho(conf.motivo, 'Sua oferta') +
       '\n\n🙏 Que Deus abençoe sua generosidade!'
     );
   },
@@ -446,6 +547,11 @@ const ComprovanteHandler = {
     let dizimista   = null;
     let erroOdoo    = false;
     let conferido   = false;   // BL-26: chave do comprovante confere com a da comunidade?
+    // BL-46: o CÓDIGO da conferência, não só o sim/não. É ele que decide se a
+    // pessoa é avisada de que os dados não batem ou se a secretaria confere
+    // calada — e 'sem_referencia' (a comunidade não tem chave cadastrada) não
+    // é culpa de quem pagou.
+    let motivoConferencia = 'sem_referencia';
 
     try {
       dizimista = OdooService.buscarDizimistaPorWhatsapp(from);
@@ -463,17 +569,17 @@ const ComprovanteHandler = {
         // BL-26: conferir se o comprovante foi feito para a chave PIX da comunidade.
         // Se não bater (ou não houver chave legível), registra mesmo assim, porém
         // marcado para conferência manual — nunca confirmamos como verificado.
-        let chaveEsperada = null;
+        let comunidadeRef = null;
         try {
-          const comunidade = OdooService.buscarDadosPagamentoComunidade(dizimista);
-          chaveEsperada = comunidade && comunidade.x_studio_chave_pix;
+          comunidadeRef = OdooService.buscarDadosPagamentoComunidade(dizimista);
         } catch (eCom) {
           console.warn('⚠️ [_tratarResultado] Não obtive a chave da comunidade:', eCom.message);
         }
 
-        const conf = this._conferirChave(resultado.dados.chavePix, chaveEsperada);
+        const conf = this._conferirComprovante(resultado.dados, comunidadeRef);
         conferido = conf.conferido;
-        console.log(`🎯 [_tratarResultado] Conferência de chave: ${conferido ? 'OK' : 'PENDENTE'} (${conf.motivo})`);
+        motivoConferencia = conf.motivo;
+        console.log(`🎯 [_tratarResultado] Conferência: ${conferido ? 'OK' : 'PENDENTE'} (${conf.motivo})`);
 
         devolucaoId = OdooService.registrarDevolucao(
           dizimista.id,
@@ -498,22 +604,12 @@ const ComprovanteHandler = {
     // 1) Sucesso real: devolução criada. Encerra a sessão.
     if (devolucaoId) {
       StateManager.limparDados(from);
-      if (conferido) {
-        // Chave do comprovante confere com a da comunidade.
-        Utils.enviarComBotaoMenu(from,
-          '✅ *Comprovante recebido com sucesso!*\n\n' + blocoDados +
-          'Sua devolução foi registrada e será confirmada em breve.\n\n' +
-          '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
-        );
-      } else {
-        // BL-26: chave divergente ou não identificada — não prometer confirmação.
-        Utils.enviarComBotaoMenu(from,
-          '✅ *Comprovante recebido!*\n\n' + blocoDados +
-          'Sua devolução foi registrada e passará por *conferência da secretaria* ' +
-          'antes de ser confirmada.\n\n' +
-          '🙏 Obrigado pela sua fidelidade! Deus abençoe!'
-        );
-      }
+      Utils.enviarComBotaoMenu(from,
+        (conferido ? '✅ *Comprovante recebido com sucesso!*\n\n'
+                   : '✅ *Comprovante recebido!*\n\n') + blocoDados +
+        this._fraseDesfecho(motivoConferencia, 'Sua devolução') +
+        '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!'
+      );
       return;
     }
 

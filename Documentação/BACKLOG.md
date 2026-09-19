@@ -74,6 +74,7 @@
 | BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
 | BL-44 | Cadastro e membro por conversa desligados: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
 | BL-45 | O botão "Corrigir" cancelava o cadastro e apagava os 7 campos | 🔴 | P | ✅ Concluído (19/09) — o formulário volta preenchido. ⚠️ **Exige republicar o Flow na Meta** |
+| BL-46 | Conferir o comprovante contra o cadastro: nome, chave e banco | 🟠 | M | ✅ Concluído (19/09) — extração ancorada em quem RECEBEU; alerta só no totalmente divergente |
 
 ---
 
@@ -766,6 +767,34 @@ publicar, quando a edição for sua. Não envia mensagem nem toca o Odoo.
 **O id do botão ficou como estava** (`btn_cancelar_cadastro`). Mensagens antigas na conversa ainda carregam esse valor; renomear faria elas pararem de responder.
 
 ⚠️ **Exige republicar o Flow de cadastro na Meta** — o JSON mudou.
+
+
+### BL-46 — Conferir o comprovante contra o cadastro da comunidade 🟠 (M) — ✅ concluído em 19/09/2026
+**Arquivos:** `VisionService.gs` (`_extrairRecebedor`) · `ComprovanteHandler.gs` (`_conferirComprovante`, `_fraseDesfecho`) · `Config.gs` (`alertaDoador`)
+
+**O que já existia.** O BL-26 conferia a **chave PIX** e marcava a devolução para conferência da secretaria. Faltavam o **nome do titular** e o **banco**.
+
+**O achado que mudou o desenho.** `_extrairBanco` devolvia o **primeiro** banco encontrado no texto — que num comprovante é o app de **quem pagou**, no topo da tela. Comparar aquilo com a conta da paróquia reprovaria quase todo comprovante legítimo. E nome não era extraído de forma alguma.
+
+Então a extração passou a ser **ancorada**: acha o rótulo que abre o bloco do recebedor (`Para`, `Destino`, `Beneficiário`, `Recebedor`…), lê dali até o bloco do pagador, e só. Mesmo caminho que `_extrairChavePix` já usava com "Chave Pix:".
+
+**A assimetria do erro decide o resto.** Deixar passar um comprovante errado custa uma conferência da secretaria. Acusar um comprovante certo custa dizer a alguém que acabou de devolver o dízimo que ela pagou errado. Daí três regras:
+
+- **`null` nunca conta contra ninguém.** Layout não reconhecido é "não sei", não "não confere".
+- **Nomes comparam por palavra significativa**, sem acento e sem caixa. `PAROQUIA N S CONCEICAO` e `Paróquia Nossa Senhora da Conceição Aparecida` são a mesma conta escrita por dois sistemas; divergente é só quando **nenhuma** palavra coincide.
+- **A chave manda.** Nome e banco só decidem quando ela não pôde ser lida — e aí precisam divergir **os dois**.
+
+**Quem é avisado.** `alertaDoador` é bem mais restrito que `exigeConferencia`, e código desconhecido **não** alerta — o oposto do outro, de propósito: no silêncio, o lado seguro lá é conferir, aqui é calar.
+
+| situação | secretaria confere | pessoa é avisada |
+|---|---|---|
+| chave de outra conta | sim | **sim** |
+| sem chave + nome e banco divergem | sim | **sim** |
+| chave certa, nome estranho | sim | não |
+| só o banco diverge | sim | não |
+| layout não reconhecido | sim | não |
+
+**A frase de desfecho virou um lugar só.** Estava escrita em três (individual, família e oferta) e já divergia entre elas.
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
