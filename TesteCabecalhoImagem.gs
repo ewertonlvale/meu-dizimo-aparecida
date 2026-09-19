@@ -48,7 +48,8 @@ function testarCabecalhoImagem(numero) {
   Logger.log('\n🖼️ SONDA S1: cabeçalho de IMAGEM em mensagem de BOTÕES');
   Logger.log('━'.repeat(60));
 
-  const destino = numero || NUMERO_TESTE;
+  const destino =
+    numero || PropertiesService.getScriptProperties().getProperty('NUMERO_TESTE');
   if (!destino) {
     Logger.log('❌ Sem destino. Configure a Script Property NUMERO_TESTE');
     Logger.log("   ou chame testarCabecalhoImagem('5586988521231').");

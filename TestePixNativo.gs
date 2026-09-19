@@ -71,9 +71,11 @@ function testarPixNativo(numero, valorForcado) {
   Logger.log('\n💳 SONDA: order_details com o nosso próprio código PIX');
   Logger.log('━'.repeat(60));
 
-  // O ▶ do editor roda a função sem argumentos. Em vez de falhar, cai na mesma
-  // Script Property que o resto dos testes deste projeto já usa.
-  const destino = numero || NUMERO_TESTE;
+  // O ▶ do editor roda a função sem argumentos. Em vez de falhar, lê a Script
+  // Property direto. Não use a constante NUMERO_TESTE de Tests.gs: aquele
+  // arquivo está no .claspignore e nunca chega ao Apps Script.
+  const destino =
+    numero || PropertiesService.getScriptProperties().getProperty('NUMERO_TESTE');
 
   if (!destino) {
     Logger.log('❌ Sem número de destino.');
