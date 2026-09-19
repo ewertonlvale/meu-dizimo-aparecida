@@ -69,6 +69,7 @@
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
+| BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Trilha A completa (19/09)** — PR #44. Falta a trilha B: migração do Odoo, 2 Script Properties e 2 sondas |
 
 ---
@@ -758,6 +759,22 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 | Contato Pastoral | 2 (submenu + cartão) |
 
 **Aceite:** oferta registrada com comunidade e sem dizimista; relatórios separando os dois; nenhuma devolução gravando sem comunidade.
+
+---
+
+### BL-42 — `_mesAtual` chamada em 4 lugares e nunca definida 🔴 (P) — ✅ corrigido em 19/09/2026
+**Encontrado pelo usuário no Cloud Logging**, com o bot já em produção: `this._mesAtual is not a function`, repetindo a cada 5 minutos (a trigger de sessões).
+
+**O que estava quebrado, e há quanto tempo.** A função era chamada em `registrarConsumoExterno`, `somarMensagensDoMes` e duas vezes em `verificarCotaMensagens` — e nunca existiu. Consequências:
+
+- **`registrarConsumoExterno` lançava na PRIMEIRA linha do `try`**, antes de gravar qualquer contador. Nem o consumo de mensagens nem a cota de UrlFetch (BL-25) chegaram a ser persistidos **uma única vez**.
+- `verificarConsumoMensagens()` reportava zero, e o alerta de franquia nunca poderia disparar.
+
+**Por que ficou invisível.** As três chamadas estão dentro de `try/catch` com `console.warn`. O bot funcionava normalmente; só a medição estava morta. O sintoma só apareceu porque a trigger roda de 5 em 5 minutos e encheu o log.
+
+⚠️ **Consequência para as análises de custo desta sessão:** todo número de consumo citado a partir do contador do próprio bot era zero por este bug, não por baixo tráfego. As contas de `FLUXOS.md` continuam válidas — elas vêm de contar envios no código e no harness, não do contador —, mas **a medição real começa agora**.
+
+**A guarda que faltava.** O harness passou a varrer, estaticamente, os 10 objetos de serviço: junta todo `this.x(` do fonte e confere se `x` existe. Não substitui teste de comportamento — pega a classe de erro que só aparece em runtime, dentro de um `catch` que ninguém lê. Verificado removendo a função de novo: a varredura acusa.
 
 ---
 
