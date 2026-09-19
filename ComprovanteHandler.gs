@@ -199,14 +199,34 @@ const ComprovanteHandler = {
     if (motivo === 'ok') return `${oQue} foi registrada e será confirmada em breve.`;
 
     if (alertaDoador(motivo)) {
-      return '⚠️ *Confira se pagou para a conta certa:* os dados de quem ' +
-             'recebeu não batem com os da sua comunidade.\n\n' +
-             `${oQue} foi registrada e passará por *verificação manual* da ` +
-             'secretaria. Se estiver tudo certo, é só aguardar — eles confirmam.';
+      return '⚠️ *O pagamento não confere.*\n\n' +
+             'Os dados de quem recebeu, acima, não batem com os da sua ' +
+             `comunidade. ${oQue} foi registrada e será *analisada por um ` +
+             'agente da Pastoral do Dízimo*.\n\n' +
+             'Se quiser falar com eles agora, é só tocar no botão abaixo. 💛';
     }
 
     return `${oQue} foi registrada e passará por *conferência da secretaria* ` +
            'antes de ser confirmada.';
+  },
+
+  /**
+   * Manda o desfecho, com a saída certa para cada caso (BL-50).
+   *
+   * Quando a mensagem diz que o pagamento não confere, ela PRECISA oferecer a
+   * pastoral no mesmo balão: avisar alguém de que o dízimo dela pode ter ido
+   * para a conta errada e deixá-la sem para onde ir é pior que não avisar.
+   *
+   * Nos demais casos, o botão de sempre. Um balão, nos dois.
+   * @private
+   */
+  _responderDesfecho(from, texto, motivo) {
+    if (!alertaDoador(motivo)) return Utils.enviarComBotaoMenu(from, texto);
+
+    Utils.enviarMenu(from, texto, [
+      { id: 'btn_secretaria', title: '📞 Contato Pastoral' },
+      { id: 'btn_menu',       title: '🔙 Menu'             }
+    ]);
   },
 
   _conferirComprovante(dados, comunidade) {
@@ -353,8 +373,8 @@ const ComprovanteHandler = {
       const base  = `✅ *Comprovante recebido!*\n\n${blocoDados || ''}` +
                     `Registrei ${registrados.length} devolução(ões): ${registrados.join(', ')}.`;
       const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
-      Utils.enviarComBotaoMenu(from,
-        `${base}\n\n${this._fraseDesfecho(conferencia, 'Ela')}${fecho}`);
+      this._responderDesfecho(from,
+        `${base}\n\n${this._fraseDesfecho(conferencia, 'Ela')}${fecho}`, conferencia);
       return;
     }
 
@@ -434,10 +454,11 @@ const ComprovanteHandler = {
     }
 
     StateManager.limparDados(from);
-    Utils.enviarComBotaoMenu(from,
+    this._responderDesfecho(from,
       '🎁 *Oferta recebida!*\n\n' + blocoDados +
       this._fraseDesfecho(conf.motivo, 'Sua oferta') +
-      '\n\n🙏 Que Deus abençoe sua generosidade!'
+      '\n\n🙏 Que Deus abençoe sua generosidade!',
+      conf.motivo
     );
   },
 
@@ -447,17 +468,31 @@ const ComprovanteHandler = {
    * @private
    */
   _blocoDados(dados) {
+    const rec = dados.recebedor || {};
+    const naoVi = '_não identificado_';
+
     let t = '━━━━━━━━━━━━━━━━━━━━\n📊 *DADOS IDENTIFICADOS*\n━━━━━━━━━━━━━━━━━━━━\n\n';
 
     t += (dados.valor && dados.valor > 0)
-      ? `💰 *Valor:* ${Utils.formatarValor(dados.valor)}\n`
-      : '💰 *Valor:* Não identificado\n';
+      ? `💰 *Valor devolvido:* ${Utils.formatarValor(dados.valor)}\n`
+      : `💰 *Valor devolvido:* ${naoVi}\n`;
 
-    t += dados.data ? `📅 *Data:* ${dados.data}\n` : '📅 *Data:* Não identificada\n';
-
+    t += dados.data ? `📅 *Data:* ${dados.data}\n` : `📅 *Data:* ${naoVi}\n`;
     if (dados.tipo && dados.tipo !== 'Desconhecido') t += `💳 *Tipo:* ${dados.tipo}\n`;
-    if (dados.banco)    t += `🏦 *Banco:* ${dados.banco}\n`;
-    if (dados.chavePix) t += `🔑 *Chave PIX:* ${dados.chavePix}\n`;
+
+    // BL-50: quem RECEBEU, em campos próprios e sempre presentes — inclusive
+    // quando não foram lidos.
+    //
+    // O que falta é tão informativo quanto o que veio: se a mensagem diz que
+    // algo não confere, a pessoa precisa ver O QUE foi lido para julgar. Um
+    // campo omitido em silêncio deixaria "não confere" sem apelação.
+    //
+    // O banco aqui é o do RECEBEDOR, não `dados.banco` — aquele é o primeiro
+    // banco do texto, que num comprovante é o app de quem pagou (BL-46).
+    t += '\n👤 *Quem recebeu*\n';
+    t += `   Nome: ${rec.nome || naoVi}\n`;
+    t += `   Chave PIX: ${dados.chavePix || naoVi}\n`;
+    t += `   Banco: ${rec.banco || naoVi}\n`;
 
     return t + '\n━━━━━━━━━━━━━━━━━━━━\n\n';
   },
@@ -604,11 +639,12 @@ const ComprovanteHandler = {
     // 1) Sucesso real: devolução criada. Encerra a sessão.
     if (devolucaoId) {
       StateManager.limparDados(from);
-      Utils.enviarComBotaoMenu(from,
+      this._responderDesfecho(from,
         (conferido ? '✅ *Comprovante recebido com sucesso!*\n\n'
                    : '✅ *Comprovante recebido!*\n\n') + blocoDados +
         this._fraseDesfecho(motivoConferencia, 'Sua devolução') +
-        '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!'
+        '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!',
+        motivoConferencia
       );
       return;
     }

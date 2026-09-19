@@ -154,13 +154,17 @@ const CONFERENCIA = {
   // graves entram, porque um alerta injusto acusa quem pagou certo.
   titular_divergente: {
     exigeConferencia: true,
-    alertaDoador:     false,
+    // BL-50: passou a avisar. Antes só o "totalmente divergente" avisava, para
+    // não acusar quem pagou certo. O que mudou foi a mensagem: ela agora
+    // MOSTRA nome, chave e banco que foram lidos, então a pessoa vê em cima de
+    // que dado a dúvida se apoia — e tem o botão da pastoral ao lado.
+    alertaDoador:     true,
     avisoRegistro:    '⚠️ CONFERIR: nome de quem recebeu diverge do titular',
     textoCoordenador: 'o nome de quem recebeu *diverge* do titular da comunidade'
   },
   banco_divergente: {
     exigeConferencia: true,
-    alertaDoador:     false,
+    alertaDoador:     true,
     avisoRegistro:    '⚠️ CONFERIR: banco de destino diverge do cadastrado',
     textoCoordenador: 'o banco de destino *diverge* do cadastrado na comunidade'
   },

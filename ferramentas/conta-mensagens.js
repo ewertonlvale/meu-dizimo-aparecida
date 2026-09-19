@@ -111,10 +111,14 @@ function montarContexto(cenario) {
     // Este stub cobre a chamada à API; os EXTRATORES puros do VisionService são
     // testados à parte, com texto real de comprovante (seção do BL-14).
     VisionService: {
-      analisarComprovante: () => ({
+      // `cenario.ocr` sobrescreve campos. Sem isso não dá para exercitar
+      // divergência — o stub devolvia sempre a chave certa, e o ramo do
+      // alerta ficava inalcançável.
+      analisarComprovante: () => Object.assign({
         valor: 50, data: '12/08/2026', tipo: 'PIX',
-        banco: 'Banco do Brasil', chavePix: 'pix@paroquia.org'
-      }),
+        banco: 'Banco do Brasil', chavePix: 'pix@paroquia.org',
+        recebedor: { nome: 'Paróquia N. S. da Conceição', banco: 'Banco do Brasil' }
+      }, cenario.ocr || {}),
       analisarPDF: () => null,
       validarComprovante: () => ({ ehComprovante: true })
     },
@@ -723,6 +727,35 @@ const REGRAS_DE_CONTEUDO = [
       return ultima.texto === esperado
         ? null
         : 'a última mensagem não é exatamente o BR Code (veio texto ou formatação junto)';
+    }
+  },
+  {
+    nome: 'O resultado mostra quem recebeu: nome, chave, banco e valor',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    confere: msgs => {
+      const m = msgs.map(x => x.texto).join('\n');
+      // Se a mensagem pode dizer "não confere", ela tem de mostrar em cima de
+      // QUE dado — senão a pessoa recebe uma acusação sem apelação.
+      const faltam = ['Valor devolvido', 'Quem recebeu', 'Nome:', 'Chave PIX:', 'Banco:']
+        .filter(t => !m.includes(t));
+      return faltam.length ? `faltou no resumo: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'Divergência avisa E oferece a pastoral no mesmo balão',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               // Chave de outra conta: o caso que o BL-46 já alertava.
+               ocr: { chavePix: 'outra@conta.com' } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.TESTE'),
+    confere: msgs => {
+      const m = msgs.map(x => x.texto).join('\n');
+      if (!m.includes('não confere')) return 'não avisou que o pagamento não confere';
+      if (!m.includes('agente da Pastoral')) return 'não diz quem vai analisar';
+      // Avisar e deixar sem saída é pior que não avisar.
+      return m.includes('btn_secretaria')
+        ? null
+        : 'não ofereceu o contato da pastoral';
     }
   },
   {
@@ -1695,9 +1728,16 @@ console.log('🧾 Conferência do comprovante — BL-46\n');
   }
 
   // A regra que dá sentido a tudo acima: quem é avisado e quem não é.
-  const alertam    = ['divergente', 'tudo_divergente'];
-  const naoAlertam = ['ok', 'ausente', 'sem_referencia', 'titular_divergente',
-                      'banco_divergente', 'codigo_que_nao_existe'];
+  //
+  // BL-50 alargou: QUALQUER campo lido que divirja passa a avisar, não só o
+  // caso extremo. O que tornou isso aceitável foi a mensagem mostrar nome,
+  // chave e banco lidos — a pessoa vê em cima de que dado a dúvida se apoia.
+  //
+  // O que NÃO mudou, e é o que segura tudo: campo não lido continua fora.
+  // 'ausente' e 'sem_referencia' não avisam, porque ali não se sabe de nada.
+  const alertam    = ['divergente', 'tudo_divergente',
+                      'titular_divergente', 'banco_divergente'];
+  const naoAlertam = ['ok', 'ausente', 'sem_referencia', 'codigo_que_nao_existe'];
   const err = alertam.filter(m => !ctx.alertaDoador(m))
     .concat(naoAlertam.filter(m => ctx.alertaDoador(m)));
   if (err.length) falhas++;
