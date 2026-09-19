@@ -685,7 +685,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 #### 👤 TRILHA B — só você consegue fazer
 
-- [ ] **S1.** Sondar cabeçalho de **imagem** em mensagem de botões (lista só aceita cabeçalho de texto — disso há certeza; de botões, não)
+- [ ] **S1.** Rodar `testarCabecalhoImagem()` (TesteCabecalhoImagem.gs). Manda DUAS mensagens: a de teste, com cabeçalho de imagem, e uma de controle sem cabeçalho — sem o controle, uma falha de token ou de janela de 24 h seria lida como "imagem não suportada" e mataria o A12 à toa. **Conferir no aparelho**: aceitar o envio e renderizar são coisas diferentes (foi o que aconteceu com o card PIX do BL-40)
 - [x] **S2.** ✅ **Migração feita em 19/09, 09:23.** `x_studio_comunidade` (id 8310) deixou de ser `related` e virou gravável. **Contagem preservada: 5150 → 5150** — os valores sobreviveram, que era a única dúvida real do passo. Campos criados: `x_studio_tipo_contribuicao` (id 8797) e `x_studio_telefone_ofertante` (id 8799)
 - [x] **S3.** ✅ **Backfill feito em 19/09, 09:27** — 15 registros marcados como `dizimo`, e a varredura final voltou 0 pendentes. (Os ~5.150 restantes eram massa de teste, apagada pelo usuário entre o passo 2 e este.) O sucesso da gravação **confirma que as opções do selection foram criadas certo** via `selection_ids` — parte que não dava para testar fora do Odoo
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)

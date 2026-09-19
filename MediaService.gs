@@ -145,31 +145,10 @@ const MediaService = {
    */
   _subirEEnviarImagem(to, base64Data, caption) {
     console.log('🖼️ Enviando imagem (base64) para:', to);
-    const config = getConfig();
 
     try {
-      const imageBytes = Utilities.base64Decode(base64Data);
-      const blob       = Utilities.newBlob(imageBytes, 'image/png', 'image.png');
-
-      const uploadResponse = Utils.fetchComRetry(
-        getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/media`),
-        {
-          method:  'post',
-          headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
-          payload: { messaging_product: 'whatsapp', type: 'image/png', file: blob },
-          muteHttpExceptions: true
-        },
-        { idempotente: false, rotulo: 'WhatsApp upload (imagem)' }
-      );
-
-      const uploadResult = JSON.parse(uploadResponse.getContentText());
-
-      if (!uploadResult.id) {
-        console.error('❌ Falha no upload da imagem:', uploadResult);
-        return { resposta: null, mediaId: null };
-      }
-
-      console.log(`✅ Upload concluído. Media ID: ${uploadResult.id}`);
+      const mediaId = this.subirImagem(base64Data);
+      if (!mediaId) return { resposta: null, mediaId: null };
 
       // A espera fica só no caminho de upload novo, que com o cache passa a ser
       // raro. Mantida em 3s de propósito: é margem para o WhatsApp registrar a
@@ -177,15 +156,53 @@ const MediaService = {
       // o ganho real veio de não passar mais por aqui a cada primeiro contato.
       Utilities.sleep(3000);
 
-      const resultado = this._enviarMensagemMidia(to, 'image', { id: uploadResult.id, caption });
+      const resultado = this._enviarMensagemMidia(to, 'image', { id: mediaId, caption });
       console.log('📤 Resposta envio imagem:', resultado ? resultado.getContentText() : 'null');
 
-      return { resposta: resultado, mediaId: uploadResult.id };
+      return { resposta: resultado, mediaId: mediaId };
 
     } catch (error) {
       console.error('❌ Exceção ao enviar imagem:', error.message);
       return { resposta: null, mediaId: null };
     }
+  },
+
+  /**
+   * Sobe uma imagem e devolve o media ID, **sem enviar mensagem nenhuma**.
+   *
+   * Extraído de `_subirEEnviarImagem` para a sonda S1: ela precisa do media ID
+   * para montar um cabeçalho de imagem por conta própria, e subir-e-enviar
+   * mandaria uma mensagem a mais — cobrada, e fora do que se quer medir.
+   *
+   * @param {string} base64Data
+   * @returns {string|null} Media ID, ou null se o upload falhar
+   */
+  subirImagem(base64Data) {
+    const config = getConfig();
+
+    const imageBytes = Utilities.base64Decode(base64Data);
+    const blob       = Utilities.newBlob(imageBytes, 'image/png', 'image.png');
+
+    const uploadResponse = Utils.fetchComRetry(
+      getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/media`),
+      {
+        method:  'post',
+        headers: { Authorization: `Bearer ${config.WHATSAPP_TOKEN}` },
+        payload: { messaging_product: 'whatsapp', type: 'image/png', file: blob },
+        muteHttpExceptions: true
+      },
+      { idempotente: false, rotulo: 'WhatsApp upload (imagem)' }
+    );
+
+    const uploadResult = JSON.parse(uploadResponse.getContentText());
+
+    if (!uploadResult.id) {
+      console.error('❌ Falha no upload da imagem:', uploadResult);
+      return null;
+    }
+
+    console.log(`✅ Upload concluído. Media ID: ${uploadResult.id}`);
+    return uploadResult.id;
   },
 
   /**
