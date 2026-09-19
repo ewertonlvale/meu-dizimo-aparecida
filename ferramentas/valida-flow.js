@@ -17,6 +17,9 @@
  *        Builder aceita a mistura sem reclamar
  *     5. "Property 'helper-text' is not allowed in 'Dropdown' component"
  *
+ *   A regra 6 é diferente das outras: não é recusa da Meta, é decisão deste
+ *   projeto — Dropdown não vem pré-selecionado. Ver o comentário dela.
+ *
  *   Cada uma custou um ciclo de editar, colar, ler o erro. Este script cobra as
  *   mesmas regras aqui, em segundos.
  *
@@ -83,6 +86,21 @@ function validar(arquivo) {
                 `${chave} com ${v.length} caracteres (máx ${lim}) — "${v.slice(0, 40)}…"`);
         }
       }
+      // Regra 6: Dropdown com valor inicial.
+      //
+      // Não é recusa da Meta — é decisão deste projeto, e nasceu de um erro
+      // real: o formulário de oferta pré-selecionava a primeira comunidade da
+      // lista para quem não tinha nenhuma. É a comunidade que decide para onde
+      // o dinheiro vai, e um campo já preenchido convida a passar batido.
+      //
+      // Um Dropdown que escolhe sozinho não é conveniência: é uma resposta que
+      // o sistema deu no lugar da pessoa.
+      if (c.type === 'Dropdown' && c.name && (form['init-values'] || {})[c.name] !== undefined) {
+        aviso(`${onde} · ${c.name}`,
+              'Dropdown com valor inicial — deixe a pessoa escolher ' +
+              '(regra do projeto, não da Meta)');
+      }
+
       // Regra 5: propriedade que não vale para aquele componente.
       for (const prop of PROIBIDO_POR_COMPONENTE[c.type] || []) {
         if (prop in c) {
