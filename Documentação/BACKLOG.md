@@ -710,6 +710,28 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 ---
 
+#### 📋 EXECUÇÃO 2026-09-19 08:01 UTC — **a fila automática acabou**
+
+**Concluídos:** BL-14 (testes de regressão) e BL-36 parte 1 (lista de bloqueio).
+
+**Confirmados já resolvidos, backlog desatualizado:** BL-12, BL-13, BL-15 e BL-22. A execução foi implementá-los e encontrou os quatro já feitos em ciclos anteriores, sem marcação. Verificado lendo o código.
+
+**⏭️ Pulados, e por quê:**
+
+| Item | Motivo |
+|---|---|
+| **A12** (BL-41) | depende da sonda **S1** — cabeçalho de imagem em mensagem de botões |
+| **BL-34** | depende de dado de uso que não existe |
+| **BL-36 parte 2** (bloqueio automático) | depende de meses de `listarSuspeitos()` com tráfego real. É decisão sobre dado, não código |
+| **BL-17** (uid Odoo dedicado) | administração no Odoo |
+| **BL-21 / BL-29** (resto) | acoplados: a saída é tirar o processamento do webhook, mudança de arquitetura que não cabe numa execução autônoma sem decisão sua |
+
+**Nada mais na fila é implementável sem você.** O que resta depende de credencial de Odoo, de sonda no aparelho, ou de dado que ainda não foi coletado.
+
+**Um achado que vale a leitura:** três vezes nesta madrugada um stub do harness escondeu justamente a lógica sob teste (`criarDizimista`/BL-39, `registrarDevolucao`/A3, `devolucoesDoMes`/A5). E ao adicionar os testes do BL-14, carregar o `VisionService` junto dos handlers fez o `const` dele sombrear o stub — o `ComprovanteHandler` passou a chamar a API de OCR de verdade e três cenários quebraram. O padrão é consistente o bastante para merecer atenção: **stub cômodo esconde o que importa testar.**
+
+---
+
 #### As 12 chamadas do item A5
 
 | Função | Pontos de chamada | O que quebra sem filtro |
