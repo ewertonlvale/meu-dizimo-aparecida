@@ -798,6 +798,73 @@ console.log('🧭 Métodos chamados que não existem\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('📦 Globais que só existem fora do deploy\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A armadilha: `.claspignore` decide o que chega ao Apps Script. `Tests.gs`
+// está lá, e é onde mora `const NUMERO_TESTE`. Um arquivo que É enviado podia
+// escrever `numero || NUMERO_TESTE`, passar em toda revisão de código, rodar
+// no harness — e explodir em produção com `NUMERO_TESTE is not defined`,
+// porque a linha que declara a constante nunca subiu junto.
+//
+// Foi exatamente o que aconteceu com as sondas S1 e BL-40. O jeito certo é
+// ler a Script Property direto, como Setup.gs e NotificacaoHandler.gs fazem.
+//
+// Esta varredura lê o .claspignore, coleta o que os arquivos EXCLUÍDOS
+// declaram no topo, e acusa quem é enviado e depende disso.
+{
+  const padroes = fs.readFileSync(path.join(RAIZ, '.claspignore'), 'utf8')
+    .split('\n').map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'));
+
+  // Só precisamos dos .gs: são os únicos que compartilham escopo global no GAS.
+  const todosGs = fs.readdirSync(RAIZ).filter(f => f.endsWith('.gs'));
+  const excluidos = todosGs.filter(f => padroes.includes(f));
+  const enviados  = todosGs.filter(f => !padroes.includes(f));
+
+  // O que cada arquivo excluído declara no nível do arquivo. No V8 do Apps
+  // Script todo .gs compartilha um escopo, então isto seria visível — se o
+  // arquivo subisse.
+  const DECL = /^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm;
+  const foraDoDeploy = new Map();
+  for (const arq of excluidos) {
+    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    let m;
+    while ((m = DECL.exec(fonte)) !== null) foraDoDeploy.set(m[1], arq);
+  }
+
+  let achados = 0;
+  for (const arq of enviados) {
+    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8')
+      // Comentários e strings citam esses nomes o tempo todo; só o código conta.
+      // Uma passada só, com alternância: quem começa primeiro vence. Em duas
+      // passadas o `//` de uma URL dentro de string comeria o resto da linha e
+      // desalinharia as aspas seguintes — foi assim que a varredura acusou
+      // Setup.gs, que só cita o nome em comentário e em string.
+      .replace(
+        /\/\*[\s\S]*?\*\/|\/\/[^\n]*|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g,
+        ' '
+      );
+
+    for (const [nome, origem] of foraDoDeploy) {
+      // Se o próprio arquivo enviado também declara o nome, não há dependência.
+      if (new RegExp('^(?:const|let|var|function)\\s+' + nome + '\\b', 'm').test(fonte)) continue;
+      // Ignora `obj.NOME` e `NOME:` — só o uso como global solto quebra.
+      if (new RegExp('(?<![.\\w$])' + nome + '(?![\\w$:])').test(fonte)) {
+        achados++;
+        falhas++;
+        console.log(`❌ ${arq} usa \`${nome}\`, declarado só em ${origem} (fora do deploy)`);
+      }
+    }
+  }
+
+  if (!achados) {
+    console.log(`✅ ${enviados.length} arquivos enviados não dependem de nenhum dos ` +
+                `${foraDoDeploy.size} globais de ${excluidos.join(', ')}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('⛔ Lista de bloqueio — BL-36\n');
 
 // A regra que não pode quebrar: bloqueado não recebe NADA. Nem o aviso de
