@@ -67,7 +67,7 @@
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
-| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | 🔄 **Em execução agendada** — fila abaixo, trilha A automática |
+| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Trilha A completa (19/09)** — PR #44. Falta a trilha B: migração do Odoo, 2 Script Properties e 2 sondas |
 
 ---
 
@@ -692,9 +692,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 2. A oferta exibia o valor do OCR e gravava o valor escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00. Corrigido: a mensagem mostra o que foi gravado.
 3. `campoExiste` não bastava para a comunidade, porque ela **já existe** e só muda de readonly para gravável. Escrever antes da migração faria o Odoo recusar a gravação inteira e a devolução se perderia. Daí o `campoGravavel()` novo.
 
-**Aguardando PR:** tudo. Esta execução não tem as ferramentas do GitHub, então os 9 commits estão no branch `claude/ecstatic-edison-ea2b5t`, sem PR aberto.
-
-**Nada foi enviado para `staging`.**
+**PR:** #44, aberto e mergeado. As ferramentas do GitHub existiam nesta execução, ao contrário do previsto.
 
 ---
 
