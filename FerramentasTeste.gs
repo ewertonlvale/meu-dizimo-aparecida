@@ -116,7 +116,7 @@ function gerarMassaTeste(qtdDizimistas, devolucoesPorDizimista) {
       criadosDiz++;
 
       for (let d = 0; d < porPessoa; d++) {
-        if (_criarDevolucaoTeste(dizimistaId, i, d)) criadasDev++;
+        if (_criarDevolucaoTeste(dizimistaId, i, d, comunidade.id)) criadasDev++;
       }
 
       if (criadosDiz % 25 === 0) {
@@ -154,23 +154,40 @@ function gerarMassaTeste(qtdDizimistas, devolucoesPorDizimista) {
  * prefixo, o que torna a limpeza uma busca simples.
  * @private
  */
-function _criarDevolucaoTeste(dizimistaId, indiceDizimista, indiceDevolucao) {
+function _criarDevolucaoTeste(dizimistaId, indiceDizimista, indiceDevolucao, comunidadeId) {
   // Espalha as devoluções pelos últimos meses, para os relatórios terem o que mostrar.
   const data = new Date();
   data.setMonth(data.getMonth() - indiceDevolucao);
   const dataOdoo = Utilities.formatDate(data, 'America/Sao_Paulo', 'yyyy-MM-dd');
   const valor    = _valorFicticio(indiceDizimista);
 
-  // x_studio_comunidade NÃO é gravado: é related do dizimista (ver BL-05).
+  const dados = {
+    x_name:                     `${MASSA_PREFIXO} Devolução de R$ ${valor} - ${dataOdoo}`,
+    x_studio_dizimista:         dizimistaId,
+    x_studio_data_da_devolucao: dataOdoo,
+    x_studio_value:             valor,
+    x_studio_status:            indiceDevolucao === 0 ? 'Pendente' : 'Confirmado',
+    x_studio_forma_de_pagamento: 'Pix'
+  };
+
+  // BL-41: até a migração, `x_studio_comunidade` era related do dizimista e
+  // gravá-la fazia o Odoo recusar a escrita inteira (era o que dizia o BL-05).
+  // Depois da migração ela é gravável — e passa a ser OBRIGATÓRIA, porque o
+  // espelho automático some. Massa gerada sem comunidade produziria relatórios
+  // vazios e daria a impressão de que o filtro por comunidade está quebrado.
+  if (comunidadeId && OdooService.campoGravavel('x_devolucao', 'x_studio_comunidade')) {
+    dados.x_studio_comunidade = comunidadeId;
+  }
+
+  // O gerador só produz dízimo. Oferta tem fluxo próprio e telefone de
+  // ofertante; massa fictícia de oferta enganaria quem for conferir o
+  // relatório por tipo.
+  if (OdooService.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) {
+    dados.x_studio_tipo_contribuicao = 'dizimo';
+  }
+
   try {
-    return OdooService.create('x_devolucao', {
-      x_name:                     `${MASSA_PREFIXO} Devolução de R$ ${valor} - ${dataOdoo}`,
-      x_studio_dizimista:         dizimistaId,
-      x_studio_data_da_devolucao: dataOdoo,
-      x_studio_value:             valor,
-      x_studio_status:            indiceDevolucao === 0 ? 'Pendente' : 'Confirmado',
-      x_studio_forma_de_pagamento: 'Pix'
-    });
+    return OdooService.create('x_devolucao', dados);
   } catch (e) {
     Logger.log(`⚠️ Falha ao criar devolução: ${e.message}`);
     return null;
