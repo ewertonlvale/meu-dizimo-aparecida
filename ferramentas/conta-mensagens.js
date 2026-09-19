@@ -860,6 +860,17 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       }
     },
     {
+      // Não manda mensagem: o que ela faz é apagar cache, sessão e o registro
+      // no Odoo. Entra aqui pelo mesmo motivo das outras — é função que só
+      // roda no editor, e por isso ninguém a executa antes de você.
+      arquivo: 'Setup.gs',
+      funcao:  'reviverPrimeiroContato',
+      envios:  0,
+      confere: (_envios, apagados) => (apagados.includes('x_contato_bot')
+        ? null
+        : 'não apagou o x_contato_bot — limpar só o cache não revive o contato')
+    },
+    {
       arquivo: 'TestePixNativo.gs',
       funcao:  'testarPixNativo',
       envios:  1,
@@ -874,6 +885,7 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
 
   for (const sonda of sondas) {
     const enviados = [];
+    const apagados = [];
     const respostaOk = {
       getResponseCode: () => 200,
       getContentText:  () => JSON.stringify({
@@ -907,7 +919,10 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
           getProperties: () => PROPS
         })
       },
-      CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
+      CacheService: {
+        getScriptCache: () => ({ get: () => null, put() {}, remove() {}, removeAll() {} })
+      },
+      StateManager: { PREFIXO_SESSAO: 'sessao_ativa_' },
       LockService:  { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
       UrlFetchApp:  { fetch: () => respostaOk },
       Utils: {
@@ -923,6 +938,8 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       },
       OdooService: {
         buscarParametros: () => ({ x_studio_avatar: 'base64', x_studio_chave_pix: 'chave' }),
+        buscarContatoBot: () => ({ id: 7, x_name: '5586988521231' }),
+        unlink: (modelo) => { apagados.push(modelo); },
         buscarDizimistaPorWhatsapp: () => ({
           id: 1, x_name: 'Fulano',
           x_studio_comunidade: [1, 'Matriz']
@@ -952,10 +969,13 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
     if (!erro && enviados.length !== sonda.envios) {
       erro = `enviou ${enviados.length} mensagem(ns), esperava ${sonda.envios}`;
     }
-    if (!erro) erro = sonda.confere(enviados);
+    if (!erro) erro = sonda.confere(enviados, apagados);
 
     if (erro) falhas++;
-    console.log(`${erro ? '❌' : '✅'} ${sonda.funcao}() ${erro ? '— ' + erro : 'roda inteira e envia o previsto'}`);
+    const ok = sonda.envios
+      ? 'roda inteira e envia o previsto'
+      : 'roda inteira e faz o que promete, sem enviar nada';
+    console.log(`${erro ? '❌' : '✅'} ${sonda.funcao}() ${erro ? '— ' + erro : ok}`);
   }
 }
 

@@ -677,6 +677,12 @@ function limparTodasSessoes() {
  * informar — não há como listar as chaves do cache. Passe uma lista:
  *
  *   limparCacheContatos(['5586988521231', '5586999998888'])
+ *
+ * ⚠️ PARA TESTAR A ENTRADA, use `reviverPrimeiroContato()`, logo abaixo.
+ *    Esta função limpa só o cache, que é a PRIMEIRA das duas camadas de
+ *    `ehPrimeiroContato`. No cache miss ele consulta `x_contato_bot` no Odoo,
+ *    acha o registro, devolve `false` e recacheia — e o teste da entrada
+ *    parece não ter funcionado.
  */
 function limparCacheContatos(numeros) {
   if (!Array.isArray(numeros) || !numeros.length) {
@@ -690,6 +696,96 @@ function limparCacheContatos(numeros) {
   numeros.forEach(n => cache.remove(`contato_${n}`));
   Logger.log(`🗑️ Cache de contato limpo para ${numeros.length} número(s).`);
   Logger.log('   Eles receberão as boas-vindas de novo no próximo contato.');
+}
+
+/**
+ * Faz um número voltar a ser "primeiro contato", para testar a entrada.
+ *
+ * POR QUE `limparCacheContatos` SOZINHO NÃO RESOLVE.
+ * `ehPrimeiroContato` tem DUAS camadas. O cache `contato_<numero>` é só a
+ * primeira; no cache miss ele consulta `x_contato_bot` no Odoo, e se achar o
+ * registro devolve `false` de novo — e ainda recacheia. Limpar só o cache faz
+ * a segunda mensagem voltar ao estado anterior, o que parece "não funcionou".
+ *
+ * Esta função apaga as duas, mais o estado de sessão que faria o cadastro
+ * retomar no meio em vez de começar do zero.
+ *
+ * Sem argumento usa a Script Property `NUMERO_TESTE` — o ▶ do editor roda a
+ * função sem passar nada.
+ *
+ * ⚠️ APAGA um registro no Odoo. Em produção, o efeito para a pessoa é receber
+ *    as boas-vindas de novo; o histórico de dízimo NÃO é tocado.
+ *
+ * @param {string} [numero] - Número no formato 5586988521231
+ */
+function reviverPrimeiroContato(numero) {
+  const destino =
+    numero || PropertiesService.getScriptProperties().getProperty('NUMERO_TESTE');
+
+  if (!destino) {
+    Logger.log('❌ Sem número. Configure a Script Property NUMERO_TESTE');
+    Logger.log("   ou chame reviverPrimeiroContato('5586988521231').");
+    return false;
+  }
+
+  Logger.log(`🔄 Revivendo o primeiro contato de ${destino}`);
+  Logger.log('━'.repeat(60));
+
+  // ── 1. O cache: a primeira camada ───────────────────────────────────────
+  // Os mesmos prefixos que `_limparCacheNumerosTeste` usa. Sem `estado_` e
+  // `dados_`, um cadastro interrompido retoma no meio.
+  const prefixos = [
+    'estado_', 'dados_', 'contato_', 'log_cadastro_',
+    'sessao_inicio_', 'aviso_sessao_',
+    'tentativas_relatorio_', 'bloqueio_relatorio_'
+  ];
+  try {
+    CacheService.getScriptCache().removeAll(prefixos.map(p => p + destino));
+    Logger.log(`🗑️ Cache limpo (${prefixos.length} chaves).`);
+  } catch (e) {
+    Logger.log(`⚠️ Falha ao limpar o cache: ${e.message}`);
+  }
+
+  // ── 2. A sessão em Properties ───────────────────────────────────────────
+  try {
+    PropertiesService.getScriptProperties()
+      .deleteProperty(`${StateManager.PREFIXO_SESSAO}${destino}`);
+    Logger.log('🗑️ Sessão em Properties removida.');
+  } catch (e) {
+    Logger.log(`⚠️ Falha ao remover a sessão: ${e.message}`);
+  }
+
+  // ── 3. O registro no Odoo: a camada que faz a diferença ─────────────────
+  try {
+    const contato = OdooService.buscarContatoBot(destino);
+    if (contato) {
+      OdooService.unlink('x_contato_bot', [contato.id]);
+      Logger.log(`🗑️ x_contato_bot #${contato.id} apagado no Odoo.`);
+    } else {
+      Logger.log('ℹ️ Não havia x_contato_bot no Odoo — nada a apagar.');
+    }
+  } catch (e) {
+    Logger.log(`❌ Falha no Odoo: ${e.message}`);
+    Logger.log('   O cache foi limpo, mas o registro continua lá: a próxima');
+    Logger.log('   mensagem NÃO será tratada como primeiro contato.');
+    return false;
+  }
+
+  Logger.log('━'.repeat(60));
+  Logger.log('✅ Pronto. Mande "oi" desse número.');
+
+  // O que se espera ver depende do cadastro, e confundir os dois casos faria
+  // parecer que o A12 não funcionou.
+  try {
+    const dizimista = OdooService.buscarDizimistaPorWhatsapp(destino);
+    Logger.log(dizimista
+      ? `   ${dizimista.x_name} É dizimista → UMA mensagem: avatar, ` +
+        'boas-vindas e os 3 botões juntos (A12).'
+      : '   Número NÃO é dizimista → duas mensagens: boas-vindas + ' +
+        'formulário. É o esperado; o A12 ainda não vale aqui (sonda S10).');
+  } catch (e) { /* o aviso é conveniência, não parte do reset */ }
+
+  return true;
 }
 
 /**
