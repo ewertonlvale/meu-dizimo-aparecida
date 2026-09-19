@@ -884,6 +884,24 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       }
     },
     {
+      // A mesma sonda com AVATAR_URL configurada. Sem esta variante o braço 1b
+      // — o único que ainda responde alguma coisa — nunca seria executado por
+      // nada antes de rodar em produção.
+      arquivo: 'TesteCabecalhoFlow.gs',
+      funcao:  'testarCabecalhoFlow',
+      rotulo:  'testarCabecalhoFlow() com AVATAR_URL',
+      props:   { AVATAR_URL: 'https://meudizimo.pnscaparecida.com/avatar.png' },
+      envios:  3,   // por id, por link, e o controle de texto
+      confere(enviados) {
+        const porLink = enviados[1];
+        const img = porLink && porLink.interactive.header.image;
+        if (!img) return '2º envio devia ter cabeçalho de imagem';
+        if (!img.link) return '2º envio devia mandar a imagem por link';
+        if (img.id) return 'link e id juntos — a Meta recusa os dois no mesmo header';
+        return null;
+      }
+    },
+    {
       // Não manda mensagem: o que ela faz é apagar cache, sessão e o registro
       // no Odoo. Entra aqui pelo mesmo motivo das outras — é função que só
       // roda no editor, e por isso ninguém a executa antes de você.
@@ -919,14 +937,14 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       })
     };
 
-    const PROPS = {
+    const PROPS = Object.assign({
       NUMERO_TESTE:      '5586988521231',
       WHATSAPP_TOKEN:    'tok',
       WHATSAPP_PHONE_ID: '111',
       FLOW_ID_CADASTRO:  '123456',
       // Recém-guardado, para a sonda seguir pelo caminho do cache.
       media_id_avatar: JSON.stringify({ id: '999', digital: 'x', em: Date.now() })
-    };
+    }, sonda.props || {});
 
     const ctx = {
       console: { log() {}, warn() {}, error() {} },
@@ -1003,7 +1021,8 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
     const ok = sonda.envios
       ? 'roda inteira e envia o previsto'
       : 'roda inteira e faz o que promete, sem enviar nada';
-    console.log(`${erro ? '❌' : '✅'} ${sonda.funcao}() ${erro ? '— ' + erro : ok}`);
+    const nome = sonda.rotulo || (sonda.funcao + '()');
+    console.log(`${erro ? '❌' : '✅'} ${nome} ${erro ? '— ' + erro : ok}`);
   }
 }
 

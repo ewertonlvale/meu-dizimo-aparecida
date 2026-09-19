@@ -703,7 +703,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
 - [x] **S7.** ✅ 19/09 — formulário de oferta publicado e `FLOW_ID_OFERTA` configurado. Republicado depois da correção da comunidade pré-selecionada
 - [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
-- [ ] **S10.** Rodar `testarCabecalhoFlow()` (TesteCabecalhoFlow.gs) — cabeçalho de imagem em mensagem de **flow**, para fechar a outra metade do A12: a entrada de **número novo**, de 2 → 1. Manda DOIS formulários: um com cabeçalho de imagem e um com o de texto que roda hoje. **Conferir no aparelho.** ⚠️ Os formulários são funcionais: preencher cria cadastro. Para só ver o cabeçalho, não tocar neles
+- [ ] **S10.** Rodar `testarCabecalhoFlow()` — **1ª rodada feita em 19/09, 11:46, e já respondeu metade.** `image.id` (o que funciona em BOTÕES) é recusado no flow com `(#131008) header image must contain link`. Não é "flow não aceita imagem": é **imagem por URL**. Assimetria que não está documentada em lugar visível. **Falta:** publicar o avatar numa URL pública — o site em `docs/` já é servido em meudizimo.pnscaparecida.com — configurar a Script Property `AVATAR_URL` e rodar de novo. ⚠️ Os formulários são funcionais: preencher cria cadastro
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
