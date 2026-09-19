@@ -642,9 +642,11 @@ Três saídas foram avaliadas:
 
 O BL-26 já resolveu isso: `OdooService.campoExiste('x_devolucao', 'x_studio_conferencia_pix')`. Mesma técnica aqui — **todo código desta fila pergunta ao Odoo se o campo existe antes de usá-lo e degrada sozinho**. Assim a trilha A é mergeada e publicada sem depender da migração, e o comportamento novo liga quando a migração acontecer.
 
-#### 🔄 TRILHA A — automática (uma execução por hora)
+#### 🔄 TRILHA A — automática (execução de hora em hora, a partir das 04:01 de Brasília)
 
-Cada execução pega **um** item, deixa o harness verde, abre o PR e mergeia. Marque aqui ao concluir.
+Cada execução trabalha **quantos itens conseguir**, em ordem, deixando o harness verde a cada commit. Marque aqui ao concluir.
+
+Se um item exigir decisão que não está escrita aqui: **não chute — pule**, registre uma linha `⏭️ PULADO (execução automática):` com a pergunta e as opções, e siga para o próximo.
 
 - [ ] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). Independente de tudo; ganho imediato, mesma 1 mensagem
 - [ ] **A2.** Script de criação dos campos no Odoo (`SetupCamposOferta.gs`), no padrão idempotente de `SetupCamposFamilia.gs`, **com modo de conferência** que lista o que mudaria sem gravar
