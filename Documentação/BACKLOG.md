@@ -60,6 +60,7 @@
 | BL-31 | Webhook descartava os callbacks de entrega da Meta | 🟠 | P | ✅ Concluído — `_registrarStatusEntrega`; sem isso, "não chegou" ficava sem diagnóstico |
 | BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
 | BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — inclui o formulário de membro, com endereço e dia pré-preenchidos |
+| BL-12 · BL-13 · BL-15 | Itens baixos de manutenção | 🟡 | P | ✅ Confirmados resolvidos (19/09) — estavam feitos e não marcados |
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
 | BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
@@ -726,11 +727,13 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 ## Itens baixos / manutenção
 
-### BL-12 — `ASSETS` não declarado 🟡 (P)
-`Assets.gs:23` usa `ASSETS.AVATAR_DRIVE_ID`, nunca definido → `getAvatar()` sempre cai no catch. Definir o objeto `ASSETS` ou remover a função (boas-vindas usa avatar do Odoo).
+### BL-12 — `ASSETS` não declarado 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
+O objeto `ASSETS` existe em `Assets.gs`, e `getAvatar()` degrada em silêncio enquanto o id começar com `COLE_AQUI` — em vez do `ReferenceError` original.
 
-### BL-13 — Secretaria com placeholder 🟡 (P)
-`MenuHandler.gs:52-53` mostra `(00) 0000-0000` / `secretaria@exemplo.com`. Buscar de `OdooService.buscarParametros()` (`x_studio_secretaria_whatsapp`, `x_studio_secretaria_email`).
+**Nota:** `getAvatar()` hoje só é chamado por `Tests.gs`. As boas-vindas usam o avatar do Odoo (`x_studio_avatar`), que é reaproveitado entre contatos pelo BL-21. Ou seja, a função é um caminho alternativo mantido para quem preferir hospedar o avatar no Drive. Não é código morto, mas também não está no caminho de produção — vale saber antes de mexer nela.
+
+### BL-13 — Secretaria com placeholder 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
+Não há mais `(00) 0000-0000` nem `secretaria@exemplo.com` no projeto. `MenuHandler._enviarContatoGeral` lê `x_studio_secretaria_whatsapp` e `x_studio_secretaria_email` de `OdooService.buscarParametros()`, e omite a linha quando o parâmetro está vazio — em vez de exibir um telefone falso.
 
 ### BL-14 — Extração frágil de valor e chave PIX do OCR 🟠 (M) — *refinado por simulação*
 `VisionService.gs:218-272`. Dois problemas confirmados na simulação real:
@@ -738,8 +741,8 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - **Chave PIX:** `_extrairChavePix` retornou `4339441920260` — que **não é uma chave**, mas os 13 primeiros dígitos do *ID da transação* (`E**4339441920260**4052103uuGZ7BZQ3g5`). O padrão de telefone (primeiro do array) casa com o trecho numérico do ID antes de chegar à chave real (`160.740.093-68`). Isso grava dado enganoso no Odoo e inviabiliza o BL-26.
 **Correção:** melhorar heurística de valor (proximidade de "valor"/"total"/"pix", maior valor, contexto) e de chave (ignorar sequências dentro do "ID da transação"/"identificador"; priorizar padrões ancorados por rótulo "Chave Pix:"; reordenar padrões para não deixar telefone capturar IDs). Elevada de 🟡 para 🟠 por bloquear a validação do BL-26.
 
-### BL-15 — Efeito colateral em busca 🟡 (P)
-`OdooService.gs:171` — `buscarDizimistaPorWhatsapp` grava telefone no Odoo dentro de uma leitura. Extrair a atualização para o chamador ou documentar explicitamente.
+### BL-15 — Efeito colateral em busca 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
+A gravação saiu de `buscarDizimistaPorWhatsapp`. O comentário no código explica por que ela não pode voltar: `x_studio_partner_phone` é related e gravável, então um write ali propagaria para `res.partner.phone` — efeito colateral indevido numa função de leitura. A busca com e sem o nono dígito (BL-32) já encontra o registro sem precisar normalizar nada.
 
 ### BL-16 — Testes no deploy de produção 🟡 (M)
 `Tests.gs` (~175 KB), `TestesComprovantes.gs` (~93 KB, com base64), `TesteRelatorio.gs` (~34 KB) somam a maior parte do que o clasp envia. Mover para um projeto GAS separado ou excluir do push.
