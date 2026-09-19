@@ -82,9 +82,12 @@ function montarContexto(cenario) {
   };
 
   const FlowHandler = {
-    enviarFlowCadastro: () => {
+    // Os DADOS entram no texto registrado. Sem isso, "o formulário voltou"
+    // e "o formulário voltou preenchido" são indistinguíveis — e é toda a
+    // diferença do BL-45.
+    enviarFlowCadastro: (from, preenchido) => {
       if (!cenario.flowLigado) return false;
-      registra('flow', 'formulário de cadastro');
+      registra('flow', 'formulário de cadastro ' + JSON.stringify(preenchido || {}));
       return true;
     },
     // Era fixo em `false`, então o formulário de membro NUNCA saía no teste e
@@ -311,6 +314,15 @@ const CADASTRO_PRONTO = {
   comunidadeId: 1, notificacaoAtiva: true, diaPreferido: 15
 };
 
+// O que a pessoa já preencheu quando chega na tela de confirmação — é isto
+// que o "Corrigir" apagava (BL-45).
+const DADOS_CADASTRO = {
+  nome: 'Ewerton Leal Vale', nomeUsual: 'Ewerton',
+  dataNascimento: '12/07/1987', endereco: 'R. Hegesipo Marques Sérvio, 5285',
+  valorMensal: 150, notificacaoAtiva: true, diaPreferido: 12,
+  comunidadeId: 3, comunidadeNome: 'N. Senhora do Desterro'
+};
+
 const CENARIOS = [
   {
     nome: 'Primeiro contato — número NOVO vê as TRÊS portas',
@@ -481,6 +493,16 @@ const CENARIOS = [
     roda: ctx => ctx.OfertaHandler.processarComunidade('55', 'ofc_3', 'São José'),
     esperado: 1,
     porque: 'vai direto ao valor'
+  },
+  {
+    nome: '"Corrigir" reabre o formulário em vez de cancelar o cadastro',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               dadosCadastro: DADOS_CADASTRO },
+    roda: ctx => ctx.Router.rotear('55',
+      { type: 'interactive', interactive: { type: 'button_reply',
+        button_reply: { id: 'btn_cancelar_cadastro', title: '❌ Corrigir' } } }),
+    esperado: 1,
+    porque: 'BL-45: o botão dizia "Corrigir" e apagava os sete campos'
   },
   {
     nome: 'Membro: escreveu com o formulário aberto — lembrete, não as 14 mensagens',
@@ -1375,6 +1397,79 @@ console.log('📦 Globais que só existem fora do deploy\n');
   if (!achados) {
     console.log(`✅ ${enviados.length} arquivos enviados não dependem de nenhum dos ` +
                 `${foraDoDeploy.size} globais de ${excluidos.join(', ')}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A Meta recusa a mensagem inteira se um campo declarado em `data` não vier,
+// ou se vier com o tipo errado — `valor_mensal` é `input-type: number`, e
+// mandar "150" como texto derruba o envio. Como o cadastro é hoje o ÚNICO
+// caminho de entrada, um erro aqui não degrada: fecha a porta.
+{
+  // O `FlowHandler` é stub no resto do arnês — é a borda que fala com a Meta.
+  // Aqui o arquivo REAL é carregado num contexto próprio, só para exercitar a
+  // conversão de tipos. Nada sai: `_dadosPreenchidos` só monta um objeto.
+  const ctxFlow = {
+    console: { log() {}, warn() {}, error() {} },
+    Logger:  { log() {} },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    Utils: {}, OdooService: {}, StateManager: {}, CadastroHandler: {},
+    MenuHandler: {}, OfertaHandler: {}, ESTADOS: {}
+  };
+  vm.createContext(ctxFlow);
+  const FlowReal = vm.runInContext(
+    fs.readFileSync(path.join(RAIZ, 'FlowHandler.gs'), 'utf8') + '\n;FlowHandler;',
+    ctxFlow, { filename: 'FlowHandler.gs' }
+  );
+
+  const casos = [
+    {
+      nome: 'correção: os sete campos voltam, e os números como número',
+      dados: {
+        nome: 'Ewerton Leal Vale', nomeUsual: 'Ewerton',
+        dataNascimento: '12/07/1987', endereco: 'R. Hegesipo, 5285',
+        valorMensal: '150', notificacaoAtiva: true, diaPreferido: '12'
+      },
+      confere: (d) => {
+        if (d.nome_padrao !== 'Ewerton Leal Vale') return 'o nome não voltou';
+        if (typeof d.valor_padrao !== 'number') return `valor_padrao é ${typeof d.valor_padrao}, devia ser number`;
+        if (d.valor_padrao !== 150) return `valor_padrao é ${d.valor_padrao}`;
+        if (typeof d.dia_padrao !== 'number') return `dia_padrao é ${typeof d.dia_padrao}`;
+        if (d.notificacao_padrao !== 'sim') return `notificacao_padrao é ${d.notificacao_padrao}`;
+        return null;
+      }
+    },
+    {
+      nome: 'primeiro envio: tudo presente e vazio, nada faltando',
+      dados: undefined,
+      confere: (d) => {
+        const esperados = ['nome_padrao', 'nome_usual_padrao', 'nascimento_padrao',
+                           'endereco_padrao', 'valor_padrao', 'notificacao_padrao',
+                           'dia_padrao'];
+        const faltam = esperados.filter(k => !(k in d));
+        if (faltam.length) return `faltou no payload: ${faltam.join(', ')}`;
+        // Vazio, mas do TIPO certo: um '' num campo number é recusa na hora.
+        return typeof d.valor_padrao === 'number' && typeof d.dia_padrao === 'number'
+          ? null
+          : 'número vazio saiu como texto';
+      }
+    },
+    {
+      nome: 'notificação desativada vira "nao", não some',
+      dados: { notificacaoAtiva: false },
+      confere: (d) => (d.notificacao_padrao === 'nao'
+        ? null : `saiu "${d.notificacao_padrao}"`)
+    }
+  ];
+
+  for (const c of casos) {
+    const d = FlowReal._dadosPreenchidos(c.dados);
+    const erro = c.confere(d);
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} ${c.nome}${erro ? ' — ' + erro : ''}`);
   }
 }
 

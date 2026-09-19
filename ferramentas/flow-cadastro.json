@@ -11,14 +11,52 @@
           "items": {
             "type": "object",
             "properties": {
-              "id":    { "type": "string" },
-              "title": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
             }
           },
           "__example__": [
-            { "id": "1", "title": "Comunidade Exemplo" },
-            { "id": "2", "title": "Outra Comunidade" }
+            {
+              "id": "1",
+              "title": "Comunidade Exemplo"
+            },
+            {
+              "id": "2",
+              "title": "Outra Comunidade"
+            }
           ]
+        },
+        "nome_padrao": {
+          "type": "string",
+          "__example__": "Maria da Silva"
+        },
+        "nome_usual_padrao": {
+          "type": "string",
+          "__example__": "Maria"
+        },
+        "nascimento_padrao": {
+          "type": "string",
+          "__example__": "15/03/1990"
+        },
+        "endereco_padrao": {
+          "type": "string",
+          "__example__": "Rua A, 100"
+        },
+        "valor_padrao": {
+          "type": "number",
+          "__example__": 50
+        },
+        "notificacao_padrao": {
+          "type": "string",
+          "__example__": "sim"
+        },
+        "dia_padrao": {
+          "type": "number",
+          "__example__": 10
         }
       },
       "layout": {
@@ -90,8 +128,14 @@
                 "label": "Receber lembrete?",
                 "required": true,
                 "data-source": [
-                  { "id": "sim", "title": "Sim" },
-                  { "id": "nao", "title": "Não" }
+                  {
+                    "id": "sim",
+                    "title": "Sim"
+                  },
+                  {
+                    "id": "nao",
+                    "title": "Não"
+                  }
                 ]
               },
               {
@@ -108,18 +152,27 @@
                 "on-click-action": {
                   "name": "complete",
                   "payload": {
-                    "comunidade_id":   "${form.comunidade_id}",
-                    "nome":            "${form.nome}",
-                    "nome_usual":      "${form.nome_usual}",
+                    "comunidade_id": "${form.comunidade_id}",
+                    "nome": "${form.nome}",
+                    "nome_usual": "${form.nome_usual}",
                     "data_nascimento": "${form.data_nascimento}",
-                    "endereco":        "${form.endereco}",
-                    "valor_mensal":    "${form.valor_mensal}",
-                    "notificacao":     "${form.notificacao}",
-                    "dia_preferido":   "${form.dia_preferido}"
+                    "endereco": "${form.endereco}",
+                    "valor_mensal": "${form.valor_mensal}",
+                    "notificacao": "${form.notificacao}",
+                    "dia_preferido": "${form.dia_preferido}"
                   }
                 }
               }
-            ]
+            ],
+            "init-values": {
+              "nome": "${data.nome_padrao}",
+              "nome_usual": "${data.nome_usual_padrao}",
+              "data_nascimento": "${data.nascimento_padrao}",
+              "endereco": "${data.endereco_padrao}",
+              "valor_mensal": "${data.valor_padrao}",
+              "notificacao": "${data.notificacao_padrao}",
+              "dia_preferido": "${data.dia_padrao}"
+            }
           }
         ]
       }

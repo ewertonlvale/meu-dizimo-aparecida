@@ -209,7 +209,7 @@ const Router = {
       'btn_numero_cancelar':    'Cancelar número',
       'btn_foto_sim':           'Enviar foto: Sim',
       'btn_confirmar_cadastro': 'Confirmar cadastro',
-      'btn_cancelar_cadastro':  'Cancelar cadastro',
+      'btn_cancelar_cadastro':  'Corrigir cadastro',
       'btn_notificacao_sim':    'Notificação: Sim',
       'btn_notificacao_nao':    'Notificação: Não',
       'btn_sessao_continuar':   'Sessão: Continuar',
@@ -231,7 +231,11 @@ const Router = {
       case 'btn_numero_cancelar':    CadastroHandler.cancelar(from);          break;
       case 'btn_foto_sim':           CadastroHandler.solicitarFoto(from);     break;
       case 'btn_confirmar_cadastro': CadastroHandler.finalizar(from);         break;
-      case 'btn_cancelar_cadastro':  CadastroHandler.cancelar(from);          break;
+      // O botão diz "❌ Corrigir" — e até o BL-45 chamava `cancelar`, que
+      // apagava os sete campos preenchidos. O id ficou como estava de
+      // propósito: mensagens antigas na conversa ainda carregam esse valor, e
+      // renomear faria elas pararem de responder.
+      case 'btn_cancelar_cadastro':  CadastroHandler.corrigir(from);          break;
 
       // --- Cadastro de membro (família) ---
       case 'btn_end_mesmo':          CadastroHandler.usarEnderecoDoResponsavel(from); break;

@@ -386,7 +386,7 @@ const FlowHandler = {
    * @param {string} from
    * @returns {boolean} true se o Flow foi enviado.
    */
-  enviarFlowCadastro(from) {
+  enviarFlowCadastro(from, preenchido) {
     const props  = PropertiesService.getScriptProperties();
     const flowId = props.getProperty('FLOW_ID_CADASTRO');
 
@@ -417,8 +417,18 @@ const FlowHandler = {
     }
     if (!comunidades.length) return false;
 
+    // BL-45: numa CORREÇÃO, o formulário volta com o que a pessoa já digitou.
+    //
+    // A comunidade fica de fora de propósito. O Dropdown segue a regra 6 do
+    // projeto — nasceu quando a primeira comunidade vinha pré-selecionada e
+    // podia mandar o dinheiro de alguém para o lugar errado. Um valor inicial
+    // aqui teria de existir também no PRIMEIRO envio, quando não há nada para
+    // preencher, e o cadastro é hoje o único caminho de entrada: não é onde se
+    // experimenta. Quem corrige escolhe a comunidade de novo, um toque.
+    const dados = this._dadosPreenchidos(preenchido);
+
     let modo = props.getProperty('FLOW_MODO_CADASTRO') || 'published';
-    let resposta = this._postarFlow(from, flowId, comunidades, modo);
+    let resposta = this._postarFlow(from, flowId, comunidades, modo, dados);
 
     // O estado do Flow muda na Meta, sem avisar nada aqui. Em vez de exigir que
     // quem chama acerte o modo — e receba um 131009 quando errar — trocamos e
@@ -429,7 +439,7 @@ const FlowHandler = {
       modo = modo === 'draft' ? 'published' : 'draft';
       console.log(`ℹ️ [Flow] A Meta recusou o modo anterior — o Flow está como ` +
                   `'${modo}'. Reenviando e guardando.`);
-      resposta = this._postarFlow(from, flowId, comunidades, modo);
+      resposta = this._postarFlow(from, flowId, comunidades, modo, dados);
     }
 
     const enviou = !!resposta && resposta.getResponseCode() === 200;
@@ -667,7 +677,38 @@ const FlowHandler = {
    * @returns {GoogleAppsScript.URL_Fetch.HTTPResponse|null}
    * @private
    */
-  _postarFlow(from, flowId, comunidades, modo) {
+  /**
+   * Os valores que voltam preenchidos no formulário (BL-45).
+   *
+   * O Flow declara cada campo em `data`, e a Meta recusa a mensagem se algum
+   * declarado não vier — então TODOS saem sempre, vazios no primeiro envio.
+   * Os de `input-type: number` precisam sair como número, não como texto: é a
+   * regra 4 do `valida-flow.js`, e a Meta também recusa.
+   *
+   * @param {Object} [d] - Dados da sessão; ausente no primeiro envio
+   * @private
+   */
+  _dadosPreenchidos(d) {
+    const t = (v) => (v === undefined || v === null) ? '' : String(v);
+    const n = (v) => {
+      const x = parseFloat(v);
+      return isNaN(x) ? 0 : x;
+    };
+    d = d || {};
+    return {
+      nome_padrao:        t(d.nome),
+      nome_usual_padrao:  t(d.nomeUsual),
+      nascimento_padrao:  t(d.dataNascimento),
+      endereco_padrao:    t(d.endereco),
+      valor_padrao:       n(d.valorMensal),
+      notificacao_padrao: d.notificacaoAtiva === undefined
+                            ? ''
+                            : (d.notificacaoAtiva ? 'sim' : 'nao'),
+      dia_padrao:         n(d.diaPreferido)
+    };
+  },
+
+  _postarFlow(from, flowId, comunidades, modo, dados) {
     return Utils._post({
       messaging_product: 'whatsapp',
       recipient_type:    'individual',
@@ -692,7 +733,7 @@ const FlowHandler = {
             mode:         modo,
             flow_action_payload: {
               screen: 'CADASTRO',
-              data:   { comunidades }
+              data:   Object.assign({ comunidades }, dados || {})
             }
           }
         }
