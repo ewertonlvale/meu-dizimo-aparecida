@@ -874,18 +874,7 @@ const Utils = {
             formatted_name: nome,
             first_name:     partes[0]
           },
-          // `wa_id` sai do MESMO E.164 que o `phone`, e não do valor cru.
-          //
-          // Montá-lo com um `replace(/\D/g,'')` no que veio do Odoo perdia o
-          // código do país: no formato padrão do cadastro, `(86) 9 8877-7332`
-          // vira `86988777332`, e o WhatsApp lê o `86` como China (+86). O
-          // cartão chegava com o país errado e o botão "Conversar" apontava
-          // para um número que não existe.
-          phones: [{
-            phone: this._e164(c.whatsapp),
-            type:  'CELL',
-            wa_id: this._e164(c.whatsapp).replace('+', '')
-          }]
+          phones: this._telefonesDoCartao(c)
         };
         if (partes.length > 1) contato.name.last_name = partes.slice(1).join(' ');
         if (c.email) contato.emails = [{ email: c.email, type: 'WORK' }];
@@ -898,6 +887,46 @@ const Utils = {
     const ok = !!resposta && resposta.getResponseCode() === 200;
     if (!ok) console.warn('⚠️ [Contatos] Cartão recusado pela Meta');
     return ok;
+  },
+
+  /**
+   * Os telefones de um contato do cartão, e o `wa_id` de cada um.
+   *
+   * O `wa_id` precisa bater EXATAMENTE com a conta, ou o WhatsApp mostra
+   * "Salvar" em vez de abrir a conversa. Duas armadilhas, nessa ordem:
+   *
+   * 1. CÓDIGO DO PAÍS. Montar o `wa_id` com `replace(/\D/g,'')` sobre o valor
+   *    do Odoo perdia o 55: `(86) 9 8877-7332` virava `86988777332`, e o
+   *    WhatsApp lia o 86 como China. Por isso ele sai do mesmo E.164 do
+   *    `phone`, nunca do valor cru.
+   *
+   * 2. NONO DÍGITO. Celular brasileiro tem duas formas, e o `wa_id` de conta
+   *    antiga costuma ser a de 8 dígitos. Aqui NÃO se adivinha: quando
+   *    `c.waId` vem preenchido, é porque o número foi encontrado em
+   *    `x_contato_bot` — valor que o próprio WhatsApp entregou. Sem essa
+   *    confirmação, mandamos as DUAS formas, cada uma com o seu `wa_id`, e
+   *    deixamos o WhatsApp reconhecer a que existe. Um número a mais no cartão
+   *    é mais barato que um botão que não abre conversa nenhuma.
+   *
+   * Fixo e número estrangeiro não têm variante: saem com uma entrada só.
+   * @private
+   */
+  _telefonesDoCartao(c) {
+    const e164 = this._e164(c.whatsapp);
+
+    if (c.waId) {
+      // Confirmado. O `phone` fica na forma completa, que é a que se disca
+      // fora do WhatsApp; o `wa_id` é o que a conta realmente usa.
+      return [{ phone: e164, type: 'CELL', wa_id: String(c.waId) }];
+    }
+
+    const v = this.variantesNumeroBR(e164);
+    if (!v) return [{ phone: e164, type: 'CELL', wa_id: e164.replace('+', '') }];
+
+    return [
+      { phone: `+${v.comNove}`, type: 'CELL', wa_id: v.comNove },
+      { phone: `+${v.semNove}`, type: 'CELL', wa_id: v.semNove }
+    ];
   },
 
   /**
