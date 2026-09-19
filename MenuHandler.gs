@@ -314,6 +314,25 @@ const MenuHandler = {
    *   mensagem. Quem precisa avisar algo junto do menu usa isto em vez de
    *   mandar uma mensagem própria — que seria uma mensagem cobrada a mais.
    */
+  /**
+   * Os três botões de quem é dizimista — o teto do WhatsApp.
+   *
+   * Ficam num lugar só porque aparecem em três telas: o menu, a confirmação do
+   * cadastro e a confirmação de membro adicionado. Espalhados, divergiriam com
+   * o tempo — foi o que aconteceu com o menu de "já sou dizimista" antes do
+   * BL-38, que tinha um conjunto de botões diferente do menu principal.
+   *
+   * Devolvidos por função, e não como constante: um array exportado é
+   * compartilhado, e `Utils.enviarMenu` faz `slice`/`map` nele.
+   */
+  botoesDizimista() {
+    return [
+      { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
+      { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },
+      { id: 'btn_secretaria',       title: '📞 Contato Pastoral' }
+    ];
+  },
+
   menuDizimista(from, dizimista, aviso) {
     StateManager.setEstado(from, ESTADOS.MENU);
 
@@ -321,11 +340,7 @@ const MenuHandler = {
 
     Utils.enviarMenu(from,
       (aviso ? aviso + '\n\n' : '') + `Olá, *${nome}*! Como posso te ajudar hoje?`,
-      [
-        { id: 'btn_devolver_dizimo',  title: '💰 Devolver dízimo'  },
-        { id: 'btn_adicionar_membro', title: '➕ Adicionar membro' },
-        { id: 'btn_secretaria',       title: '📞 Contato Pastoral' }
-      ],
+      this.botoesDizimista(),
       { header: '💛 Pastoral do Dízimo' }
     );
   }

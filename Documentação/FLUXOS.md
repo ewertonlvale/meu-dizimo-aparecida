@@ -291,6 +291,9 @@ Repare no padrão: **7 das 19 são confirmações do tipo "X registrado ✅"**,
 sempre seguidas da pergunta seguinte. Cada par poderia ser uma mensagem só —
 o que levaria 19 a 12 sem tirar nada da tela.
 
+A número 18 já saiu: virou o indicador de digitação, junto com o
+"⏳ Analisando..." da devolução (seção 4).
+
 ### Por formulário: 4 mensagens
 
 | # | Mensagem |
@@ -298,7 +301,35 @@ o que levaria 19 a 12 sem tirar nada da tela.
 | 1 | Mensagem que abre o formulário |
 | 2 | "Recebi seus dados! Envie uma foto" |
 | 3 | Resumo + Confirmar/Corrigir |
-| 4 | "🎉 Cadastro realizado!" |
+| 4 | "🎉 Cadastro realizado!" — **com os botões de dizimista** |
+
+### A confirmação do cadastro é o menu
+
+A mensagem 4 trazia um botão só, `🔙 Menu`. Quem quisesse devolver na hora —
+que é o motivo de ter se cadastrado — tocava em Menu, o bot mandava o menu
+(**uma mensagem cobrada**) e só então ela tocava em "Devolver dízimo".
+
+Os três botões do menu de dizimista cabem nessa mensagem, que sai de qualquer
+forma. Então a mensagem do menu deixou de existir:
+
+```
+🎉 Cadastro realizado com sucesso!
+Bem-vindo(a), Thalles! 💛
+…
+┌──────────────────────┐
+│ 💰 Devolver dízimo   │
+│ ➕ Adicionar membro  │
+│ 📞 Contato Pastoral  │
+└──────────────────────┘
+```
+
+**Custa zero e economiza 1 mensagem por cadastro** — e o mesmo vale para a
+confirmação de "membro adicionado", que tinha o mesmo botão solitário.
+
+Os três botões vivem em `MenuHandler.botoesDizimista()`, num lugar só, porque
+agora aparecem em três telas. Espalhados, divergiriam — foi exatamente o que
+tinha acontecido antes do BL-38, quando o menu de "já sou dizimista" trazia um
+conjunto diferente do menu principal. O harness compara as três.
 
 A resposta do formulário é **mensagem recebida — não é cobrada**. Os 8 campos
 chegam de graça.

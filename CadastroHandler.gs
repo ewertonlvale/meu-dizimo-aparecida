@@ -676,7 +676,10 @@ const CadastroHandler = {
         }
         msg += `\n\nVocê já pode devolver o dízimo dele(a) por você. 💛`;
 
-        Utils.enviarComBotaoMenu(from, msg);
+        // Mesmo motivo do cadastro: quem acabou de adicionar um familiar ou vai
+        // devolver por ele agora, ou vai adicionar o próximo. As duas coisas
+        // estão nos botões, sem custar a mensagem do menu.
+        Utils.enviarMenu(from, msg, MenuHandler.botoesDizimista());
         return;
       }
 
@@ -713,7 +716,15 @@ const CadastroHandler = {
 
       mensagemFinal += `\n\nQue Deus abençoe sua generosidade! 🙏`;
 
-      Utils.enviarComBotaoMenu(from, mensagemFinal);
+      // Os botões de dizimista vão AQUI, no lugar do antigo "🔙 Menu".
+      //
+      // Não é só conveniência: com o botão de menu, quem quisesse devolver na
+      // hora tocava em Menu, o bot mandava o menu (uma mensagem cobrada) e só
+      // então ela tocava em "Devolver dízimo". Os três botões deste menu já
+      // cabem nesta mensagem, que sai de qualquer forma — então a mensagem do
+      // menu deixa de existir. Digitar *menu* continua funcionando para quem
+      // quiser outra coisa.
+      Utils.enviarMenu(from, mensagemFinal, MenuHandler.botoesDizimista());
 
     } catch (error) {
       // BL-39: não é erro, é cadastro que já existe — tipicamente um formulário
