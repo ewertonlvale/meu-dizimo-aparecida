@@ -18,12 +18,26 @@
  *   tipos diferentes de mensagem, com regras de cabeçalho diferentes. A de
  *   LISTA, por exemplo, só aceita cabeçalho de TEXTO.
  *
- * O QUE JÁ SE SABE
- *   A mensagem de flow aceita cabeçalho de TEXTO — é o que está em produção
- *   hoje ('💛 Cadastro de Dizimista', em `FlowHandler._postarFlow`). A dúvida é
- *   só se `image` entra no lugar de `text`.
+ * O QUE A PRIMEIRA RODADA JÁ RESPONDEU (19/09, 11:46)
+ *   `image.id` — o mesmo que funciona em mensagem de BOTÕES — é recusado aqui,
+ *   e a Meta foi específica:
  *
- * ⚠️ ENVIA DOIS FORMULÁRIOS DE VERDADE, cobrados, para o número informado.
+ *     (#131008) Required parameter is missing
+ *     details: "header image must contain link."
+ *
+ *   Isso NÃO é "flow não aceita imagem". É "aqui a imagem vai por URL". A
+ *   assimetria importa e não está documentada em lugar visível: botões aceitam
+ *   `id`, flow exige `link`.
+ *
+ *   A URL tem de ser pública. A `lookaside.fbsbx.com` devolvida pelo
+ *   `GET /<media-id>` exige Bearer token, então a Meta não a buscaria.
+ *
+ * O QUE FALTA
+ *   Configurar a Script Property `AVATAR_URL` com uma URL pública do avatar e
+ *   rodar de novo. O site em `docs/` já é servido publicamente
+ *   (meudizimo.pnscaparecida.com), então basta publicar a imagem lá.
+ *
+ * ⚠️ ENVIA ATÉ TRÊS FORMULÁRIOS DE VERDADE, cobrados, para o número informado.
  *    São formulários FUNCIONAIS: preenchê-los cria cadastro no Odoo. Para só
  *    conferir o cabeçalho, NÃO toque em "Preencher cadastro".
  *
@@ -31,18 +45,17 @@
  *   `HTTP 200` com `wamid` não é entrega: a Meta aceita e descarta em silêncio.
  *   Foi o que custou três rodadas à S1.
  *
- *   0. `GET /<media-id>` na Graph API   ← o id é entregável?  (não gasta envio)
- *   1. o formulário COM cabeçalho de imagem   ← a pergunta
- *   2. o formulário com cabeçalho de TEXTO    ← controle (o que roda hoje)
+ *   0.  `GET /<media-id>` na Graph API        ← o id é entregável? (sem envio)
+ *   1.  o formulário com `image.id`           ← já respondido: exige link
+ *   1b. o formulário com `image.link`         ← a pergunta que resta
+ *   2.  o formulário com cabeçalho de TEXTO   ← controle (o que roda hoje)
  *
- *   as 2         → cabeçalho de imagem funciona no flow.
- *                  Fecha o A12: entrada de número novo de 2 → 1 mensagem.
- *   só a 2       → não funciona no flow. A entrada de número novo fica em 2,
- *                  e isso passa a ser resposta, não pendência.
- *   nenhuma      → não é o cabeçalho: token, janela de 24 h ou FLOW_ID.
- *                  Conserte e repita.
+ *   o 1b chegou com a imagem  → fecha o A12: número novo de 2 → 1 mensagem.
+ *   o 1b não chegou           → a Meta aceitou e descartou. A entrada fica em
+ *                               2, e isso vira resposta, não pendência.
+ *   nem o controle chegou     → não é o cabeçalho: token, janela ou FLOW_ID.
  *
- * Versão: 1.0
+ * Versão: 2.0
  * Data: Setembro 2026
  */
 
@@ -163,6 +176,36 @@ function testarCabecalhoFlow(numero) {
   Logger.log(r1 ? r1.getContentText() : '(sem resposta)');
   Logger.log('━'.repeat(60));
 
+  // ── 1b. A MESMA IMAGEM, POR LINK ────────────────────────────────────────
+  // A Meta recusou `image.id` com um detalhe preciso: "header image must
+  // contain link". Não é "flow não aceita imagem" — é "aqui a imagem vai por
+  // URL". Mensagem de BOTÕES aceita `id`; a de flow, não. A assimetria não
+  // está documentada em lugar nenhum que eu conheça, e é o achado desta sonda.
+  //
+  // A URL precisa ser pública: a `lookaside.fbsbx.com` que o `GET /<media-id>`
+  // devolve exige Bearer token, então a Meta não conseguiria buscá-la.
+  const urlImagem = props.getProperty('AVATAR_URL');
+  let code1b = null;
+
+  if (!urlImagem) {
+    Logger.log('\n⏭️ 1b PULADO — sem a Script Property AVATAR_URL.');
+    Logger.log('   É ela que responde a pergunta que sobrou: se o flow aceita');
+    Logger.log('   imagem por LINK. Configure com uma URL pública do avatar');
+    Logger.log('   (o site em docs/ já é servido publicamente) e repita.');
+  } else {
+    Logger.log(`\n📤 1b/2 — formulário com a imagem por LINK…\n   ${urlImagem}`);
+    const r1b = Utils._post(
+      montar({ type: 'image', image: { link: urlImagem } },
+             '🔗 *Teste do cabeçalho por link*\n\n' +
+             'Se esta chegou COM a imagem acima, o flow aceita cabeçalho de ' +
+             'imagem por URL. Não precisa preencher. 💛'),
+      { rotulo: 'Sonda cabeçalho flow (link)' }
+    );
+    code1b = r1b ? r1b.getResponseCode() : null;
+    Logger.log(`HTTP ${code1b} (por link)`);
+    if (code1b !== 200) Logger.log(r1b ? r1b.getContentText() : '(sem resposta)');
+  }
+
   // ── 2. O CONTROLE ───────────────────────────────────────────────────────
   // O cabeçalho de TEXTO é o que roda em produção. Se nem ele chegar, o
   // problema não é o tipo do cabeçalho — é token, janela ou FLOW_ID.
@@ -179,15 +222,6 @@ function testarCabecalhoFlow(numero) {
   // ── Veredito ────────────────────────────────────────────────────────────
   Logger.log('\n' + '═'.repeat(60));
 
-  if (code1 !== 200 && code2 === 200) {
-    Logger.log('❌ O CABEÇALHO DE IMAGEM FOI RECUSADO NO ENVIO.');
-    Logger.log('   O controle passou, então não é token, janela nem FLOW_ID:');
-    Logger.log('   é o cabeçalho. A entrada de número novo fica em 2 mensagens');
-    Logger.log('   — e isso vira resposta, não pendência.');
-    Logger.log('═'.repeat(60));
-    return false;
-  }
-
   if (code2 !== 200) {
     Logger.log('⚠️ ATÉ O CONTROLE FALHOU — o problema NÃO é o cabeçalho.');
     Logger.log('   Olhe o erro acima: token, janela de 24 h, FLOW_ID ou o modo');
@@ -196,19 +230,50 @@ function testarCabecalhoFlow(numero) {
     return false;
   }
 
-  Logger.log('✅ A META ACEITOU AS DUAS (HTTP 200).');
+  // O detalhe da Meta é a resposta, não o código. "header image must contain
+  // link" diz que o cabeçalho de imagem EXISTE no flow e quer outra forma —
+  // ler isso como recusa mataria o A12 por engano.
+  const exigiuLink = code1 === 400 &&
+    String((r1 && r1.getContentText()) || '').indexOf('must contain link') !== -1;
+
+  if (exigiuLink) {
+    Logger.log('📌 FLOW ACEITA CABEÇALHO DE IMAGEM — mas só por LINK, não por id.');
+    Logger.log('   A Meta foi específica: "header image must contain link".');
+    Logger.log('   Mensagem de BOTÕES aceita `id`; a de flow exige URL pública.');
+    Logger.log('');
+  } else if (code1 !== 200) {
+    Logger.log('❌ O cabeçalho por `id` foi recusado por outro motivo — leia o');
+    Logger.log('   erro acima antes de concluir qualquer coisa.');
+    Logger.log('');
+  }
+
+  if (code1b === null) {
+    Logger.log('⏳ A pergunta continua aberta: falta AVATAR_URL para testar o link.');
+    Logger.log('   Configure a Script Property e rode de novo.');
+    Logger.log('═'.repeat(60));
+    return false;
+  }
+
+  if (code1b !== 200) {
+    Logger.log('❌ NEM POR LINK A META ACEITOU. Leia o erro do 1b acima: costuma');
+    Logger.log('   ser URL inacessível, redirecionamento ou content-type errado.');
+    Logger.log('   A entrada de número novo fica em 2 mensagens.');
+    Logger.log('═'.repeat(60));
+    return false;
+  }
+
+  Logger.log('✅ A META ACEITOU O ENVIO POR LINK (HTTP 200).');
   Logger.log('   Aceitar e entregar são coisas diferentes — a S1 gastou três');
   Logger.log('   rodadas aprendendo isso. Quem responde é o aparelho.');
   Logger.log('');
-  Logger.log('   👉 CONTE QUANTAS DAS 2 CHEGARAM:');
+  Logger.log('   👉 O FORMULÁRIO DO 1b CHEGOU COM A IMAGEM EM CIMA?');
   Logger.log('');
-  Logger.log('   as 2    → imagem funciona no flow. Fecha o A12: a entrada de');
-  Logger.log('             número novo cai de 2 para 1 mensagem.');
-  Logger.log('   só a 2  → não funciona. A entrada de número novo fica em 2,');
-  Logger.log('             e o A12 está completo no que dava para fazer.');
+  Logger.log('   sim  → fecha o A12: a entrada de número novo cai de 2 para 1.');
+  Logger.log('   não  → a Meta aceitou e descartou. A entrada fica em 2, e isso');
+  Logger.log('          vira resposta, não pendência.');
   Logger.log('');
-  Logger.log('   ⚠️ Os dois formulários são FUNCIONAIS: preencher cria cadastro');
-  Logger.log('      no Odoo. Para só conferir o cabeçalho, não toque neles.');
+  Logger.log('   ⚠️ Os formulários são FUNCIONAIS: preencher cria cadastro no');
+  Logger.log('      Odoo. Para só conferir o cabeçalho, não toque neles.');
   Logger.log('═'.repeat(60));
 
   return true;
