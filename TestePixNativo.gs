@@ -102,7 +102,7 @@ function testarPixNativo(numero, valorForcado) {
   }
 
   const chave    = comunidade.x_studio_chave_pix;
-  const tipo     = tipoDaChavePix(chave);
+  const tipo     = Utils.tipoDaChavePix(chave);
   const titular  = comunidade.x_studio_titular_conta || 'Paroquia';
   const valor    = valorForcado || dizimista.x_studio_value || 10;
 

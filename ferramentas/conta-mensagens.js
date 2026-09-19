@@ -798,6 +798,140 @@ console.log('🧭 Métodos chamados que não existem\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🛰️  As sondas rodam de ponta a ponta\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// As sondas nunca eram executadas por nada antes de rodarem em produção. Três
+// quebras seguidas saíram assim, e as três só apareceram no aparelho de quem
+// pediu o teste:
+//
+//   `NUMERO_TESTE is not defined`  — global de arquivo que o .claspignore corta
+//   `comImagem is not defined`     — definição apagada num refactor
+//   media ID lido sem as travas    — a sonda mentiu sobre o resultado
+//
+// `node --check` não pega nenhuma: são erros de runtime, não de sintaxe. A
+// varredura de `this.metodo()` também não, porque numa sonda tudo é função
+// solta. O único jeito de pegar é CHAMAR a função.
+//
+// Aqui cada sonda roda inteira contra stubs. Nada sai para a rede: o que se
+// afirma é só que ela chega ao fim sem ReferenceError e envia o que promete.
+{
+  const sondas = [
+    {
+      arquivo: 'TesteCabecalhoImagem.gs',
+      funcao:  'testarCabecalhoImagem',
+      envios:  3,   // imagem sozinha, botões com cabeçalho, botões sem
+      confere(enviados) {
+        const [img, comCab, semCab] = enviados;
+        if (!img || img.type !== 'image') return '1º envio devia ser a imagem sozinha';
+        if (!comCab || !comCab.interactive) return '2º envio devia ser interativo';
+        const h = comCab.interactive.header;
+        if (!h || h.type !== 'image') return '2º envio devia ter cabeçalho de imagem';
+        if (semCab.interactive.header) return '3º envio (controle) não pode ter cabeçalho';
+        return null;
+      }
+    },
+    {
+      arquivo: 'TestePixNativo.gs',
+      funcao:  'testarPixNativo',
+      envios:  1,
+      confere(enviados) {
+        const p = enviados[0];
+        if (!p || p.type !== 'interactive') return 'devia enviar uma interativa';
+        if (p.interactive.type !== 'order_details') return 'devia ser order_details';
+        return null;
+      }
+    }
+  ];
+
+  for (const sonda of sondas) {
+    const enviados = [];
+    const respostaOk = {
+      getResponseCode: () => 200,
+      getContentText:  () => JSON.stringify({
+        messages: [{ id: 'wamid.TESTE' }],
+        // O que a Graph API devolve na consulta de um media ID vivo.
+        id: '123', url: 'https://exemplo/x', mime_type: 'image/png', file_size: 1
+      })
+    };
+
+    const PROPS = {
+      NUMERO_TESTE:      '5586988521231',
+      WHATSAPP_TOKEN:    'tok',
+      WHATSAPP_PHONE_ID: '111',
+      // Recém-guardado, para a sonda seguir pelo caminho do cache.
+      media_id_avatar: JSON.stringify({ id: '999', digital: 'x', em: Date.now() })
+    };
+
+    const ctx = {
+      console: { log() {}, warn() {}, error() {} },
+      Logger:  { log() {} },
+      Utilities: {
+        formatDate: () => '2026-09-19',
+        base64Decode: () => [],
+        newBlob: () => ({}),
+        sleep() {}
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty(k) { return PROPS[k] || null; },
+          setProperty() {}, setProperties() {}, deleteProperty() {},
+          getProperties: () => PROPS
+        })
+      },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
+      LockService:  { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      UrlFetchApp:  { fetch: () => respostaOk },
+      Utils: {
+        _post(payload) { enviados.push(payload); return respostaOk; },
+        fetchComRetry: () => respostaOk,
+        tipoDaChavePix: () => 'CPF'
+      },
+      MediaService: {
+        MEDIA_ID_VALIDADE_MS: 7 * 24 * 60 * 60 * 1000,
+        _descartarMediaId() {},
+        subirImagem: () => '999',
+        _gerarPayloadPix: () => '00020126...BR.GOV.BCB.PIX...6304ABCD'
+      },
+      OdooService: {
+        buscarParametros: () => ({ x_studio_avatar: 'base64', x_studio_chave_pix: 'chave' }),
+        buscarDizimistaPorWhatsapp: () => ({
+          id: 1, x_name: 'Fulano',
+          x_studio_comunidade: [1, 'Matriz']
+        }),
+        buscarDadosPagamentoComunidade: () => ({
+          id: 1, x_name: 'Matriz',
+          x_studio_chave_pix: '12345678900',
+          x_studio_titular_conta: 'Paroquia',
+          x_studio_cidade: 'TERESINA'
+        })
+      }
+    };
+    vm.createContext(ctx);
+
+    let erro = null;
+    try {
+      vm.runInContext(
+        fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8') + '\n;\n' +
+        fs.readFileSync(path.join(RAIZ, sonda.arquivo), 'utf8') + '\n;\n' +
+        sonda.funcao + '();',
+        ctx, { filename: sonda.arquivo }
+      );
+    } catch (e) {
+      erro = e.message;
+    }
+
+    if (!erro && enviados.length !== sonda.envios) {
+      erro = `enviou ${enviados.length} mensagem(ns), esperava ${sonda.envios}`;
+    }
+    if (!erro) erro = sonda.confere(enviados);
+
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} ${sonda.funcao}() ${erro ? '— ' + erro : 'roda inteira e envia o previsto'}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('📦 Globais que só existem fora do deploy\n');
 
 // ─────────────────────────────────────────────────────────────────────────

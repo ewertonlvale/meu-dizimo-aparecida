@@ -170,6 +170,27 @@ function testarCabecalhoImagem(numero) {
   const code0 = r0 ? r0.getResponseCode() : null;
   Logger.log(`HTTP ${code0} (imagem sozinha)`);
 
+  // ── 2. O TESTE: botões com cabeçalho de imagem ──────────────────────────
+  const comImagem = {
+    messaging_product: 'whatsapp',
+    recipient_type:    'individual',
+    to:                destino,
+    type:              'interactive',
+    interactive: {
+      type:   'button',
+      header: { type: 'image', image: { id: mediaId } },
+      body:   { text: '👋 *Teste do cabeçalho de imagem*\n\n' +
+                      'Se esta mensagem chegou COM a imagem acima dos botões, ' +
+                      'a entrada do bot pode cair de 2 para 1 mensagem. 💛' },
+      footer: { text: 'Com carinho, Cidinha 💛' },
+      action: {
+        buttons: [
+          { type: 'reply', reply: { id: 'btn_menu', title: '🔙 Menu' } }
+        ]
+      }
+    }
+  };
+
   Logger.log('\n📤 2/3 — enviando botões COM cabeçalho de imagem…');
   const r1 = Utils._post(comImagem, { rotulo: 'Sonda cabeçalho imagem' });
   const code1 = r1 ? r1.getResponseCode() : null;
