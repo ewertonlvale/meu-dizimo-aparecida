@@ -464,6 +464,33 @@ const CENARIOS = [
     porque: 'vai direto ao valor'
   },
   {
+    nome: 'Convite — com o número do bot confirmado pela Meta',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    esperado: 2,
+    porque: 'o cartão do bot + o texto que manda encaminhá-lo. `contacts` é um ' +
+            'tipo de mensagem inteiro e não aceita corpo junto.'
+  },
+  {
+    nome: 'Convite — cartão recusado pela Meta cai no link',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               contatoAceito: false,
+               propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    esperado: 2,
+    porque: 'a tentativa do cartão ainda sai como mensagem; o texto vira o link'
+  },
+  {
+    nome: 'Convite — sem número nenhum',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               propriedades: {} },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    esperado: 1,
+    porque: 'sem número não há cartão nem link — só o texto que manda perguntar ' +
+            'à secretaria'
+  },
+  {
     nome: 'Submenu "Outras opções"',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.menuOutrasOpcoes('55'),
@@ -660,6 +687,52 @@ const REGRAS_DE_CONTEUDO = [
       const t = msgs[0].texto;
       if (!t.includes('Para qual comunidade')) return 'não perguntou a comunidade';
       return null;
+    }
+  },
+  {
+    nome: 'O convite manda o contato do bot, e o texto combina com ele',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    confere: msgs => {
+      const cartao = msgs.find(m => m.tipo === 'contato');
+      if (!cartao) return 'não saiu o cartão do bot';
+      if (!cartao.texto.includes('"wa_id":"5586981622537"'))
+        return 'o cartão não leva o número confirmado';
+      // Uma forma só: o número do bot é confirmado, então mandar as duas do
+      // nono dígito poluiria justamente o cartão que vai ser encaminhado.
+      const ids = cartao.texto.match(/"wa_id":"\d+"/g) || [];
+      if (ids.length !== 1) return `o cartão do bot levou ${ids.length} números`;
+
+      const texto = msgs.find(m => m.tipo === 'texto');
+      if (!texto) return 'não saiu o texto do convite';
+      // Prometer um contato que não saiu deixaria a pessoa procurando o que
+      // não existe — por isso o texto é escrito depois do cartão.
+      return texto.texto.includes('contato acima')
+        ? null
+        : 'o texto não aponta para o cartão';
+    }
+  },
+  {
+    nome: 'O link do convite nunca sai sem o código do país',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               contatoAceito: false,
+               // O valor que estava em produção: digitado à mão, sem o 55. O
+               // `wa.me` lia o 86 como China e o convite não levava a lugar
+               // nenhum.
+               // `getConfig()` exige token e phone id, ou lança — e o número
+               // de exibição só é lido por ele.
+               propriedades: { WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111',
+                               WHATSAPP_NUMERO_EXIBICAO: '86981622537' } },
+    roda: ctx => ctx.MenuHandler.convidar('55'),
+    confere: msgs => {
+      const texto = msgs.find(m => m.tipo === 'texto');
+      if (!texto) return 'não saiu o texto do convite';
+      const link = (texto.texto.match(/wa\.me\/(\d+)/) || [])[1];
+      if (!link) return 'o convite saiu sem link';
+      return link === '5586981622537'
+        ? null
+        : `o link saiu como wa.me/${link} — sem o código do país`;
     }
   },
   {

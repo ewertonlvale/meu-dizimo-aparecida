@@ -27,6 +27,7 @@ o bot envia, não quantas trocas acontecem.
 | Oferta (por formulário) | **3** | ocasional |
 | Oferta (por conversa, sem cadastro) | **5** | ocasional |
 | Contato Pastoral (pelo submenu) | **2** | ocasional |
+| Convidar alguém (cartão do bot + texto) | **2** | ocasional |
 | Lembrete mensal (template) | **1** | uma vez por mês, por pessoa |
 | Relatório do coordenador | 4 a 12 | poucas pessoas |
 
