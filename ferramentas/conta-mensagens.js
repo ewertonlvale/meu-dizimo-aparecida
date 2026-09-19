@@ -70,7 +70,10 @@ function montarContexto(cenario) {
   // guarda que um stub de `criarDizimista` teria escondido, e um valor
   // formatado que um stub de `formatarValor` teria deixado passar.
   const StateManager = {
-    setEstado: () => {}, getEstado: () => null, limparDados: () => {},
+    // O cenário escolhe o estado: sem isso o Router cai sempre no ramo do
+    // menu, e o de "escreveu com o formulário aberto" — o do BL-44 — nunca
+    // seria alcançado por teste nenhum.
+    setEstado: () => {}, getEstado: () => cenario.estado || null, limparDados: () => {},
     iniciarSessaoCadastro: () => {}, registrarSessaoAtiva: () => {},
     appendLog: () => {}, setDados: () => {}, getDados: () => ({}),
     getCampo: (from, campo) => (cenario.sessao || {})[campo],
@@ -135,7 +138,11 @@ function montarContexto(cenario) {
   const ARQUIVOS = [
     'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
     'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
-    'OfertaHandler.gs', 'TestePixNativo.gs'
+    'OfertaHandler.gs', 'TestePixNativo.gs',
+    // O Router decide o que acontece com cada texto e cada botão. Ficou de
+    // fora até 19/09, e por isso o ramo "escreveu com o formulário aberto" —
+    // onde mora o BL-44 — não era executado por teste nenhum.
+    'Router.gs'
   ];
   const fontes = ARQUIVOS
     .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
@@ -143,7 +150,7 @@ function montarContexto(cenario) {
 
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
-             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, ESTADOS });',
+             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, Router, ESTADOS });',
     ctx,
     { filename: 'bot.gs' }
   );
@@ -470,6 +477,33 @@ const CENARIOS = [
     porque: 'vai direto ao valor'
   },
   {
+    nome: 'Escreveu com o formulário aberto — lembrete, não as 19 mensagens',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO' },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'quanto é o dízimo?' } }),
+    esperado: 1,
+    porque: 'BL-44: a pessoa fica onde estava, o formulário continua clicável ' +
+            'na conversa, e o lembrete traz as portas que não exigem cadastro'
+  },
+  {
+    nome: 'Escreveu com o formulário aberto, mas a CONVERSA está ligada',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO',
+               propriedades: { CADASTRO_CONVERSA_ATIVO: 'true' } },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'não abre' } }),
+    esperado: 2,
+    porque: 'o interruptor devolve o caminho antigo inteiro — é uma trava, ' +
+            'não uma remoção'
+  },
+  {
+    nome: 'Ser Dizimista com o formulário fora do ar e a conversa desligada',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: false },
+    roda: ctx => ctx.CadastroHandler.iniciar('55', null),
+    esperado: 1,
+    porque: 'ninguém consegue se cadastrar agora — mas a pessoa recebe quem ' +
+            'procurar, em vez de ficar sem resposta'
+  },
+  {
     nome: 'Convite — com o número do bot confirmado pela Meta',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
                propriedades: { WHATSAPP_NUMERO_BOT: '5586981622537' } },
@@ -693,6 +727,27 @@ const REGRAS_DE_CONTEUDO = [
       const t = msgs[0].texto;
       if (!t.includes('Para qual comunidade')) return 'não perguntou a comunidade';
       return null;
+    }
+  },
+  {
+    nome: 'O lembrete do cadastro não é um beco sem saída',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO' },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'quanto é o dízimo?' } }),
+    confere: msgs => {
+      const m = msgs.find(x => x.tipo === 'menu');
+      if (!m) return 'não saiu o lembrete';
+      if (!m.texto.includes('cadastro')) return 'o lembrete não fala do cadastro';
+      // A regra que não pode quebrar: quem escreveu ali pode estar travado no
+      // formulário. Oferta não exige cadastro e falar com a pastoral não exige
+      // nada — sem essas duas portas, o lembrete vira um muro.
+      const faltam = ['btn_oferta', 'btn_secretaria'].filter(b => !m.texto.includes(b));
+      if (faltam.length) return `faltou saída: ${faltam.join(', ')}`;
+      // E não pode ter começado o passo a passo: é exatamente o que o BL-44
+      // veio impedir.
+      return msgs.some(x => x.texto.includes('passo a passo'))
+        ? 'caiu no cadastro por conversa mesmo assim'
+        : null;
     }
   },
   {

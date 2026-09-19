@@ -37,6 +37,29 @@ const CadastroHandler = {
    *   quando quem chamou já consultou. Evita a segunda ida ao Odoo no caminho
    *   do primeiro contato, que passa por `MenuHandler.entrada`.
    */
+  /**
+   * O cadastro por CONVERSA está ligado? (BL-44)
+   *
+   * Desligado por padrão: só `'true'` liga, como o `FLOW_CADASTRO_ATIVO`.
+   * O formulário passou a ser o único caminho de cadastro — são 19 mensagens
+   * contra 4, e o passo a passo existia para quem não conseguisse abrir o
+   * formulário, não como caminho principal.
+   *
+   * O código do passo a passo CONTINUA aqui, inteiro. Isto é um interruptor,
+   * não uma remoção: se o formulário der problema, `CADASTRO_CONVERSA_ATIVO`
+   * = `true` devolve o caminho antigo sem republicar nada.
+   *
+   * @returns {boolean}
+   */
+  conversaAtiva() {
+    try {
+      return PropertiesService.getScriptProperties()
+        .getProperty('CADASTRO_CONVERSA_ATIVO') === 'true';
+    } catch (e) {
+      return false;
+    }
+  },
+
   iniciar(from, jaBuscado) {
     const dizimistaExistente = jaBuscado !== undefined
       ? jaBuscado
@@ -62,6 +85,25 @@ const CadastroHandler = {
     // validação do servidor.
     if (FlowHandler.enviarFlowCadastro(from)) {
       console.log(`📋 [Cadastro] ${from} recebeu o formulário — conversa em espera`);
+      return;
+    }
+
+    // O formulário não saiu: desligado, sem id, sem comunidade, Odoo fora do
+    // ar. Com o cadastro por conversa desligado (BL-44), não há segundo
+    // caminho — e quem quer se cadastrar NÃO pode ficar sem resposta.
+    //
+    // Isto é erro, não informação: significa que ninguém consegue se cadastrar
+    // agora. O log precisa gritar para que alguém repare o formulário; a
+    // pessoa, enquanto isso, recebe quem procurar.
+    if (!this.conversaAtiva()) {
+      console.error(`❌ [Cadastro] Formulário indisponível e conversa desligada — ` +
+                    `${from} não tem como se cadastrar. Confira FLOW_ID_CADASTRO, ` +
+                    `FLOW_CADASTRO_ATIVO e as comunidades ativas no Odoo.`);
+      StateManager.limparDados(from);
+      MenuHandler.lembrarCadastroPendente(from,
+        '🙏 *Desculpe!* Não consegui abrir o formulário de cadastro agora.\n\n' +
+        'Tente de novo em alguns minutos. Se continuar assim, fale com a ' +
+        'pastoral da sua comunidade — eles cadastram você por lá. 💛');
       return;
     }
 
