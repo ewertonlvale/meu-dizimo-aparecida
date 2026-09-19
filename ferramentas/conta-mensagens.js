@@ -319,6 +319,15 @@ const CENARIOS = [
     porque: 'sem o balão, o "⏳ Analisando..." volta — silêncio de segundos parece travamento'
   },
   {
+    nome: 'Comprovante de OFERTA de quem não é cadastrado',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true,
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    esperado: 1,
+    porque: 'registra sem dizimista. O caminho normal responderia "não encontrei seu cadastro" DEPOIS de a pessoa ter pagado'
+  },
+  {
     nome: 'Formulário antigo respondido por quem JÁ é dizimista (BL-39)',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.CadastroHandler.finalizar('55'),
@@ -531,6 +540,20 @@ const REGRAS_DE_CONTEUDO = [
       const faltam = ['João da Silva', '+5586988521231', 'São José']
         .filter(t => !c.texto.includes(t));
       return faltam.length ? `faltou no cartão: ${faltam.join(', ')}` : null;
+    }
+  },
+  {
+    nome: 'A oferta grava o valor ESCOLHIDO, não o que o OCR leu',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true,
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      // O OCR devolve 50 no stub; a pessoa escolheu 20. Vale o que ela disse —
+      // a extração de valor é reconhecidamente frágil (BL-14).
+      const t = msgs[msgs.length - 1].texto;
+      if (!t.includes('Oferta recebida')) return 'não confirmou a oferta';
+      return t.includes('20,00') ? null : 'gravou o valor do OCR, não o escolhido';
     }
   },
   {
