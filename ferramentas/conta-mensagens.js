@@ -159,7 +159,8 @@ function montarContexto(cenario) {
 
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
-             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, Router, ESTADOS });',
+             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, Router, ESTADOS, ' +
+             'alertaDoador, exigeConferencia });',
     ctx,
     { filename: 'bot.gs' }
   );
@@ -1471,6 +1472,149 @@ console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
     if (erro) falhas++;
     console.log(`${erro ? '❌' : '✅'} ${c.nome}${erro ? ' — ' + erro : ''}`);
   }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🏦 Quem RECEBEU, nos formatos que os bancos usam — BL-46\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Num comprovante aparecem dois nomes e dois bancos: o de quem paga e o de
+// quem recebe. `_extrairBanco` devolvia o PRIMEIRO do texto — que é o app de
+// quem pagou, no topo da tela. Comparar aquilo com a conta da paróquia
+// reprovaria quase todo comprovante legítimo.
+//
+// Cada caso abaixo é um layout diferente. O último é o que importa mais: um
+// layout que não reconhecemos precisa devolver `null`, e não um palpite.
+{
+  const V = extratoresDoVision();
+
+  const casos = [
+    {
+      nome: 'Nubank — "Destino" depois de "Origem"',
+      texto: [
+        'Comprovante de transferência', 'Nubank', 'R$ 150,00',
+        'Origem', 'JOAO CARLOS FERREIRA', 'CPF 123.456.789-00', 'Nubank',
+        'Destino', 'PAROQUIA N S DA CONCEICAO APARECIDA',
+        'Instituição: Banco do Brasil', 'Chave Pix: pix@paroquia.org'
+      ].join('\n'),
+      esperaNome: 'PAROQUIA N S DA CONCEICAO APARECIDA',
+      esperaBanco: 'Banco do Brasil'
+    },
+    {
+      nome: 'Itaú — rótulo e nome na mesma linha',
+      texto: [
+        'Itaú', 'Pix enviado', 'Valor: R$ 80,00',
+        'Para: Paroquia Nossa Senhora da Conceicao', 'Banco do Brasil',
+        'De: Maria Souza'
+      ].join('\n'),
+      esperaNome: 'Paroquia Nossa Senhora da Conceicao',
+      esperaBanco: 'Banco do Brasil'
+    },
+    {
+      nome: 'Caixa — "Beneficiário" e o banco de quem paga vindo antes',
+      texto: [
+        'CAIXA', 'Comprovante PIX', 'Pagador: ANA LIMA', 'Caixa', 'R$ 50,00',
+        'Beneficiário', 'PAROQUIA N. S. CONCEICAO', 'Sicredi'
+      ].join('\n'),
+      esperaNome: 'PAROQUIA N. S. CONCEICAO',
+      esperaBanco: 'Sicredi'
+    },
+    {
+      nome: 'layout desconhecido devolve null, não um palpite',
+      texto: 'PIX REALIZADO\nR$ 100,00\n05/09/2026\nAutenticação 883722',
+      esperaNome: null,
+      esperaBanco: null
+    }
+  ];
+
+  for (const c of casos) {
+    const r = V._extrairRecebedor(c.texto);
+    const errs = [];
+    if (r.nome !== c.esperaNome)   errs.push(`nome: "${r.nome}"`);
+    if (r.banco !== c.esperaBanco) errs.push(`banco: "${r.banco}"`);
+    if (errs.length) falhas++;
+    console.log(`${errs.length ? '❌' : '✅'} ${c.nome}` +
+                (errs.length ? ` — ${errs.join(', ')}` : ''));
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧾 Conferência do comprovante — BL-46\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Aqui o erro tem lados MUITO desiguais. Deixar passar um comprovante errado
+// custa uma conferência da secretaria. Acusar um comprovante certo custa
+// dizer a alguém que acabou de devolver o dízimo que ela pagou errado.
+//
+// Por isso a maioria dos casos abaixo é do lado "NÃO pode acusar".
+{
+  const ctx = montarContexto({ dizimista: DIZIMISTA });
+  const CH = ctx.ComprovanteHandler;
+
+  const COMUNIDADE = {
+    x_studio_chave_pix:     'pix@paroquia.org',
+    x_studio_titular_conta: 'Paróquia Nossa Senhora da Conceição Aparecida',
+    x_studio_banco:         'Banco do Brasil'
+  };
+
+  const casos = [
+    // ── O que NÃO pode virar acusação ────────────────────────────────────
+    { nome: 'tudo confere',
+      dados: { chavePix: 'pix@paroquia.org',
+               recebedor: { nome: 'Paróquia N. S. da Conceição', banco: 'Banco do Brasil' } },
+      motivo: 'ok' },
+
+    { nome: 'nome abreviado pelo banco ainda é a mesma conta',
+      dados: { chavePix: 'pix@paroquia.org',
+               recebedor: { nome: 'PAROQUIA N S CONCEICAO APARECIDA', banco: null } },
+      motivo: 'ok' },
+
+    { nome: 'layout não reconhecido: recebedor vazio não conta contra ninguém',
+      dados: { chavePix: 'pix@paroquia.org', recebedor: { nome: null, banco: null } },
+      motivo: 'ok' },
+
+    { nome: 'sem recebedor E sem chave: conferência, nunca alerta',
+      dados: { chavePix: null, recebedor: { nome: null, banco: null } },
+      motivo: 'ausente' },
+
+    { nome: 'só o banco diverge: conferência calada, não alerta',
+      dados: { chavePix: null,
+               recebedor: { nome: 'Paróquia Nossa Senhora da Conceição', banco: 'Nubank' } },
+      motivo: 'ausente' },
+
+    // ── O que DEVE alertar ────────────────────────────────────────────────
+    { nome: 'chave de outra conta: alerta',
+      dados: { chavePix: 'outro@banco.com', recebedor: { nome: null, banco: null } },
+      motivo: 'divergente' },
+
+    { nome: 'sem chave, mas nome E banco divergem: alerta',
+      dados: { chavePix: null,
+               recebedor: { nome: 'João Carlos Ferreira', banco: 'Nubank' } },
+      motivo: 'tudo_divergente' },
+
+    // ── Chave certa, resto estranho: conferir, sem acusar ────────────────
+    { nome: 'chave certa e nome estranho: conferência, não alerta',
+      dados: { chavePix: 'pix@paroquia.org',
+               recebedor: { nome: 'João Carlos Ferreira', banco: 'Banco do Brasil' } },
+      motivo: 'titular_divergente' }
+  ];
+
+  for (const c of casos) {
+    const r = CH._conferirComprovante(c.dados, COMUNIDADE);
+    const ok = r.motivo === c.motivo;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : ` — veio "${r.motivo}", esperava "${c.motivo}"`}`);
+  }
+
+  // A regra que dá sentido a tudo acima: quem é avisado e quem não é.
+  const alertam    = ['divergente', 'tudo_divergente'];
+  const naoAlertam = ['ok', 'ausente', 'sem_referencia', 'titular_divergente',
+                      'banco_divergente', 'codigo_que_nao_existe'];
+  const err = alertam.filter(m => !ctx.alertaDoador(m))
+    .concat(naoAlertam.filter(m => ctx.alertaDoador(m)));
+  if (err.length) falhas++;
+  console.log(`${err.length ? '❌' : '✅'} Só os graves avisam a pessoa` +
+              (err.length ? ` — errou em: ${err.join(', ')}` : ''));
 }
 
 console.log('\n' + '─'.repeat(64));

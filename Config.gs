@@ -134,6 +134,7 @@ const CONFERENCIA = {
   },
   divergente: {
     exigeConferencia: true,
+    alertaDoador:     true,
     avisoRegistro:    '⚠️ CONFERIR: chave do comprovante diverge da comunidade',
     textoCoordenador: 'a chave do comprovante *diverge* da chave da comunidade'
   },
@@ -146,8 +147,52 @@ const CONFERENCIA = {
     exigeConferencia: true,
     avisoRegistro:    '⚠️ CONFERIR: comunidade sem chave PIX cadastrada',
     textoCoordenador: 'a comunidade não tem chave PIX cadastrada para comparar'
+  },
+
+  // BL-46: o que o recebedor do comprovante diz, além da chave. `alertaDoador`
+  // marca os casos em que a PESSOA é avisada de que algo não bate — e só os
+  // graves entram, porque um alerta injusto acusa quem pagou certo.
+  titular_divergente: {
+    exigeConferencia: true,
+    alertaDoador:     false,
+    avisoRegistro:    '⚠️ CONFERIR: nome de quem recebeu diverge do titular',
+    textoCoordenador: 'o nome de quem recebeu *diverge* do titular da comunidade'
+  },
+  banco_divergente: {
+    exigeConferencia: true,
+    alertaDoador:     false,
+    avisoRegistro:    '⚠️ CONFERIR: banco de destino diverge do cadastrado',
+    textoCoordenador: 'o banco de destino *diverge* do cadastrado na comunidade'
+  },
+  tudo_divergente: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    avisoRegistro:    '🚨 CONFERIR: nome E banco de destino divergem',
+    textoCoordenador: 'nome e banco de quem recebeu *divergem* dos da comunidade'
   }
 };
+
+/**
+ * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
+ *
+ * Bem mais restrito que `exigeConferencia`. Ali o custo de errar é um olhar
+ * humano a mais; aqui é dizer a quem devolveu o dízimo que o comprovante dela
+ * parece estar errado. Comprovante bancário não tem formato padrão, e um
+ * alerta injusto é pior que uma conferência a mais.
+ *
+ * Só entram os casos em que o dinheiro provavelmente foi para outro lugar:
+ * a chave diverge, ou — sem chave legível — nome E banco divergem juntos.
+ *
+ * Código desconhecido NÃO alerta. É o oposto de `exigeConferencia`, e de
+ * propósito: no silêncio, o lado seguro ali é conferir; aqui é calar.
+ *
+ * @param {string} codigo - Valor de x_studio_conferencia_pix
+ * @returns {boolean}
+ */
+function alertaDoador(codigo) {
+  const regra = CONFERENCIA[codigo];
+  return !!(regra && regra.alertaDoador);
+}
 
 /**
  * Este resultado de conferência pede olhar humano?

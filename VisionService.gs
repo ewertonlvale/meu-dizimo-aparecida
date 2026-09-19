@@ -197,6 +197,7 @@ const VisionService = {
       data:         this._extrairData(texto),
       chavePix:     this._extrairChavePix(texto),
       banco:        this._extrairBanco(texto),
+      recebedor:    this._extrairRecebedor(texto),
       tipo:         this._extrairTipoTransacao(texto),
       textoCompleto: texto
     };
@@ -316,6 +317,76 @@ const VisionService = {
     for (const padrao of padroes) {
       const match = txt.match(padrao);
       if (match) return match[0].trim();
+    }
+    return null;
+  },
+
+  /**
+   * Nome e instituição de QUEM RECEBEU (BL-46).
+   *
+   * POR QUE NÃO DÁ PARA USAR `_extrairBanco` NEM VARRER O TEXTO INTEIRO.
+   * Num comprovante aparecem DOIS bancos e DOIS nomes — o de quem paga e o de
+   * quem recebe. `_extrairBanco` devolve o primeiro que encontra, que é quase
+   * sempre o app de quem pagou, no topo da tela. Comparar aquilo com a conta
+   * da paróquia reprovaria quase todo comprovante legítimo.
+   *
+   * Então ancoramos: procuramos o rótulo que abre o bloco do recebedor e só
+   * lemos DALI PARA A FRENTE, parando no bloco do pagador. É o mesmo caminho
+   * que `_extrairChavePix` já fazia com "Chave Pix:".
+   *
+   * Devolve `{ nome: null, banco: null }` quando não reconhece o layout — e
+   * isso é um resultado legítimo, não uma falha. A diversidade de modelos é
+   * grande demais para prometer sempre achar; quem chama trata a ausência
+   * como "não sei", nunca como "não confere".
+   *
+   * @returns {{nome: string|null, banco: string|null}}
+   * @private
+   */
+  _extrairRecebedor(texto) {
+    const linhas = String(texto || '').split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+
+    const ABRE  = /^(para|destino|destinat[áa]rio|recebedor|benefici[áa]rio|quem recebeu|dados de quem recebeu|institui[çc][ãa]o de destino|cr[ée]dito)\b/i;
+    const FECHA = /^(de|origem|pagador|quem pagou|dados de quem pagou|debitado|d[ée]bito|remetente)\b/i;
+
+    const inicio = linhas.findIndex(l => ABRE.test(l));
+    if (inicio < 0) return { nome: null, banco: null };
+
+    // Do rótulo até o bloco do pagador, ou 8 linhas — o que vier antes. O
+    // limite existe porque em alguns layouts o bloco do pagador não é rotulado
+    // e a varredura invadiria o resto do comprovante.
+    const bloco = [];
+    for (let i = inicio; i < linhas.length && bloco.length < 8; i++) {
+      if (i > inicio && FECHA.test(linhas[i])) break;
+      bloco.push(linhas[i]);
+    }
+
+    return {
+      nome:  this._nomeNoBloco(bloco),
+      banco: this._extrairBanco(bloco.join('\n'))
+    };
+  },
+
+  /**
+   * O primeiro texto do bloco que se parece com nome de pessoa ou instituição.
+   *
+   * Descarta rótulo, valor, data, documento e chave — tudo o que num bloco de
+   * recebedor NÃO é o nome. Exige duas palavras: "Paróquia" sozinho não
+   * identifica ninguém, e um falso positivo aqui vira acusação contra alguém
+   * que pagou certo.
+   * @private
+   */
+  _nomeNoBloco(bloco) {
+    const LIXO = /r\$|\d{2}\/\d{2}|cpf|cnpj|chave|ag[êe]ncia|conta|institui|tipo|valor|data|id\s*da|autentica/i;
+
+    for (const bruto of bloco) {
+      // Tira o rótulo quando nome e rótulo dividem a linha ("Para: Fulano").
+      const linha = bruto.replace(/^[^:]{0,30}:\s*/, '').trim();
+      if (!linha || LIXO.test(linha)) continue;
+      if (/\d/.test(linha)) continue;                       // nome não tem dígito
+      if (linha.split(/\s+/).length < 2) continue;          // uma palavra não basta
+      if (linha.length < 5 || linha.length > 80) continue;
+      if (!/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.\s'-]+$/.test(linha)) continue;
+      return linha;
     }
     return null;
   },
