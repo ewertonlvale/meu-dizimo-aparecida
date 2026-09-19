@@ -469,24 +469,78 @@ const MenuHandler = {
    * usa o "encaminhar" dele, que é o que realmente espalha.
    */
   convidar(from) {
-    let numero = '';
-    try {
-      numero = getConfig().WHATSAPP_NUMERO_EXIBICAO || '';
-    } catch (e) { /* segue sem o link */ }
+    const numero = this._numeroDoBot();
 
-    const link = numero
-      ? `https://wa.me/${String(numero).replace(/\D/g, '')}`
-      : '';
+    // ── O cartão, que é o que se encaminha ──────────────────────────────────
+    // Encaminhar um link exige que a outra pessoa toque nele; encaminhar um
+    // contato deixa o bot salvo na agenda dela. É a diferença entre uma visita
+    // e um vizinho.
+    //
+    // Vai numa mensagem própria porque `contacts` é um tipo de mensagem
+    // inteiro — não aceita corpo de texto junto, do mesmo modo que botões e
+    // formulário não se misturam. Duas mensagens, por decisão: este caminho é
+    // ocasional, e o alcance de um contato salvo compensa.
+    let mandouCartao = false;
+    if (numero) {
+      mandouCartao = Utils.enviarContatos(from, [{
+        nome:     'Meu Dízimo',
+        whatsapp: numero,
+        // Confirmado: veio do `metadata` da Meta, não de palpite nosso nem de
+        // campo digitado à mão. Sem isto, `enviarContatos` mandaria as duas
+        // formas do nono dígito — e o cartão do próprio bot é o último lugar
+        // onde se quer dois números.
+        waId:     numero,
+        cargo:    'Pastoral do Dízimo'
+      }]);
+    }
 
-    let msg = '💛 *Convide alguém da paróquia*\n\n' +
-              'Se conhece alguém que gostaria de contribuir com o dízimo ou com ' +
-              'uma oferta, é só encaminhar esta mensagem. 🙏\n\n';
+    // ── O texto ─────────────────────────────────────────────────────────────
+    // Escrito DEPOIS do cartão, e conforme ele ter saído ou não: prometer um
+    // contato que a Meta recusou deixaria a pessoa procurando o que não existe.
+    let msg = '💛 *Convide alguém da paróquia*\n\n';
 
-    msg += link
-      ? `👉 ${link}\n\n_Toque e pressione esta mensagem para encaminhar._`
-      : '_Peça à secretaria o contato do nosso WhatsApp para compartilhar._';
+    if (mandouCartao) {
+      msg += 'Encaminhe o contato acima para quem gostaria de contribuir com o ' +
+             'dízimo ou com uma oferta. 🙏\n\n' +
+             '_Toque e segure no contato para encaminhar._';
+    } else if (numero) {
+      msg += 'Se conhece alguém que gostaria de contribuir com o dízimo ou com ' +
+             'uma oferta, é só encaminhar esta mensagem. 🙏\n\n' +
+             `👉 https://wa.me/${numero}\n\n` +
+             '_Toque e pressione esta mensagem para encaminhar._';
+    } else {
+      msg += 'Se conhece alguém que gostaria de contribuir com o dízimo ou com ' +
+             'uma oferta, é só encaminhar esta mensagem. 🙏\n\n' +
+             '_Peça à secretaria o contato do nosso WhatsApp para compartilhar._';
+    }
 
     Utils.enviarComBotaoMenu(from, msg);
+  },
+
+  /**
+   * O número do bot, em dígitos E.164 e sem o `+`.
+   *
+   * Duas fontes, nesta ordem, e a ordem é o ponto:
+   *
+   * 1. `WHATSAPP_NUMERO_BOT` — gravada pelo webhook a partir do `metadata` que
+   *    a Meta manda em todo callback. É o número dito por quem o registrou.
+   * 2. `WHATSAPP_NUMERO_EXIBICAO` — digitada à mão nas Propriedades do script.
+   *
+   * A segunda existia sozinha, e o link do convite saiu como
+   * `wa.me/86981622537`: sem o 55, o `wa.me` lê o 86 como código da China. O
+   * `_e164` conserta a falta do código de país; o que ele não conserta é um
+   * número digitado errado, e é por isso que a fonte da Meta vem primeiro.
+   * @private
+   */
+  _numeroDoBot() {
+    const props = PropertiesService.getScriptProperties();
+    let bruto = '';
+    try {
+      bruto = props.getProperty('WHATSAPP_NUMERO_BOT') ||
+              getConfig().WHATSAPP_NUMERO_EXIBICAO || '';
+    } catch (e) { /* segue sem número */ }
+
+    return bruto ? Utils._e164(bruto).replace('+', '') : '';
   },
 
   /**

@@ -84,6 +84,12 @@ function doPost(e) {
         // aqui. Sem isto, "não chegou" fica sem diagnóstico nenhum.
         _registrarStatusEntrega(change.value && change.value.statuses);
 
+        // O número do próprio bot, dito pela Meta. Vem em TODO callback, de
+        // graça, e é verdade de fato — ao contrário da Script Property
+        // `WHATSAPP_NUMERO_EXIBICAO`, que alguém digita à mão e que já entrou
+        // sem o código do país, quebrando o link do convite (A10).
+        _guardarNumeroDoBot(change.value && change.value.metadata);
+
         const messages = change.value && change.value.messages;
         if (!Array.isArray(messages)) continue;   // ex.: eventos de status
 
@@ -128,6 +134,32 @@ function doPost(e) {
     // que mais consumiram chamadas antes de quebrar. O erro não era aleatório:
     // subestimava sempre.
     Utils.registrarConsumoExterno();
+  }
+}
+
+/**
+ * Guarda o número do bot que veio no `metadata` da Meta.
+ *
+ * Escreve só quando muda. Um `setProperty` por mensagem recebida seria uma
+ * escrita por conversa, o dia inteiro, para gravar sempre a mesma coisa.
+ *
+ * @param {Object} metadata - change.value.metadata
+ * @private
+ */
+function _guardarNumeroDoBot(metadata) {
+  const bruto = metadata && metadata.display_phone_number;
+  if (!bruto) return;
+
+  const digitos = String(bruto).replace(/\D/g, '');
+  if (!digitos) return;
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('WHATSAPP_NUMERO_BOT') === digitos) return;
+    props.setProperty('WHATSAPP_NUMERO_BOT', digitos);
+    console.log(`📞 [Bot] Número próprio confirmado pela Meta: ${digitos}`);
+  } catch (e) {
+    console.warn('⚠️ [Bot] Não consegui guardar o número próprio:', e.message);
   }
 }
 

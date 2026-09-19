@@ -676,7 +676,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **A7.** `ferramentas/flow-oferta.json`. ✅ 19/09 — Dropdown de comunidade + valor; passou no `valida-flow.js`. Os ids do Dropdown vão como **string**: id numérico é recusado na renderização, sem erro no envio
 - [x] **A8.** `FlowHandler` da oferta. ✅ 19/09 — `TOKEN_OFERTA`, `_processarOferta` (revalida no servidor, porque a validação do Flow roda no cliente), `enviarFlowOferta`, estado `AGUARDANDO_FLOW_OFERTA`. ⚠️ Depende da Script Property **`FLOW_ID_OFERTA`** — sem ela a oferta segue pela conversa, sem quebrar
 - [x] **A9.** Handler de oferta. ✅ 19/09 — feito junto do A6 para não existir botão sem destino. Caminho de conversa completo; o formulário (A7/A8) entra por cima
-- [x] **A10.** "Convidar alguém". ✅ 19/09 — link em texto, não botão: mensagem interativa é *ou* botões *ou* URL, nunca as duas, e este caminho já custa 2 mensagens. ⚠️ Depende da Script Property nova **`WHATSAPP_NUMERO_EXIBICAO`** (o número do bot, formato 5586988521231) — sem ela o convite sai sem link clicável. Não dá para derivar do `PHONE_ID`, que é o id interno da Meta
+- [x] **A10.** "Convidar alguém". ✅ 19/09 — **agora manda o CARTÃO DE CONTATO do bot + o texto (2 mensagens).** Encaminhar um link exige que a outra pessoa toque nele; encaminhar um contato deixa o bot salvo na agenda dela. `contacts` é um tipo de mensagem inteiro e não aceita corpo junto, como botões e formulário não se misturam — daí as duas. O texto é escrito DEPOIS do cartão e conforme ele ter saído: prometer um contato que a Meta recusou deixaria a pessoa procurando o que não existe. Cartão recusado → volta ao link. **Bug corrigido junto:** o link saía como `wa.me/86981622537`, sem o 55, e o `wa.me` lia o 86 como China — o convite não levava a lugar nenhum
 - [x] **A11.** `FLUXOS.md`: seção 5b com o fluxo da oferta, contagens e o custo do submenu. ✅ 19/09
 
 #### ✅ DESBLOQUEADO PELA S1
@@ -707,7 +707,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S7.** ✅ 19/09 — formulário de oferta publicado e `FLOW_ID_OFERTA` configurado. Republicado depois da correção da comunidade pré-selecionada
 - [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
 - [x] **S10.** ✅ **19/09, 12:11 — flow aceita cabeçalho de imagem, mas só por LINK.** Duas rodadas: a 1ª devolveu `(#131008) header image must contain link` com `image.id`; a 2ª, com `AVATAR_URL` apontando para `docs/avatar.png` no GitHub Pages, chegou com a imagem em cima. **A12 fechado.** Na 1ª rodada o veredito da sonda lia HTTP 400 como recusa e teria matado o A12 por engano — passou a ler o `details`. Houve ainda uma rodada perdida porque o `avatar.png` estava no `main` e o Pages construía do `staging`: a URL não abria
-- [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
+- [x] **S6.** ✅ 19/09 — **deixou de ser tarefa.** O webhook passou a guardar `WHATSAPP_NUMERO_BOT` a partir do `metadata.display_phone_number`, que a Meta manda em TODO callback, de graça. É o número dito por quem o registrou, e vem antes da `WHATSAPP_NUMERO_EXIBICAO` digitada à mão — que foi justamente a que entrou sem o código do país. A escrita só acontece quando o valor muda; um `setProperty` por mensagem recebida seria uma escrita por conversa para gravar sempre a mesma coisa
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
@@ -767,7 +767,7 @@ Migração do Odoo feita e conferida (5150 → 5150), campos criados, formulári
 
 - ~~**S1**~~ ✅ 19/09 — respondida em 4 rodadas. **A12 implementado** para quem já é dizimista; a metade de número novo virou **S10**
 - **S4** — custo do `order_status` (BL-40). **Só agora faz sentido medir**: antes do BL-42 o contador estava zerado
-- **S6** — `WHATSAPP_NUMERO_EXIBICAO`, para o link do convite sair clicável
+- ~~**S6**~~ ✅ 19/09 — resolvido sozinho: o webhook aprende o número do bot pelo `metadata` da Meta
 
 ---
 
