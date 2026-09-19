@@ -1560,6 +1560,48 @@ console.log('🏦 Quem RECEBEU, nos formatos que os bancos usam — BL-46\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🔑 A chave PIX no BR Code vai sem máscara — BL-48\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O Odoo guarda a chave como a pessoa digitou: "160.740.093-68". Isso é bom
+// para ler na tela e ERRADO no BR Code, onde o campo 01 de um CPF tem 11
+// dígitos. Com a máscara, o copia-e-cola sai fora do padrão e o banco de quem
+// paga pode recusar — sem dizer por quê.
+//
+// O BL-40 foi testado com uma chave de e-mail, que não tem máscara para
+// atrapalhar. Foi por isso que passou.
+{
+  const ctx = montarContexto({ dizimista: DIZIMISTA });
+
+  const casos = [
+    ['160.740.093-68',      '16074009368',      'CPF com máscara'],
+    ['16074009368',         '16074009368',      'CPF já limpo'],
+    ['12.345.678/0001-90',  '12345678000190',   'CNPJ com máscara'],
+    ['(86) 98852-1231',     '+5586988521231',   'telefone vira E.164 com +'],
+    ['PIX@Paroquia.ORG',    'pix@paroquia.org', 'e-mail em minúsculas'],
+    ['123e4567-e89b-12d3-a456-426614174000',
+     '123e4567-e89b-12d3-a456-426614174000',    'chave aleatória fica intacta']
+  ];
+
+  for (const [entrada, esperado, nome] of casos) {
+    const r = ctx.Utils.chavePixCanonica(entrada);
+    const ok = r === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}${ok ? '' : ` — veio "${r}", esperava "${esperado}"`}`);
+  }
+
+  // A prova que importa: o código gerado carrega a chave SEM máscara.
+  const codigo = ctx.MediaService._gerarPayloadPix('160.740.093-68', 100,
+                                                   'Marlize Ferreira', 'TERESINA');
+  const temMascara = codigo.indexOf('160.740.093-68') >= 0;
+  const temLimpa   = codigo.indexOf('011116074009368') >= 0;   // tag 01, len 11
+  const ok = !temMascara && temLimpa;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} O BR Code leva a chave limpa, no campo 01 com 11 dígitos` +
+              (ok ? '' : ` — máscara: ${temMascara}, campo certo: ${temLimpa}`));
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('🧾 Conferência do comprovante — BL-46\n');
 
 // ─────────────────────────────────────────────────────────────────────────

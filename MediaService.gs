@@ -459,11 +459,15 @@ const MediaService = {
       return false;
     }
 
+    // A Meta recebe a chave como identificador, pelo mesmo motivo do BR Code.
+    const chaveCanonica = Utils.chavePixCanonica(chave);
+
     const titular = comunidade.x_studio_titular_conta || 'Paroquia';
 
     let codigo;
     try {
-      codigo = this._gerarPayloadPix(chave, valor, titular);
+      codigo = this._gerarPayloadPix(chaveCanonica, valor, titular,
+                                      comunidade.x_studio_cidade);
     } catch (e) {
       console.warn('⚠️ [Card PIX] Falhei ao gerar o BR Code:', e.message);
       return false;
@@ -493,7 +497,7 @@ const MediaService = {
                 pix_dynamic_code: {
                   code:          codigo,
                   merchant_name: titular,
-                  key:           chave,
+                  key:           chaveCanonica,
                   key_type:      tipo
                 }
               }
@@ -633,7 +637,11 @@ const MediaService = {
   _gerarPayloadPix(chavePix, valor, recebedorNome, cidade) {
     const nome = this._sanitizarTextoEmv(recebedorNome || 'PASTORAL DO DIZIMO', 25);
     const cid  = this._sanitizarTextoEmv(cidade || 'CIDADE', 15);
-    const chave = String(chavePix || '').trim();
+    // BL-48: no BR Code a chave é DADO, não texto. CPF vai com 11 dígitos,
+    // telefone em E.164 — a máscara que o Odoo guarda para leitura humana
+    // deixa o código fora do padrão, e o banco de quem paga recusa sem dizer
+    // por quê.
+    const chave = Utils.chavePixCanonica(chavePix);
 
     // Merchant Account Information (tag 26): GUI do PIX + chave.
     const mai = this._emv('00', 'BR.GOV.BCB.PIX') + this._emv('01', chave);

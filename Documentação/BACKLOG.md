@@ -76,6 +76,7 @@
 | BL-45 | O botão "Corrigir" cancelava o cadastro e apagava os 7 campos | 🔴 | P | ✅ Concluído (19/09) — o formulário volta preenchido. ⚠️ **Exige republicar o Flow na Meta** |
 | BL-46 | Conferir o comprovante contra o cadastro: nome, chave e banco | 🟠 | M | ✅ Concluído (19/09) — extração ancorada em quem RECEBEU; alerta só no totalmente divergente |
 | BL-47 | Cartão de contato mostrava o mesmo telefone 2x, e o primeiro não abria | 🟡 | P | ✅ Concluído (19/09) — um número só, o provável para o DDD |
+| BL-48 | BR Code levava a chave PIX com máscara, fora da especificação | 🔴 | P | ✅ Concluído (19/09) — CPF/CNPJ em dígitos, telefone em E.164. O BL-40 passou porque foi testado com e-mail |
 
 ---
 
