@@ -824,6 +824,18 @@ Então a extração passou a ser **ancorada**: acha o rótulo que abre o bloco d
 
 **Os seis comprovantes viraram teste**, transcritos como o OCR os entrega. Um exemplo genérico não teria encontrado nenhum destes.
 
+
+### Correção de registro — a cidade do BR Code (19/09)
+
+A mensagem de commit do **BL-48** afirmou que o card passaria a usar
+`comunidade.x_studio_cidade`. **Esse campo não existe** em `x_comunidade` — só
+apareceu ao revisar o dump do Odoo, depois do merge. Não quebrava nada (caía
+no padrão), mas a afirmação estava errada.
+
+**Decidido em 19/09 que o campo não será criado.** A cidade do recebedor no
+campo 60 do BR Code serve para exibição, e o padrão resolve. A referência foi
+removida do código para não apontar para um campo inexistente.
+
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
 **Concluídos:** A1 a A12 — **a TRILHA A inteira.** O A12 está feito na metade que a sonda S1 provou (quem já é dizimista); a de número novo espera a **S10**.
