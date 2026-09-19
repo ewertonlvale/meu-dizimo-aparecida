@@ -61,6 +61,7 @@
 | BL-32 | Nono dígito: mensagem aceita com HTTP 200 e nunca entregue | 🟠 | P | ✅ Concluído — sugestão do número alternativo na falha + `auditarNumerosWhatsApp()`. Sem correção automática: é heurística |
 | BL-33 | Ligar o Flow no cadastro (interruptor, foto após envio, membro da família) | 🟠 | G | ✅ Concluído (18/09) — inclui o formulário de membro, com endereço e dia pré-preenchidos |
 | BL-12 · BL-13 · BL-15 | Itens baixos de manutenção | 🟡 | P | ✅ Confirmados resolvidos (19/09) — estavam feitos e não marcados |
+| BL-14 | Extração frágil de valor e chave PIX do OCR | 🟠 | M | ✅ Concluído (19/09) — heurística já refeita; entraram os 6 testes de regressão que faltavam |
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
 | BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
@@ -740,6 +741,21 @@ Não há mais `(00) 0000-0000` nem `secretaria@exemplo.com` no projeto. `MenuHan
 - **Valor:** `_extrairValor` retorna o primeiro `R$` encontrado, que pode ser tarifa/saldo, não o valor transferido.
 - **Chave PIX:** `_extrairChavePix` retornou `4339441920260` — que **não é uma chave**, mas os 13 primeiros dígitos do *ID da transação* (`E**4339441920260**4052103uuGZ7BZQ3g5`). O padrão de telefone (primeiro do array) casa com o trecho numérico do ID antes de chegar à chave real (`160.740.093-68`). Isso grava dado enganoso no Odoo e inviabiliza o BL-26.
 **Correção:** melhorar heurística de valor (proximidade de "valor"/"total"/"pix", maior valor, contexto) e de chave (ignorar sequências dentro do "ID da transação"/"identificador"; priorizar padrões ancorados por rótulo "Chave Pix:"; reordenar padrões para não deixar telefone capturar IDs). Elevada de 🟡 para 🟠 por bloquear a validação do BL-26.
+
+✅ **Concluído em 19/09.** A heurística já havia sido refeita em ciclo anterior — o que faltava era **guarda**: a correção existia e nada impedia que uma mexida futura a desfizesse, em silêncio, do jeito que só aparece num comprovante real meses depois.
+
+Seis casos entraram no harness, a partir do texto que de fato falhou:
+
+| Caso | O que guarda |
+|---|---|
+| `E43394419202604052103uuGZ7BZQ3g5` + `160.740.093-68` | o ID da transação não vira chave |
+| Tarifa R$ 2,50 · Valor R$ 80,00 | tarifa não vira valor pago |
+| Saldo R$ 4.320,15 · Pix R$ 45,00 | saldo não vira valor pago |
+| `tesouraria@paroquia.org.br` | e-mail com domínio multinível |
+| UUID | chave aleatória |
+| `+55 86 98852-1231` | telefone só conta com o `+55` |
+
+**Nota do harness:** o `VisionService` é carregado num contexto próprio, só para os extratores. Junto dos handlers, o `const VisionService` sombrearia o stub e o `ComprovanteHandler` passaria a chamar a API de OCR de verdade — foi o que aconteceu ao tentar o atalho.
 
 ### BL-15 — Efeito colateral em busca 🟡 (P) — ✅ **já estava resolvido** (confirmado em 19/09)
 A gravação saiu de `buscarDizimistaPorWhatsapp`. O comentário no código explica por que ela não pode voltar: `x_studio_partner_phone` é related e gravável, então um write ali propagaria para `res.partner.phone` — efeito colateral indevido numa função de leitura. A busca com e sem o nono dígito (BL-32) já encontra o registro sem precisar normalizar nada.
