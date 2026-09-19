@@ -32,8 +32,19 @@
  *    seu. Nada é gravado no Odoo.
  *
  * COMO RODAR (editor do Apps Script)
- *   testarPixNativo('5586988521231')        // usa o valor mensal do cadastro
- *   testarPixNativo('5586988521231', 25)    // força R$ 25,00
+ *   Basta selecionar `testarPixNativo` e apertar ▶ Executar. O botão do editor
+ *   NÃO passa argumentos, então sem nada ela usa a Script Property
+ *   `NUMERO_TESTE` — a mesma que o resto dos testes deste projeto usa.
+ *
+ *   Para configurá-la: ⚙️ Configurações do projeto → Propriedades do script →
+ *   Adicionar propriedade → `NUMERO_TESTE` = `5586988521231` (formato
+ *   internacional, sem o '+').
+ *
+ *   Do editor, dá também para chamar com argumento — mas aí é preciso usar
+ *   uma função sem parâmetros, porque o ▶ só roda essas:
+ *
+ *     testarPixNativo('5586988521231')        // usa o valor do cadastro
+ *     testarPixNativo('5586988521231', 25)    // força R$ 25,00
  *
  * COMO LER O RESULTADO — está no Logger, e é o que interessa reportar:
  *   ✅ HTTP 200            → funciona SEM PSP. Ver o card no aparelho e seguir
@@ -101,23 +112,33 @@ function _cpfValido(d) {
 /**
  * Envia um `order_details` com o BR Code que o bot já gera hoje.
  *
- * @param {string} numero - Destinatário, formato internacional sem '+'
+ * @param {string} [numero] - Destinatário, formato internacional sem '+'.
+ *   Omitido (é o caso do botão ▶ do editor, que não passa argumentos), usa a
+ *   Script Property `NUMERO_TESTE`.
  * @param {number} [valorForcado] - Em reais. Omitido, usa o valor do cadastro.
  */
 function testarPixNativo(numero, valorForcado) {
   Logger.log('\n💳 SONDA: order_details com o nosso próprio código PIX');
   Logger.log('━'.repeat(60));
 
-  if (!numero) {
-    Logger.log('❌ Informe o número de destino.');
-    Logger.log("   Exemplo: testarPixNativo('5586988521231')");
+  // O ▶ do editor roda a função sem argumentos. Em vez de falhar, cai na mesma
+  // Script Property que o resto dos testes deste projeto já usa.
+  const destino = numero || NUMERO_TESTE;
+
+  if (!destino) {
+    Logger.log('❌ Sem número de destino.');
+    Logger.log('   Configure a Script Property NUMERO_TESTE (⚙️ Configurações do');
+    Logger.log('   projeto → Propriedades do script), no formato 5586988521231,');
+    Logger.log("   ou chame testarPixNativo('5586988521231') de outra função.");
     return false;
   }
 
+  Logger.log(`📱 Destino: ${destino}${numero ? '' : '  (da Script Property NUMERO_TESTE)'}`);
+
   // ── 1. Os mesmos dados que a devolução real usaria ────────────────────────
-  const dizimista = OdooService.buscarDizimistaPorWhatsapp(numero);
+  const dizimista = OdooService.buscarDizimistaPorWhatsapp(destino);
   if (!dizimista) {
-    Logger.log(`❌ ${numero} não tem cadastro — a sonda usa os dados reais da comunidade.`);
+    Logger.log(`❌ ${destino} não tem cadastro — a sonda usa os dados reais da comunidade.`);
     Logger.log('   Cadastre o número antes, ou use um que já seja dizimista.');
     return false;
   }
@@ -163,7 +184,7 @@ function testarPixNativo(numero, valorForcado) {
   const payload = {
     messaging_product: 'whatsapp',
     recipient_type:    'individual',
-    to:                numero,
+    to:                destino,
     type:              'interactive',
     interactive: {
       type: 'order_details',
