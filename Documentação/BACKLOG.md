@@ -67,6 +67,7 @@
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
+| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | 🔄 **Em execução agendada** — fila abaixo, trilha A automática |
 
 ---
 
@@ -618,6 +619,80 @@ Se for cobrado como mensagem de serviço, anula o ganho inteiro e a decisão pas
 **Sonda pronta:** `testarPixNativoPago()`, depois de `testarPixNativo()`. Rodar `verificarConsumoMensagens()` antes e depois — se o contador de serviço subir, é cobrado. Atenção à janela de 24h: uma recusa pode ser só isso, não a ausência do recurso.
 
 **Aceite:** decidir, com o número medido, se o pedido é fechado ou fica pendente.
+
+---
+
+### BL-41 — Oferta como contribuição própria 🟠 (G) — 🔄 **em execução agendada desde 19/09/2026**
+
+**Origem:** comparação com o app Dizify, que separa dízimo de oferta. Decidido com o usuário em 19/09: oferta **vai para a comunidade**, **não exige cadastro**, e o registro usa **campo novo** em `x_devolucao` (não modelo separado).
+
+#### A decisão estrutural (opção 1, confirmada)
+
+`x_studio_comunidade` é hoje `related` a `x_studio_dizimista.x_studio_comunidade`, **stored e readonly**. Sem dizimista, a oferta gravaria sem comunidade — e a comunidade é o que diz para qual conta o dinheiro foi, e por onde os relatórios filtram.
+
+Três saídas foram avaliadas:
+
+1. **Tornar `x_studio_comunidade` gravável** ← escolhida. Modelo honesto: a oferta tem comunidade, ela só não chega por uma pessoa. Só 2 pontos de escrita a ajustar, e nenhuma das 6 consultas muda de nome.
+2. Segundo campo `x_studio_comunidade_oferta` — sem migração, mas empurra um `coalesce` para toda consulta futura, para sempre.
+3. "Dizimista fantasma" por comunidade — **rejeitada**: `buscarDizimistaPorWhatsapp` acharia o registro e trataria a pessoa como cadastrada (menu de dizimista, lembrete mensal, contagem do relatório). Mesma classe de erro do BL-39.
+
+**Feito agora porque todos os dados do Odoo são de teste.** Depois de 500 dizimistas reais, é outro animal.
+
+#### Como o código chega antes do schema
+
+O BL-26 já resolveu isso: `OdooService.campoExiste('x_devolucao', 'x_studio_conferencia_pix')`. Mesma técnica aqui — **todo código desta fila pergunta ao Odoo se o campo existe antes de usá-lo e degrada sozinho**. Assim a trilha A é mergeada e publicada sem depender da migração, e o comportamento novo liga quando a migração acontecer.
+
+#### 🔄 TRILHA A — automática (uma execução por hora)
+
+Cada execução pega **um** item, deixa o harness verde, abre o PR e mergeia. Marque aqui ao concluir.
+
+- [ ] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). Independente de tudo; ganho imediato, mesma 1 mensagem
+- [ ] **A2.** Script de criação dos campos no Odoo (`SetupCamposOferta.gs`), no padrão idempotente de `SetupCamposFamilia.gs`, **com modo de conferência** que lista o que mudaria sem gravar
+- [ ] **A3.** `OdooService.registrarDevolucao`: exige comunidade (lança erro se vazia), grava `tipo_contribuicao` e `telefone_ofertante` — atrás de `campoExiste`
+- [ ] **A4.** `FerramentasTeste.gs:166`: gerador de massa preenche os campos novos
+- [ ] **A5.** Leitura filtrada — 6 funções, 12 pontos de chamada (ver tabela abaixo), tudo atrás de `campoExiste`
+- [ ] **A6.** Menu novo: `[💰 Dízimo] [🎁 Oferta] [⋯ Outras opções]` + submenu em **lista** (4 itens não cabem em 3 botões)
+- [ ] **A7.** `ferramentas/flow-oferta.json` (comunidade + valor), validado por `valida-flow.js`, com `init-values` pré-preenchendo a comunidade de quem já é cadastrado
+- [ ] **A8.** `FlowHandler`: `TOKEN_OFERTA`, `_processarOferta`, `enviarFlowOferta` + estados novos
+- [ ] **A9.** Handler de oferta montando o card do BL-40 com a comunidade escolhida + fallback por conversa
+- [ ] **A10.** "Convidar alguém" → mensagem com link `wa.me` para encaminhar
+- [ ] **A11.** `FLUXOS.md`: novo fluxo, contagens e diagramas
+
+#### ⏸️ BLOQUEADO — depende de sonda
+
+- [ ] **A12.** Entrada com cabeçalho de imagem (boas-vindas + menu em 1 mensagem). **Não fazer** antes de S1: sem o resultado, não se sabe se a entrada melhora para 1 mensagem ou piora para 3
+
+#### 👤 TRILHA B — só você consegue fazer
+
+- [ ] **S1.** Sondar cabeçalho de **imagem** em mensagem de botões (lista só aceita cabeçalho de texto — disso há certeza; de botões, não)
+- [ ] **S2.** Rodar A2 em modo de conferência e **confirmar que os valores gravados sobrevivem** à remoção do `related`. Único passo irreversível
+- [ ] **S3.** Backfill `x_studio_tipo_contribuicao = Dízimo` nos registros existentes
+- [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
+- [ ] **S5.** `clasp push` + republicar o deployment
+
+#### As 12 chamadas do item A5
+
+| Função | Pontos de chamada | O que quebra sem filtro |
+|---|---|---|
+| `devolucoesDoMes` | `DevolucaoHandler:78, 194` | Aviso de duplicata dispara errado: quem ofertou levaria "você já devolveu este mês" |
+| `buscarDevolucoesDizimista` | `DevolucaoHandler:412, 469` | Histórico e a linha "última devolução" misturam oferta com dízimo |
+| `listarDevolucoesPorPeriodo` | `RelatorioHandler:427, 432` · `TesteRelatorio:115, 290, 346` | **Relatório do coordenador soma oferta como dízimo** |
+| `buscarDevolucoesPendentes` | `RelatorioHandler:789` | Fila de conferência mistura os dois |
+| `buscarDevolucaoDetalhada` | `RelatorioHandler:866` | Tela de detalhe não diz o que é |
+| `atualizarStatusDevolucao` | `RelatorioHandler:998, 1032` | Funciona, mas o log precisa registrar o tipo |
+
+⚠️ O item do relatório é o mais grave da fila: número errado não falha, só mente.
+
+#### Contagem esperada
+
+| Jornada | Mensagens |
+|---|---|
+| Dízimo, cadastrado | 2 (não muda) |
+| Oferta, cadastrado | 3 (formulário + card + resultado) |
+| Oferta, anônimo | 3 (o formulário já traz a comunidade) |
+| Contato Pastoral | 2 (submenu + cartão) |
+
+**Aceite:** oferta registrada com comunidade e sem dizimista; relatórios separando os dois; nenhuma devolução gravando sem comunidade.
 
 ---
 
