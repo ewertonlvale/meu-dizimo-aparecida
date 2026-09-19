@@ -64,7 +64,7 @@
 | BL-14 | Extração frágil de valor e chave PIX do OCR | 🟠 | M | ✅ Concluído (19/09) — heurística já refeita; entraram os 6 testes de regressão que faltavam |
 | BL-34 | Texto durante o formulário derruba para a conversa cedo demais | 🟡 | P | 📋 A decidir — falta dado de uso |
 | BL-35 | Uma pessoa podia gerar cobrança sem limite mandando mensagem | 🟠 | P | ✅ Concluído (18/09) — 12/min e 60/h por número, ajustáveis por Properties |
-| BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | 📋 Pedido em 18/09 — não iniciado |
+| BL-36 | Lista de bloqueio de telefones + detecção automática de spam | 🟠 | M | ✅ Parte 1 (19/09) — lista + portão + administração. Detecção só MARCA; bloqueio automático depende de dado que não existe |
 | BL-37 | Enxugar a devolução, o único fluxo recorrente | 🟠 | M | ✅ Concluído (18/09) — **6 → 3** mensagens; a conta cai 60% |
 | BL-38 | Entrada do bot: boas-vindas unificada e menu decidido pelo número | 🟠 | M | ✅ Concluído (18/09) — 4 → 2 mensagens; 6 → 2 para quem já é dizimista |
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
@@ -403,7 +403,7 @@ de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
 
 ---
 
-### BL-36 — Lista de bloqueio de telefones e detecção automática de spam 🟠 (M) — 📋 **pedido em 18/09/2026, não iniciado**
+### BL-36 — Lista de bloqueio de telefones e detecção automática de spam 🟠 (M) — ✅ **parte 1 concluída em 19/09/2026**
 **Arquivos previstos:** `Utils.gs` (junto de `excedeuTaxa`) · `Webhook.gs` · `Setup.gs` (administração)
 
 Segundo nível sobre o freio do **BL-35**. O freio corta o **laço** — 12 por minuto, 60 por hora — mas zera a cada janela: quem insiste volta a consumir resposta indefinidamente, em ondas. Falta poder dizer "este número não fala mais com o bot".
@@ -425,6 +425,18 @@ Sinais possíveis, do mais para o menos confiável:
 **Recomendação para quando for feito:** começar com **sugestão, não bloqueio automático**. O sistema marca o número como suspeito e registra; a inclusão na lista é humana. Só depois de ver os candidatos reais por um tempo é que dá para saber se algum critério é seguro o bastante para agir sozinho — e esse dado não existe hoje.
 
 **Aceite:** um número na lista não gera resposta nenhuma; nenhum dizimista ativo entra na lista sem decisão humana.
+
+#### ✅ Implementado em 19/09
+
+**Onde guardar — decidido:** uma propriedade por número (`bloqueado_<numero>`), não uma lista JSON numa chave só. Mesmo raciocínio do BL-22: com chave por usuário, cada execução escreve só a sua, some o read-modify-write compartilhado e o lock fica desnecessário. Numa paróquia a lista tem punhados de números, longe dos 500 KB do store. O Odoo ficou de fora: ~225 ms por mensagem recebida não se paga para um dado que quase não cresce.
+
+**O portão** (`Utils.estaBloqueado`) roda no `_processarMensagemWebhook` **antes do freio de taxa** — de propósito: o freio ainda responde uma vez por hora com o aviso de pausa, e para quem está bloqueado nem isso deve sair. O resultado vai para o cache, com TTL curto quando não está bloqueado, para um bloqueio novo valer em minutos.
+
+**Administração** (`Setup.gs`): `bloquearNumero(numero, motivo)`, `desbloquearNumero`, `listarBloqueados`, `listarSuspeitos`, `limparSuspeitos`. O `bloquearNumero` **avisa se o número for de um dizimista cadastrado** — não impede, porque há casos legítimos, mas quem bloqueia precisa saber que aquela pessoa vai parar de receber lembretes e não conseguirá devolver, sem nenhum aviso.
+
+**Parte 2 — detecção automática: marcada, não automatizada.** Seguindo a recomendação deste próprio item. `Utils.marcarSuspeito` registra quantos **dias distintos** o número estourou o freio; a partir de 3, o log avisa que há candidato. **Nada é bloqueado sozinho.** A razão continua valendo: um falso positivo cala um dizimista em silêncio, o sintoma não aponta para a causa, e não existe dado real sobre qual critério seria seguro. O `listarSuspeitos()` existe justamente para produzir esse dado.
+
+⏭️ **PULADO (execução automática):** o bloqueio automático. Precisa de meses de `listarSuspeitos()` com tráfego real antes de qualquer critério agir sozinho — é decisão que depende de dado que ainda não existe, não de código.
 
 ---
 

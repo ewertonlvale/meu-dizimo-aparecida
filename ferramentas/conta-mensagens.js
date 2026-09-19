@@ -116,7 +116,13 @@ function montarContexto(cenario) {
     },
     Logger: { log() {} },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k) => (cenario.propriedades || {})[k] || null,
+        getProperties: () => cenario.propriedades || {},
+        setProperty: () => {}, deleteProperty: () => {}, setProperties: () => {}
+      })
+    },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
   };
@@ -691,6 +697,26 @@ const TELEFONES = [
     const ok = obtido === esperado;
     if (!ok) falhas++;
     console.log(`${ok ? '✅' : '❌'} ${oQue.padEnd(24)} ${JSON.stringify(entrada).padEnd(22)} → ${obtido || '(vazio)'}${ok ? '' : `  (esperado ${esperado})`}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('⛔ Lista de bloqueio — BL-36\n');
+
+// A regra que não pode quebrar: bloqueado não recebe NADA. Nem o aviso de
+// pausa do freio de taxa — por isso o portão vem antes dele.
+{
+  const casos = [
+    { nome: 'Número bloqueado não recebe resposta nenhuma', bloqueado: true,  espera: 0 },
+    { nome: 'Número normal continua sendo atendido',        bloqueado: false, espera: 1 }
+  ];
+  for (const c of casos) {
+    enviadas = [];
+    const ctx = montarContexto({ dizimista: DIZIMISTA, propriedades: c.bloqueado ? { 'bloqueado_55': '{}' } : {} });
+    if (!ctx.Utils.estaBloqueado('55')) ctx.MenuHandler.menuDizimista('55', DIZIMISTA);
+    const ok = enviadas.length === c.espera;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${c.nome}${ok ? '' : `  (esperava ${c.espera}, veio ${enviadas.length})`}`);
   }
 }
 
