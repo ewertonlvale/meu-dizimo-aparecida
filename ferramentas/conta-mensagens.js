@@ -87,7 +87,13 @@ function montarContexto(cenario) {
       registra('flow', 'formulário de cadastro');
       return true;
     },
-    enviarFlowMembro: () => false,
+    // Era fixo em `false`, então o formulário de membro NUNCA saía no teste e
+    // só o caminho por conversa era exercitado. O cenário decide.
+    enviarFlowMembro: () => {
+      if (!cenario.flowMembroLigado) return false;
+      registra('flow', 'formulário de membro');
+      return true;
+    },
     enviarFlowOferta: () => {
       if (!cenario.flowOfertaLigado) return false;
       registra('flow', 'formulário de oferta');
@@ -475,6 +481,34 @@ const CENARIOS = [
     roda: ctx => ctx.OfertaHandler.processarComunidade('55', 'ofc_3', 'São José'),
     esperado: 1,
     porque: 'vai direto ao valor'
+  },
+  {
+    nome: 'Membro: escreveu com o formulário aberto — lembrete, não as 14 mensagens',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               estado: 'AGUARDANDO_FLOW_CADASTRO',
+               sessao: { cadastrandoMembro: true } },
+    roda: ctx => ctx.Router.rotear('55', { type: 'text', text: { body: 'e aí?' } }),
+    esperado: 1,
+    porque: 'BL-44: cadastrar familiar por conversa é a mesma coisa que ' +
+            'cadastrar dizimista por conversa — campo por campo'
+  },
+  {
+    nome: 'Membro: formulário fora do ar e conversa desligada',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               flowMembroLigado: false },
+    roda: ctx => ctx.CadastroHandler.iniciarCadastroMembro('55'),
+    esperado: 1,
+    porque: 'o dizimista recebe desculpas e o contato da pastoral, não silêncio'
+  },
+  {
+    nome: 'Membro: com a CONVERSA ligada, o passo a passo volta',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               flowMembroLigado: false,
+               propriedades: { CADASTRO_CONVERSA_ATIVO: 'true' } },
+    roda: ctx => ctx.CadastroHandler.iniciarCadastroMembro('55'),
+    esperado: 1,
+    porque: 'a primeira pergunta do passo a passo — o interruptor é uma trava, ' +
+            'não uma remoção'
   },
   {
     nome: 'Escreveu com o formulário aberto — lembrete, não as 19 mensagens',

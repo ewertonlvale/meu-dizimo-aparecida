@@ -72,7 +72,7 @@
 | BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
 | BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
-| BL-44 | Cadastro por conversa desligado: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
+| BL-44 | Cadastro e membro por conversa desligados: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
 
 ---
 
@@ -744,7 +744,9 @@ publicar, quando a edição for sua. Não envia mensagem nem toca o Odoo.
 
 **A armadilha que isto criou, e a trava.** A conversa era a rede embaixo do formulário. Sem ela, desligar o formulário deixaria a paróquia **sem caminho de cadastro nenhum, em silêncio** — e `desativarFlowCadastro()` ainda dizia "volta ao cadastro por conversa". As duas funções passam a avisar quando a outra está desligada, e `CadastroHandler.iniciar` grita no log (`console.error`) quando o formulário falha sem rede, em vez de deixar a pessoa sem resposta: ela recebe um pedido de desculpas e o contato da pastoral.
 
-**Membro fica de fora, de propósito.** Adicionar familiar por conversa continua valendo: quem chega nesse ponto já é dizimista e já passou pelo formulário uma vez, então não é o caminho de entrada que se quer proteger.
+**Membro entrou junto.** Adicionar familiar por conversa são 14 mensagens contra 4 — a mesma coisa que cadastrar dizimista por conversa, campo por campo. Mesmo interruptor, porque desligar um e deixar o outro seria uma distinção sem diferença.
+
+**Devolução e oferta ficaram de fora, por motivos diferentes.** A devolução não tem conversa alternativa: são 2 mensagens (QR com os dados na legenda + copia-e-cola) e ponto. Já a oferta **tem**, mas são **5 mensagens contra 3** — economia de 2, não de 15 — e desligá-la significa perder a oferta quando o formulário falhar. Cadastro pode esperar; oferta é um momento.
 
 **O `Router.gs` entrou no arnês.** Ficava de fora, e por isso o ramo que decide tudo isso não era executado por teste nenhum. Entraram quatro verificações: o lembrete, o interruptor devolvendo o caminho antigo, o formulário fora do ar sem rede, e uma regra de conteúdo que exige as duas saídas no lembrete — sem elas ele vira um muro.
 

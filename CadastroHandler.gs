@@ -166,6 +166,21 @@ const CadastroHandler = {
       return;
     }
 
+    // Mesmo interruptor do cadastro (BL-44): as duas conversas são a mesma
+    // coisa — cadastrar gente perguntando campo por campo. São 14 mensagens
+    // aqui, contra 4 pelo formulário.
+    if (!this.conversaAtiva()) {
+      console.error(`❌ [Membro] Formulário indisponível e conversa desligada — ` +
+                    `${from} não consegue adicionar familiar. Confira FLOW_ID_MEMBRO ` +
+                    `e FLOW_CADASTRO_ATIVO.`);
+      StateManager.limparDados(from);
+      MenuHandler.lembrarCadastroPendente(from,
+        '🙏 *Desculpe!* Não consegui abrir o formulário para adicionar seu ' +
+        'familiar agora.\n\nTente de novo em alguns minutos. Se continuar ' +
+        'assim, a pastoral da sua comunidade cadastra por lá. 💛');
+      return;
+    }
+
     Utils.enviarSimples(from,
       `👨‍👩‍👧 *Adicionar membro da família*\n\n` +
       `Vamos cadastrar um familiar na sua comunidade *${comunidadeNome || '—'}*.\n\n` +

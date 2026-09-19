@@ -381,15 +381,19 @@ const Router = {
       // dízimo?", e tratava os dois como desistência (BL-34). Lembrar em vez
       // de decidir não chuta a intenção de ninguém.
       //
-      // Vale só para o CADASTRO. Adicionar membro segue caindo na conversa:
-      // quem está nesse ponto já é dizimista e já passou pelo formulário uma
-      // vez, então não é o caminho de entrada que se quer proteger.
-      if (!ehMembro && !CadastroHandler.conversaAtiva()) {
-        MenuHandler.lembrarCadastroPendente(from,
-          '🙏 *Falta pouco para concluir seu cadastro!*\n\n' +
-          'Toque em *Preencher cadastro*, na mensagem do formulário aqui na ' +
-          'conversa. Leva menos de um minuto. 💛\n\n' +
-          'Se preferir, dá para fazer isto agora:');
+      // Vale para os DOIS formulários — cadastro e membro. São a mesma coisa:
+      // cadastrar gente perguntando campo por campo, 19 e 14 mensagens contra
+      // 4 do formulário.
+      if (!CadastroHandler.conversaAtiva()) {
+        MenuHandler.lembrarCadastroPendente(from, ehMembro
+          ? '🙏 *Falta pouco para adicionar seu familiar!*\n\n' +
+            'Toque em *Preencher cadastro*, na mensagem do formulário aqui na ' +
+            'conversa. Leva menos de um minuto. 💛\n\n' +
+            'Se preferir, dá para fazer isto agora:'
+          : '🙏 *Falta pouco para concluir seu cadastro!*\n\n' +
+            'Toque em *Preencher cadastro*, na mensagem do formulário aqui na ' +
+            'conversa. Leva menos de um minuto. 💛\n\n' +
+            'Se preferir, dá para fazer isto agora:');
         return;
       }
 
