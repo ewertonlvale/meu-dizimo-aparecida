@@ -70,7 +70,7 @@
 | BL-39 | Cadastro duplicado: o mesmo número virava dois dizimistas | 🔴 | P | ✅ Concluído (18/09) — guarda no ponto de gravação, com lock |
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
 | BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
-| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Trilha A completa (19/09)** — PR #44. Falta a trilha B: migração do Odoo, 2 Script Properties e 2 sondas |
+| BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
 
 ---
 
@@ -690,10 +690,10 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S3.** ✅ **Backfill feito em 19/09, 09:27** — 15 registros marcados como `dizimo`, e a varredura final voltou 0 pendentes. (Os ~5.150 restantes eram massa de teste, apagada pelo usuário entre o passo 2 e este.) O sucesso da gravação **confirma que as opções do selection foram criadas certo** via `selection_ids` — parte que não dava para testar fora do Odoo
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
 - [x] **S5a.** `clasp push` ✅ (as funções do setup rodaram, logo o código novo está lá)
-- [ ] **S5b.** ⚠️ **Republicar o deployment** — o `doPost` mudou (portão de bloqueio do BL-36, roteamento da oferta). Sem isto, nada do fluxo novo responde no WhatsApp
+- [x] **S5b.** ✅ 19/09 — deployment republicado
 - [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
-- [ ] **S7.** Publicar `ferramentas/flow-oferta.json` no WhatsApp Manager e guardar o id em **`FLOW_ID_OFERTA`** (sem ela, a oferta usa a conversa)
-- [ ] **S9.** Rodar `criarCamposOferta()` de novo — o campo `x_studio_nome_ofertante` foi acrescentado em 19/09. É idempotente: só cria o que falta
+- [x] **S7.** ✅ 19/09 — formulário de oferta publicado e `FLOW_ID_OFERTA` configurado. Republicado depois da correção da comunidade pré-selecionada
+- [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
@@ -733,6 +733,28 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 **Nada mais na fila é implementável sem você.** O que resta depende de credencial de Odoo, de sonda no aparelho, ou de dado que ainda não foi coletado.
 
 **Um achado que vale a leitura:** três vezes nesta madrugada um stub do harness escondeu justamente a lógica sob teste (`criarDizimista`/BL-39, `registrarDevolucao`/A3, `devolucoesDoMes`/A5). E ao adicionar os testes do BL-14, carregar o `VisionService` junto dos handlers fez o `const` dele sombrear o stub — o `ComprovanteHandler` passou a chamar a API de OCR de verdade e três cenários quebraram. O padrão é consistente o bastante para merecer atenção: **stub cômodo esconde o que importa testar.**
+
+---
+
+#### ✅ FECHADO — 19/09/2026, testado em produção
+
+Migração do Odoo feita e conferida (5150 → 5150), campos criados, formulário publicado, deployment republicado, fluxo testado de ponta a ponta pelo usuário.
+
+**Três correções que só apareceram no uso real, depois da trilha A:**
+
+| O que | Como apareceu |
+|---|---|
+| `helper-text` não vale em `Dropdown` | recusa da Meta ao publicar. Virou **regra 5** do `valida-flow.js` |
+| Comunidade pré-selecionada | o usuário reparou que induzia a erro. O código era pior: caía em `comunidades[0].id` para quem **não** era cadastrado — a primeira da lista, arbitrária, decidindo para onde ia o dinheiro. Virou **regra 6** |
+| Nome de quem oferta | sem ele, a oferta chegava à secretaria como telefone solto |
+
+**E um bug que não era do BL-41**, encontrado no Cloud Logging durante os testes: `Utils._mesAtual` era chamada em 4 lugares e nunca existiu (**BL-42**). Toda a medição de consumo — mensagens e cota de UrlFetch — nunca funcionou em produção, porque `registrarConsumoExterno` lançava na primeira linha do `try`. Três `catch` engoliam o erro.
+
+**O que ficou aberto**, e não depende de código:
+
+- **S1** — sonda do cabeçalho de imagem, que desbloqueia o **A12** (entrada de 2 → 1 mensagem)
+- **S4** — custo do `order_status` (BL-40). **Só agora faz sentido medir**: antes do BL-42 o contador estava zerado
+- **S6** — `WHATSAPP_NUMERO_EXIBICAO`, para o link do convite sair clicável
 
 ---
 
