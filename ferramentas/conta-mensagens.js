@@ -860,7 +860,8 @@ const REGRAS_DE_CONTEUDO = [
     confere: msgs => {
       const c = msgs.find(m => m.tipo === 'contato');
       if (!c) return 'não saiu cartão de contato';
-      const faltam = ['João da Silva', '+5586988521231', 'São José']
+      // DDD 86 não está em DDD_MANTEM_NONO, então o provável é sem o 9.
+      const faltam = ['João da Silva', '+558688521231', 'São José']
         .filter(t => !c.texto.includes(t));
       return faltam.length ? `faltou no cartão: ${faltam.join(', ')}` : null;
     }
@@ -884,7 +885,7 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
-    nome: 'wa_id NÃO confirmado → o cartão manda as duas formas do número',
+    nome: 'wa_id NÃO confirmado → UM número só, o provável para o DDD',
     cenario: {
       dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
       contatos: [{ nome: 'João da Silva', whatsapp: '(86) 98852-1231' }]
@@ -893,12 +894,32 @@ const REGRAS_DE_CONTEUDO = [
     confere: msgs => {
       const c = msgs.find(m => m.tipo === 'contato');
       if (!c) return 'não saiu cartão de contato';
-      // O nono dígito não se adivinha: `variantesNumeroBR` avisa que o
-      // `provavel` é heurística por DDD e quebraria os números em que o 9 está
-      // certo. Mandando as duas, o WhatsApp reconhece a que existe.
-      const faltam = ['"wa_id":"5586988521231"', '"wa_id":"558688521231"']
-        .filter(t => !c.texto.includes(t));
-      return faltam.length ? `faltou a variante: ${faltam.join(', ')}` : null;
+      // Mandar as duas formas garantia que uma abrisse a conversa, mas o
+      // cartão chegava com o mesmo telefone repetido e um deles quebrado.
+      // Quem recebe não sabe que existe nono dígito.
+      const ids = (c.texto.match(/"wa_id":"\d+"/g) || []);
+      if (ids.length !== 1) return `mandou ${ids.length} números, devia mandar 1`;
+      // DDD 86 está fora de DDD_MANTEM_NONO: a conta antiga é sem o 9.
+      return c.texto.includes('"wa_id":"558688521231"')
+        ? null
+        : `mandou ${ids[0]} — no DDD 86 o provável é sem o nono dígito`;
+    }
+  },
+  {
+    nome: 'DDD que MANTÉM o nono dígito recebe a forma com 9',
+    cenario: {
+      dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+      // São Paulo recebeu o 9 antes de o WhatsApp existir por lá, então as
+      // contas nasceram com ele. Uma regra fixa "tira o 9" quebraria aqui.
+      contatos: [{ nome: 'Ana Paulista', whatsapp: '(11) 98852-1231' }]
+    },
+    roda: ctx => ctx.MenuHandler.infoSecretaria('55'),
+    confere: msgs => {
+      const c = msgs.find(m => m.tipo === 'contato');
+      if (!c) return 'não saiu cartão de contato';
+      return c.texto.includes('"wa_id":"5511988521231"')
+        ? null
+        : 'no DDD 11 o provável é COM o nono dígito';
     }
   },
   {
