@@ -649,7 +649,7 @@ Cada execução trabalha **quantos itens conseguir**, em ordem, deixando o harne
 Se um item exigir decisão que não está escrita aqui: **não chute — pule**, registre uma linha `⏭️ PULADO (execução automática):` com a pergunta e as opções, e siga para o próximo.
 
 - [x] **A1.** `_enviarContatos` → mensagem tipo `contacts` (cartão nativo com "Conversar"). ✅ 19/09 — contexto da comunidade vai no campo de organização, dentro do cartão, para o caminho continuar em 1 mensagem; texto antigo mantido como reserva se a Meta recusar
-- [ ] **A2.** Script de criação dos campos no Odoo (`SetupCamposOferta.gs`), no padrão idempotente de `SetupCamposFamilia.gs`, **com modo de conferência** que lista o que mudaria sem gravar
+- [x] **A2.** `SetupCamposOferta.gs`. ✅ 19/09 — 4 funções separadas por risco: `conferirMigracaoOferta()` (só lê) → `criarCamposOferta()` (aditivo) → `tornarComunidadeGravavel()` (⚠️ travado por `MODO_TESTE`, mede a contagem antes e depois) → `backfillTipoContribuicao()`
 - [ ] **A3.** `OdooService.registrarDevolucao`: exige comunidade (lança erro se vazia), grava `tipo_contribuicao` e `telefone_ofertante` — atrás de `campoExiste`
 - [ ] **A4.** `FerramentasTeste.gs:166`: gerador de massa preenche os campos novos
 - [ ] **A5.** Leitura filtrada — 6 funções, 12 pontos de chamada (ver tabela abaixo), tudo atrás de `campoExiste`
@@ -667,8 +667,8 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 #### 👤 TRILHA B — só você consegue fazer
 
 - [ ] **S1.** Sondar cabeçalho de **imagem** em mensagem de botões (lista só aceita cabeçalho de texto — disso há certeza; de botões, não)
-- [ ] **S2.** Rodar A2 em modo de conferência e **confirmar que os valores gravados sobrevivem** à remoção do `related`. Único passo irreversível
-- [ ] **S3.** Backfill `x_studio_tipo_contribuicao = Dízimo` nos registros existentes
+- [ ] **S2.** No editor do Apps Script, nesta ordem: `conferirMigracaoOferta()` (anote quantas devoluções têm comunidade) → `criarCamposOferta()` → `MODO_TESTE='true'` → `tornarComunidadeGravavel()` (ele mesmo compara a contagem e grita se divergir) → `conferirMigracaoOferta()` de novo. Único passo irreversível
+- [ ] **S3.** `backfillTipoContribuicao()` — sem ele, os registros antigos ficam com tipo nulo e somem dos relatórios quando o filtro entrar
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
 - [ ] **S5.** `clasp push` + republicar o deployment
 
