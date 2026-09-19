@@ -77,6 +77,7 @@
 | BL-46 | Conferir o comprovante contra o cadastro: nome, chave e banco | 🟠 | M | ✅ Concluído (19/09) — extração ancorada em quem RECEBEU; alerta só no totalmente divergente |
 | BL-47 | Cartão de contato mostrava o mesmo telefone 2x, e o primeiro não abria | 🟡 | P | ✅ Concluído (19/09) — um número só, o provável para o DDD |
 | BL-48 | BR Code levava a chave PIX com máscara, fora da especificação | 🔴 | P | ✅ Concluído (19/09) — CPF/CNPJ em dígitos, telefone em E.164. O BL-40 passou porque foi testado com e-mail |
+| BL-49 | A chave extraída podia ser o CNPJ da instituição, no rodapé | 🔴 | P | ✅ Concluído (19/09) — busca ancorada no bloco de quem recebeu. 6 layouts reais viraram teste |
 
 ---
 
@@ -797,6 +798,29 @@ Então a extração passou a ser **ancorada**: acha o rótulo que abre o bloco d
 | layout não reconhecido | sim | não |
 
 **A frase de desfecho virou um lugar só.** Estava escrita em três (individual, família e oferta) e já divergia entre elas.
+
+
+### BL-49 — A chave extraída podia ser o CNPJ da instituição 🔴 (P) — ✅ concluído em 19/09/2026
+**Arquivos:** `VisionService.gs` (`_blocoDoRecebedor`, `_chaveEmLinhas`, `_nomeNoBloco`)
+
+**O achado.** Num comprovante do Nubank, `_extrairChavePix` devolvia `18.236.120/0001-58` — o CNPJ da **Nu Pagamentos S.A.**, do rodapé. O bloco "Destino" do Nubank não traz Chave Pix, e a varredura descia o comprovante inteiro até achar algo com formato de chave.
+
+**Por que isso era grave, e não apenas errado.** Desde o BL-46, chave divergente **avisa a pessoa** de que o pagamento dela parece estar errado. Todo comprovante do Nubank sem chave no destino cairia nisso — acusação falsa contra quem pagou certo, no momento em que ela acabou de devolver o dízimo. Foi encontrado antes de ir para produção, com comprovantes reais.
+
+**A correção.** A chave passa a ser procurada **só no bloco de quem recebeu**. Quando o bloco existe e não tem chave, a resposta é `null` — "não há chave para conferir" — e **não** se cai para o resto do comprovante, que é justamente onde mora o rodapé.
+
+**Quatro layouts, quatro defeitos diferentes:**
+
+| comprovante | o que quebrava |
+|---|---|
+| Nubank sem chave no destino | o CNPJ do rodapé virava a chave |
+| Banco do Brasil | Agência e Conta empurram a Chave Pix para fora da janela de 8 linhas (virou 14); e a chave vem sem pontuação, em linha separada do rótulo |
+| Inter empresas | o rótulo "Quem recebeu" tem duas palavras e só letras — saía como se fosse o nome |
+| Nubank em geral | `Nome THALLES BOITEUX VALE` sem dois-pontos deixava o rótulo colado no nome |
+
+**CPF/CNPJ sem pontuação só é aceito depois do rótulo "Chave Pix".** Número de conta tem o mesmo tamanho, e aceitar em qualquer linha traria conta por chave.
+
+**Os seis comprovantes viraram teste**, transcritos como o OCR os entrega. Um exemplo genérico não teria encontrado nenhum destes.
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 
