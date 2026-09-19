@@ -386,7 +386,7 @@ const FlowHandler = {
    * @param {string} from
    * @returns {boolean} true se o Flow foi enviado.
    */
-  enviarFlowCadastro(from) {
+  enviarFlowCadastro(from, opcoes = {}) {
     const props  = PropertiesService.getScriptProperties();
     const flowId = props.getProperty('FLOW_ID_CADASTRO');
 
@@ -418,7 +418,7 @@ const FlowHandler = {
     if (!comunidades.length) return false;
 
     let modo = props.getProperty('FLOW_MODO_CADASTRO') || 'published';
-    let resposta = this._postarFlow(from, flowId, comunidades, modo);
+    let resposta = this._postarFlow(from, flowId, comunidades, modo, opcoes);
 
     // O estado do Flow muda na Meta, sem avisar nada aqui. Em vez de exigir que
     // quem chama acerte o modo — e receba um 131009 quando errar — trocamos e
@@ -429,7 +429,7 @@ const FlowHandler = {
       modo = modo === 'draft' ? 'published' : 'draft';
       console.log(`ℹ️ [Flow] A Meta recusou o modo anterior — o Flow está como ` +
                   `'${modo}'. Reenviando e guardando.`);
-      resposta = this._postarFlow(from, flowId, comunidades, modo);
+      resposta = this._postarFlow(from, flowId, comunidades, modo, opcoes);
     }
 
     const enviou = !!resposta && resposta.getResponseCode() === 200;
@@ -667,7 +667,15 @@ const FlowHandler = {
    * @returns {GoogleAppsScript.URL_Fetch.HTTPResponse|null}
    * @private
    */
-  _postarFlow(from, flowId, comunidades, modo) {
+  _postarFlow(from, flowId, comunidades, modo, opcoes = {}) {
+    // Cabeçalho de IMAGEM (BL-41 · A12): funde as boas-vindas e o formulário
+    // numa mensagem só no primeiro contato. Só por LINK — a sonda S10 mostrou
+    // que o flow recusa `image.id` com "header image must contain link",
+    // embora a mensagem de botões aceite o id.
+    const cabecalho = opcoes.imagemUrl
+      ? { type: 'image', image: { link: opcoes.imagemUrl } }
+      : { type: 'text',  text: '💛 Cadastro de Dizimista' };
+
     return Utils._post({
       messaging_product: 'whatsapp',
       recipient_type:    'individual',
@@ -675,8 +683,9 @@ const FlowHandler = {
       type:              'interactive',
       interactive: {
         type:   'flow',
-        header: { type: 'text', text: '💛 Cadastro de Dizimista' },
-        body:   { text: 'Preencha seus dados de uma vez só. Leva menos de um minuto. 💛' },
+        header: cabecalho,
+        body:   { text: opcoes.texto ||
+                        'Preencha seus dados de uma vez só. Leva menos de um minuto. 💛' },
         footer: { text: 'Com carinho, Cidinha 💛' },
         action: {
           name: 'flow',

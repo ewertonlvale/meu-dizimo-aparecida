@@ -37,7 +37,7 @@ const CadastroHandler = {
    *   quando quem chamou já consultou. Evita a segunda ida ao Odoo no caminho
    *   do primeiro contato, que passa por `MenuHandler.entrada`.
    */
-  iniciar(from, jaBuscado) {
+  iniciar(from, jaBuscado, opcoes = {}) {
     const dizimistaExistente = jaBuscado !== undefined
       ? jaBuscado
       : OdooService.buscarDizimistaPorWhatsapp(from);
@@ -60,10 +60,18 @@ const CadastroHandler = {
     // NÃO é legado esperando remoção: é o destino de quem abre o formulário e
     // desiste, de quem está num aparelho que não o renderiza e de quem cai na
     // validação do servidor.
-    if (FlowHandler.enviarFlowCadastro(from)) {
+    // `opcoes` carrega o cabeçalho de imagem e o texto fundido do primeiro
+    // contato (BL-41 · A12). Vazio no resto dos casos, e aí o formulário sai
+    // com o cabeçalho de texto de sempre.
+    if (FlowHandler.enviarFlowCadastro(from, opcoes)) {
       console.log(`📋 [Cadastro] ${from} recebeu o formulário — conversa em espera`);
       return;
     }
+
+    // O formulário não saiu (desligado, sem id, sem comunidade). Se as
+    // boas-vindas iam junto dele, elas ainda não foram ditas — e a pessoa
+    // começaria a conversa sem nunca ter sido cumprimentada.
+    if (opcoes.boasVindas) MenuHandler.boasVindas(from);
 
     const numeroFormatado = Utils.formatarNumeroExibicao(from);
 

@@ -344,6 +344,7 @@ const MenuHandler = {
     }
 
     if (dizimista) {
+      // Mensagem de BOTÕES: cabeçalho por media ID (sonda S1).
       const imagemId = MediaService.mediaIdDoAvatar();
       if (imagemId) {
         const nome = dizimista.x_name || 'Dizimista';
@@ -351,13 +352,50 @@ const MenuHandler = {
           imagemId,
           texto: this._textoBoasVindasDizimista(nome)
         });
-        console.log('✅ [A12] Primeiro contato em UMA mensagem');
+        console.log('✅ [A12] Primeiro contato em UMA mensagem (dizimista)');
         return;
       }
+      this.boasVindas(from);
+      this.entrada(from, dizimista);
+      return;
+    }
+
+    // Número novo. Mensagem de FLOW: cabeçalho por URL, não por media ID — a
+    // sonda S10 mostrou que o flow recusa `image.id` e exige `image.link`.
+    //
+    // As boas-vindas viajam DENTRO do formulário, como `opcoes`, em vez de
+    // virem antes dele. Se o formulário não sair, `CadastroHandler.iniciar` as
+    // manda antes de começar a conversa — por isso `boasVindas: true` vai
+    // junto. Mandá-las aqui e só então tentar o formulário custaria duas
+    // mensagens sempre, que é exatamente o que o A12 remove.
+    const imagemUrl = MediaService.urlDoAvatar();
+    if (imagemUrl) {
+      CadastroHandler.iniciar(from, dizimista, {
+        imagemUrl,
+        texto: this._textoBoasVindasCadastro(),
+        boasVindas: true
+      });
+      return;
     }
 
     this.boasVindas(from);
     this.entrada(from, dizimista);
+  },
+
+  /**
+   * Boas-vindas de quem chega pela primeira vez e ainda não é dizimista,
+   * fundidas com o convite do formulário (BL-41 · A12).
+   *
+   * As duas frases vinham em mensagens separadas — a legenda do avatar e o
+   * corpo do formulário. Juntas num balão só, o convite fica logo abaixo da
+   * apresentação, que é a ordem em que a pessoa lê de qualquer jeito.
+   * @private
+   */
+  _textoBoasVindasCadastro() {
+    return '👋 *Olá! Sou a Cidinha*, assistente virtual da Pastoral do Dízimo! 💛\n\n' +
+           '🙏 *Bem-vindo(a) ao Meu Dízimo!*\n\n' +
+           'Para começar, preencha seus dados de uma vez só. ' +
+           'Leva menos de um minuto. 💛';
   },
 
   /**

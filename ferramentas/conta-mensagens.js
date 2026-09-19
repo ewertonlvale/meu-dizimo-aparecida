@@ -79,9 +79,13 @@ function montarContexto(cenario) {
   };
 
   const FlowHandler = {
-    enviarFlowCadastro: () => {
+    // O tipo distingue o formulário que carrega as boas-vindas do que não
+    // carrega: é a diferença entre a entrada de número novo em 1 mensagem e
+    // em 2 (A12), e sem isso nenhum teste veria a economia.
+    enviarFlowCadastro: (from, opcoes = {}) => {
       if (!cenario.flowLigado) return false;
-      registra('flow', 'formulário de cadastro');
+      registra(opcoes.imagemUrl ? 'flow+imagem' : 'flow',
+               opcoes.texto || 'formulário de cadastro');
       return true;
     },
     enviarFlowMembro: () => false,
@@ -192,6 +196,13 @@ function montarContexto(cenario) {
     enviarImagemFixa:   (to, id, legenda)  => registra('imagem+legenda', legenda),
     // Sem avatar no Odoo não há id — é o que faz o A12 cair no caminho antigo.
     mediaIdDoAvatar:    () => (cenario.temAvatar ? 'MEDIA_ID' : null),
+    // Sem AVATAR_URL não há cabeçalho no flow — e a entrada de número novo
+    // volta a custar 2. O cenário controla as duas pontas separadamente
+    // porque elas falham por motivos diferentes: uma é o avatar no Odoo, a
+    // outra é uma Script Property que alguém precisa configurar.
+    urlDoAvatar:        () => (cenario.temUrlAvatar === false
+                                ? null
+                                : 'https://exemplo/avatar.png'),
     enviarImagemBase64: (to, b64, caption) => { registra('imagem+legenda', caption); return {}; },
     baixarArquivo:      () => ({ base64: 'BASE64DOCOMPROVANTE' })
   });
@@ -283,9 +294,24 @@ const CENARIOS = [
     nome: 'Primeiro contato — número NOVO, formulário ligado',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 1,
+    porque: 'A12 completo: avatar, boas-vindas e o formulário num balão só. ' +
+            'Eram 4, depois 2. No flow o cabeçalho vai por URL, não por id.'
+  },
+  {
+    nome: 'Primeiro contato — número NOVO, sem AVATAR_URL configurada',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, temUrlAvatar: false },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
     esperado: 2,
-    porque: 'boas-vindas + formulário. O A12 não vale aqui: se a mensagem de ' +
-            'flow aceita cabeçalho de imagem, ninguém testou (sonda S10).'
+    porque: 'sem URL pública não há cabeçalho no flow — volta às 2 de sempre'
+  },
+  {
+    nome: 'Primeiro contato — número NOVO, com URL mas formulário desligado',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: false },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    esperado: 2,
+    porque: 'as boas-vindas iam DENTRO do formulário; sem ele, são ditas ' +
+            'antes da conversa — a pessoa não pode começar sem ser cumprimentada'
   },
   {
     nome: 'Primeiro contato — número NOVO, formulário desligado',
@@ -491,6 +517,23 @@ const REGRAS_DE_BOTAO = [
 // As fusões do BL-37 só valem se NADA sair da tela. Cada regra abaixo guarda
 // uma informação que antes tinha mensagem própria e agora divide espaço.
 const REGRAS_DE_CONTEUDO = [
+  {
+    nome: 'A entrada única de número NOVO apresenta a Cidinha e convida ao cadastro',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.primeiroContato('55'),
+    confere: msgs => {
+      const m = msgs.find(x => x.tipo === 'flow+imagem');
+      if (!m) return 'o formulário não saiu com cabeçalho de imagem';
+      // Fundir as boas-vindas no formulário é fácil de desfazer sem perceber:
+      // o formulário continua chegando, só que mudo. Quem nunca falou com o
+      // bot abriria um cadastro sem saber quem está pedindo os dados.
+      if (!m.texto.includes('Cidinha')) return 'a Cidinha não se apresenta';
+      if (!m.texto.includes('Bem-vindo')) return 'faltou a boas-vindas';
+      return m.texto.toLowerCase().includes('dados')
+        ? null
+        : 'não convida a preencher os dados';
+    }
+  },
   {
     nome: 'A entrada única carrega imagem, saudação e os 3 botões',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
