@@ -72,6 +72,7 @@
 | BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
 | BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
+| BL-44 | Cadastro por conversa desligado: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
 
 ---
 
@@ -373,20 +374,16 @@ de coleta e termina com foto; com ela desligada, nada muda em relação a hoje.
 
 ---
 
-### BL-34 — Texto durante o formulário derruba para a conversa cedo demais 🟡 (P) — 📋 **a decidir**
+### BL-34 — Texto durante o formulário derruba para a conversa cedo demais 🟡 (P) — ✅ **resolvido pelo BL-44 em 19/09/2026**
 **Arquivo:** `Router.gs` — ramo `AGUARDANDO_FLOW_CADASTRO` em `_rotearTexto`
 
-**Como está:** **qualquer** texto enviado com o formulário aberto leva a pessoa para o cadastro por conversa. Foi escolha do BL-33, pensando em quem desistiu do formulário ou está num aparelho que não o renderiza.
+**Como era:** **qualquer** texto enviado com o formulário aberto levava a pessoa para o cadastro por conversa — 19 mensagens. Atendia bem "não consegui abrir" e atropelava "quanto é o dízimo?": o gatilho não distinguia intenção.
 
-**O problema:** o gatilho não distingue intenção. Atende bem "não consegui abrir", e atropela "quanto é o dízimo?" — quem fez uma pergunta paralela é jogado no passo a passo sem ter pedido, e o formulário que estava preenchendo perde a vez. Formulário aberto e pergunta no chat não são coisas incompatíveis, e o código trata como se fossem.
+**As duas saídas registradas eram** perguntar com dois botões, ou manter. **Venceu uma terceira**, que só apareceu quando o cadastro por conversa foi desligado (BL-44): não perguntar nem decidir — **lembrar**. A pessoa fica onde estava, o formulário continua aberto e clicável na conversa, e o lembrete traz as duas portas que não exigem cadastro (Oferta e Contato Pastoral).
 
-**Duas saídas:**
-1. **Perguntar em vez de decidir.** Dois botões: *Preencher formulário* (reenvia) e *Fazer por aqui*. Custa uma mensagem e não chuta a intenção.
-2. **Manter.** Defensável: quem está com o formulário aberto e escreve provavelmente está com dificuldade, e a conversa é o socorro. A mensagem atual já explica o que aconteceu.
+Quem travou no formulário tem para onde ir; quem só fez uma pergunta não é arrastado para lugar nenhum. E o "sem dado para decidir" deixou de ser bloqueio, porque a resposta não depende mais de saber qual caso é mais comum.
 
-**Sem dado para decidir.** Com que frequência cada caso acontece só aparece com gente usando. Rodar assim por um tempo e olhar o log (`↩️ [Flow] … caindo para a conversa`) responde.
-
-**Achado relacionado, do mesmo ramo:** a mensagem do formulário **continua clicável** no chat depois do fallback. Quem fizer o cadastro por conversa e depois rolar para cima e tocar em "Preencher cadastro" sobrescreve o que digitou. O resultado fica coerente — os dados do formulário são completos e vencem — mas não é o que a pessoa esperaria.
+**O achado relacionado virou vantagem.** A mensagem do formulário continuar clicável depois era anotado como defeito — é ela que o lembrete manda tocar.
 
 ---
 
@@ -734,6 +731,22 @@ escrito para CI desde o começo, e o cabeçalho dele diz isso.
 
 **Enquanto não existe:** `node ferramentas/conta-mensagens.js` antes de
 publicar, quando a edição for sua. Não envia mensagem nem toca o Odoo.
+
+
+### BL-44 — Cadastro por conversa desligado: o formulário vira o único caminho 🟠 (P) — ✅ concluído em 19/09/2026
+**Arquivos:** `CadastroHandler.gs` (`conversaAtiva`) · `Router.gs` · `MenuHandler.gs` (`lembrarCadastroPendente`) · `Setup.gs`
+
+**A decisão.** O passo a passo custa **19 mensagens**; o formulário, 4. Ele existia para quem não conseguisse abrir o formulário — não como rota principal. Desligado.
+
+**Interruptor, não remoção.** `CADASTRO_CONVERSA_ATIVO`, desligado por padrão: só `'true'` liga, mesma convenção do `FLOW_CADASTRO_ATIVO`. **O código do passo a passo continua inteiro.** Se o formulário der problema, `ativarCadastroPorConversa()` devolve o caminho antigo sem republicar nada.
+
+**Quem escreve com o formulário aberto** recebe um lembrete com Oferta e Contato Pastoral — uma mensagem, os dois botões no mesmo balão. Resolve o BL-34 por um caminho que não estava nas opções: não perguntar nem decidir, lembrar.
+
+**A armadilha que isto criou, e a trava.** A conversa era a rede embaixo do formulário. Sem ela, desligar o formulário deixaria a paróquia **sem caminho de cadastro nenhum, em silêncio** — e `desativarFlowCadastro()` ainda dizia "volta ao cadastro por conversa". As duas funções passam a avisar quando a outra está desligada, e `CadastroHandler.iniciar` grita no log (`console.error`) quando o formulário falha sem rede, em vez de deixar a pessoa sem resposta: ela recebe um pedido de desculpas e o contato da pastoral.
+
+**Membro fica de fora, de propósito.** Adicionar familiar por conversa continua valendo: quem chega nesse ponto já é dizimista e já passou pelo formulário uma vez, então não é o caminho de entrada que se quer proteger.
+
+**O `Router.gs` entrou no arnês.** Ficava de fora, e por isso o ramo que decide tudo isso não era executado por teste nenhum. Entraram quatro verificações: o lembrete, o interruptor devolvendo o caminho antigo, o formulário fora do ar sem rede, e uma regra de conteúdo que exige as duas saídas no lembrete — sem elas ele vira um muro.
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC
 

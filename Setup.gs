@@ -576,10 +576,62 @@ function ativarFlowCadastro() {
  * sendo aceita. O desligamento vale para os PRÓXIMOS cadastros.
  */
 function desativarFlowCadastro() {
-  PropertiesService.getScriptProperties().setProperty('FLOW_CADASTRO_ATIVO', 'false');
-  Logger.log('🛑 Flow de cadastro DESATIVADO — novos cadastros vão pela conversa.');
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('FLOW_CADASTRO_ATIVO', 'false');
+  Logger.log('🛑 Flow de cadastro DESATIVADO.');
   Logger.log('   O FLOW_ID_CADASTRO foi mantido; religue com ativarFlowCadastro().');
   Logger.log('   Quem já está com o formulário aberto consegue terminar por ele.');
+
+  // Desde o BL-44 a conversa não é mais a rede embaixo do formulário: ela
+  // está desligada por padrão. Desligar o formulário sem religar a conversa
+  // deixa a paróquia SEM NENHUM caminho de cadastro — e em silêncio, que é o
+  // pior jeito de descobrir.
+  if (props.getProperty('CADASTRO_CONVERSA_ATIVO') !== 'true') {
+    Logger.log('');
+    Logger.log('⚠️ ATENÇÃO: o cadastro por conversa também está desligado.');
+    Logger.log('   Ninguém consegue se cadastrar agora — nem pelo formulário,');
+    Logger.log('   nem pelo passo a passo. Quem tentar recebe um pedido de');
+    Logger.log('   desculpas e o contato da pastoral.');
+    Logger.log('   Para abrir o caminho antigo: ativarCadastroPorConversa()');
+  }
+}
+
+/**
+ * Religa o cadastro por CONVERSA — o passo a passo de 19 mensagens (BL-44).
+ *
+ * Desligado por padrão desde 19/09: o formulário virou o único caminho, e o
+ * passo a passo existia para quem não conseguisse abri-lo, não como rota
+ * principal. O código dele continua inteiro; isto é um interruptor.
+ *
+ * Ligue quando o formulário estiver com problema e você precisar de um
+ * caminho que não dependa dele.
+ */
+function ativarCadastroPorConversa() {
+  PropertiesService.getScriptProperties().setProperty('CADASTRO_CONVERSA_ATIVO', 'true');
+  Logger.log('✅ Cadastro por CONVERSA ativado — o passo a passo volta a valer.');
+  Logger.log('   São ~19 mensagens por cadastro, contra 4 pelo formulário.');
+  Logger.log('   Quem escrever com o formulário aberto volta a cair nele.');
+  Logger.log('   Para desligar de novo: desativarCadastroPorConversa()');
+}
+
+/**
+ * Desliga o cadastro por conversa e deixa o formulário como único caminho.
+ *
+ * É o estado padrão — esta função serve para voltar a ele depois de um
+ * `ativarCadastroPorConversa()` temporário.
+ */
+function desativarCadastroPorConversa() {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('CADASTRO_CONVERSA_ATIVO', 'false');
+  Logger.log('🛑 Cadastro por conversa DESATIVADO — só o formulário cadastra.');
+
+  if (props.getProperty('FLOW_CADASTRO_ATIVO') !== 'true') {
+    Logger.log('');
+    Logger.log('⚠️ ATENÇÃO: o formulário também está desligado.');
+    Logger.log('   Não sobrou caminho de cadastro nenhum.');
+    Logger.log('   Religue um dos dois: ativarFlowCadastro() ou');
+    Logger.log('   ativarCadastroPorConversa()');
+  }
 }
 
 // ============================================================================

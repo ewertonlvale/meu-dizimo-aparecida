@@ -459,6 +459,30 @@ const MenuHandler = {
   },
 
   /**
+   * Lembra que o cadastro está em aberto, e oferece o que NÃO exige cadastro.
+   *
+   * BL-44 — POR QUE UM LEMBRETE, E NÃO O CADASTRO POR CONVERSA.
+   * Antes, escrever com o formulário aberto derrubava a pessoa no passo a
+   * passo de 19 mensagens. Atendia quem não conseguiu abrir o formulário e
+   * atropelava quem só fez uma pergunta — o gatilho não distinguia intenção
+   * (era o BL-34).
+   *
+   * Com o cadastro por conversa desligado, a resposta passa a ser este
+   * lembrete. E ele não é um beco: oferta não exige cadastro, e falar com a
+   * pastoral não exige nada. Quem escreveu porque travou tem para onde ir.
+   *
+   * UMA mensagem: os dois botões cabem no mesmo balão do texto.
+   *
+   * @param {string} texto - O que dizer antes dos botões
+   */
+  lembrarCadastroPendente(from, texto) {
+    Utils.enviarMenu(from, texto, [
+      { id: 'btn_oferta',     title: '🎁 Oferta'          },
+      { id: 'btn_secretaria', title: '📞 Contato Pastoral' }
+    ], { header: '💛 Pastoral do Dízimo' });
+  },
+
+  /**
    * Convite para outro paroquiano (BL-41 · A10).
    *
    * POR QUE LINK EM TEXTO, E NÃO BOTÃO.

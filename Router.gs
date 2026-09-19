@@ -372,6 +372,27 @@ const Router = {
       console.log(`↩️ [Flow] ${from} escreveu em vez de preencher ` +
                   `(${ehMembro ? 'membro' : 'cadastro'}) — caindo para a conversa`);
 
+      // BL-44: com o cadastro por conversa desligado, escrever aqui não
+      // derruba mais ninguém no passo a passo de 19 mensagens. A pessoa fica
+      // ONDE ESTAVA — o formulário continua aberto e clicável na conversa —
+      // e recebe um lembrete com as duas portas que não exigem cadastro.
+      //
+      // O gatilho antigo não distinguia "não consegui abrir" de "quanto é o
+      // dízimo?", e tratava os dois como desistência (BL-34). Lembrar em vez
+      // de decidir não chuta a intenção de ninguém.
+      //
+      // Vale só para o CADASTRO. Adicionar membro segue caindo na conversa:
+      // quem está nesse ponto já é dizimista e já passou pelo formulário uma
+      // vez, então não é o caminho de entrada que se quer proteger.
+      if (!ehMembro && !CadastroHandler.conversaAtiva()) {
+        MenuHandler.lembrarCadastroPendente(from,
+          '🙏 *Falta pouco para concluir seu cadastro!*\n\n' +
+          'Toque em *Preencher cadastro*, na mensagem do formulário aqui na ' +
+          'conversa. Leva menos de um minuto. 💛\n\n' +
+          'Se preferir, dá para fazer isto agora:');
+        return;
+      }
+
       Utils.enviarSimples(from,
         'Sem problema, podemos fazer por aqui mesmo, passo a passo. 💛'
       );
