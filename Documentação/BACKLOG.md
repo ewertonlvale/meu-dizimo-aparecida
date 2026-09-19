@@ -652,7 +652,11 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **A2.** `SetupCamposOferta.gs`. ✅ 19/09 — 4 funções separadas por risco: `conferirMigracaoOferta()` (só lê) → `criarCamposOferta()` (aditivo) → `tornarComunidadeGravavel()` (⚠️ travado por `MODO_TESTE`, mede a contagem antes e depois) → `backfillTipoContribuicao()`
 - [x] **A3.** `registrarDevolucao` exige comunidade e grava tipo + telefone. ✅ 19/09 — precisou de `campoGravavel()` novo: `campoExiste` não bastava, porque `x_studio_comunidade` já existe e só muda de readonly para gravável; escrever antes da migração faria o Odoo recusar a gravação INTEIRA
 - [x] **A4.** Gerador de massa preenche comunidade e tipo. ✅ 19/09 — o comentário antigo ("comunidade NÃO é gravada: é related", BL-05) virou o oposto depois da migração; gera só `dizimo`, porque massa fictícia de oferta enganaria quem for conferir o relatório por tipo
-- [ ] **A5.** Leitura filtrada — 6 funções, 12 pontos de chamada (ver tabela abaixo), tudo atrás de `campoExiste`
+- [x] **A5.** Leitura filtrada. ✅ 19/09 — helper `_comTipo()`, com o padrão decidido POR FUNÇÃO e justificado no código:
+      `devolucoesDoMes` e `buscarDevolucoesDizimista` → só `dizimo` (senão quem ofertou leva "você já devolveu este mês");
+      `listarDevolucoesPorPeriodo` → `dizimo` por padrão, aceita `'oferta'` e `null`;
+      `buscarDevolucoesPendentes` e `buscarDevolucaoDetalhada` → **não filtram** (comprovante de oferta também precisa de conferência), mas passam a trazer o campo para a tela dizer o que é.
+      7 regras no harness, incluindo a de que **antes da migração não filtra** — filtrar por campo inexistente derrubaria o `search_read` inteiro
 - [ ] **A6.** Menu novo: `[💰 Dízimo] [🎁 Oferta] [⋯ Outras opções]` + submenu em **lista** (4 itens não cabem em 3 botões)
 - [ ] **A7.** `ferramentas/flow-oferta.json` (comunidade + valor), validado por `valida-flow.js`, com `init-values` pré-preenchendo a comunidade de quem já é cadastrado
 - [ ] **A8.** `FlowHandler`: `TOKEN_OFERTA`, `_processarOferta`, `enviarFlowOferta` + estados novos

@@ -40,6 +40,7 @@ const RAIZ = path.join(__dirname, '..');
 
 let enviadas = [];
 let gratis   = [];   // sinais que NÃO são mensagens cobradas
+let consultas = [];  // domínios enviados ao Odoo, para conferir os filtros
 const registra = (tipo, texto) => enviadas.push({ tipo, texto: String(texto || '') });
 
 function montarContexto(cenario) {
@@ -161,6 +162,23 @@ function montarContexto(cenario) {
   Object.assign(mod.OdooService, {
     searchRead: (modelo, campos, dominio) => {
       if (cenario.odooForaDoAr) throw new Error('connection refused (simulado)');
+      consultas.push({ modelo, campos, dominio });
+      // BL-41: com `campoTipoExiste`, o harness simula o Odoo DEPOIS da
+      // migração. Sem isso, `_comTipo` nunca acrescenta o filtro e as regras
+      // abaixo passariam sem testar nada.
+      if (modelo === 'ir.model.fields') {
+        const nome = (dominio || []).find(d => d[0] === 'name');
+        const quer = nome && nome[2];
+        if (quer === 'x_studio_tipo_contribuicao' || quer === 'x_studio_telefone_ofertante') {
+          return cenario.camposNovos ? [{ id: 1, related: false, readonly: false }] : [];
+        }
+        if (quer === 'x_studio_comunidade') {
+          return cenario.comunidadeGravavel
+            ? [{ id: 2, related: false, readonly: false }]
+            : [{ id: 2, related: 'x_studio_dizimista.x_studio_comunidade', readonly: true }];
+        }
+        return [];
+      }
       if (modelo === 'x_dizimista') {
         const porTelefone = (dominio || []).some(d => d[0] === 'x_studio_partner_phone');
         if (porTelefone) return cenario.dizimista ? [cenario.dizimista] : [];
@@ -171,7 +189,14 @@ function montarContexto(cenario) {
           : (cenario.dizimista ? [cenario.dizimista] : []);
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
-      if (modelo === 'x_devolucao') return cenario.devolucoes || [];
+      if (modelo === 'x_devolucao') {
+        // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
+        // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
+        // com histórico também dispararia o aviso de duplicata, e o teste
+        // passaria a medir outro caminho sem ninguém perceber.
+        const porPeriodo = (dominio || []).some(d => d[0] === 'x_studio_data_da_devolucao');
+        return (porPeriodo ? cenario.devolucoesDoMes : cenario.devolucoes) || [];
+      }
       return [];
     },
     create: () => 99,
@@ -186,8 +211,12 @@ function montarContexto(cenario) {
       comunidade: 'São José',
       contatos: cenario.contatos || [{ nome: 'João da Silva', whatsapp: '5586988521231' }]
     }),
-    devolucoesDoMes:    () => cenario.devolucoesDoMes || [],
     salvarFotoDizimista: () => {}
+    // `devolucoesDoMes`, `buscarDevolucoesDizimista`, `listarDevolucoesPorPeriodo`
+    // e `buscarDevolucoesPendentes` NÃO são trocadas: é nelas que vive o filtro
+    // por tipo do BL-41 (A5). Stub aqui esconderia exatamente o que precisa ser
+    // testado — foi o que aconteceu com `criarDizimista` (BL-39) e
+    // `registrarDevolucao` (A3), e é a terceira vez que este erro aparece.
     // `registrarDevolucao` NÃO é trocado de propósito: é nele que vive a guarda
     // do BL-41 contra devolução sem comunidade. Um stub a esconderia — foi o que
     // aconteceu com `criarDizimista` e o BL-39 antes desta mudança.
@@ -489,6 +518,7 @@ console.log('\n📊 Mensagens enviadas por entrada no bot\n' + '─'.repeat(64))
 for (const c of CENARIOS) {
   enviadas = [];
   gratis   = [];
+  consultas = [];
   const ctx = montarContexto(c.cenario);
   c.roda(ctx);
 
@@ -508,6 +538,7 @@ console.log('🔘 Botões dos menus\n');
 for (const r of REGRAS_DE_BOTAO) {
   enviadas = [];
   gratis   = [];
+  consultas = [];
   const ctx = montarContexto(r.cenario);
   r.roda(ctx);
   const erro = enviadas.length ? r.confere(enviadas) : 'nenhuma mensagem enviada';
@@ -571,6 +602,78 @@ const TELEFONES = [
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🧾 Filtro por tipo de contribuição (BL-41 · A5)\n');
+
+// Depois que a oferta passou a morar no mesmo modelo do dízimo, toda consulta a
+// x_devolucao devolve os dois. Não existe default bom para todas — e errar aqui
+// NÃO FALHA, só faz o número do coordenador mentir. Daí as regras.
+const filtroTipo = dominio =>
+  (dominio || []).filter(d => d[0] === 'x_studio_tipo_contribuicao').map(d => d[2])[0] || null;
+
+const FILTROS = [
+  {
+    nome: 'Aviso de duplicata olha só dízimo',
+    porque: 'quem ofertou não pode levar "você já devolveu este mês"',
+    roda: ctx => ctx.OdooService.devolucoesDoMes(7),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Histórico do dizimista olha só dízimo',
+    porque: 'a linha "sua última devolução" vive dentro do fluxo de dízimo',
+    roda: ctx => ctx.OdooService.buscarDevolucoesDizimista(7),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Relatório do coordenador olha só dízimo por padrão',
+    porque: 'somar oferta no total do dízimo faz os números da paróquia mentirem',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30'),
+    espera: 'dizimo'
+  },
+  {
+    nome: 'Relatório aceita pedir oferta explicitamente',
+    porque: 'sem isso não haveria como a paróquia ver o que arrecadou em ofertas',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30', 'oferta'),
+    espera: 'oferta'
+  },
+  {
+    nome: 'Relatório aceita o consolidado dos dois',
+    porque: 'null = sem filtro',
+    roda: ctx => ctx.OdooService.listarDevolucoesPorPeriodo('2026-09-01', '2026-09-30', null),
+    espera: null
+  },
+  {
+    nome: 'Fila de conferência NÃO filtra',
+    porque: 'comprovante de oferta também precisa ser conferido pela secretaria',
+    roda: ctx => ctx.OdooService.buscarDevolucoesPendentes(1),
+    espera: null
+  }
+];
+
+for (const f of FILTROS) {
+  consultas = [];
+  const ctx = montarContexto({ dizimista: DIZIMISTA, camposNovos: true });
+  let errFiltro = ''; try { f.roda(ctx); } catch (e) { errFiltro = e.message; }
+  const dev = consultas.filter(c => c.modelo === 'x_devolucao').pop();
+  const obtido = dev ? filtroTipo(dev.dominio) : 'NENHUMA CONSULTA';
+  const ok = obtido === f.espera;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} ${f.nome}`);
+  console.log(`   ${f.porque}${ok ? '' : `\n   ⚠️ filtro esperado ${f.espera}, veio ${obtido}${errFiltro ? ' — ' + errFiltro : ''}`}`);
+}
+
+// E a trava que impede o filtro de derrubar tudo antes da migração.
+{
+  consultas = [];
+  const ctx = montarContexto({ dizimista: DIZIMISTA, camposNovos: false });
+  ctx.OdooService.devolucoesDoMes(7);
+  const dev = consultas.filter(c => c.modelo === 'x_devolucao').pop();
+  const semFiltro = dev && filtroTipo(dev.dominio) === null;
+  if (!semFiltro) falhas++;
+  console.log(`${semFiltro ? '✅' : '❌'} Antes da migração, NÃO filtra`);
+  console.log('   o campo ainda não existe; filtrar por ele faria o search_read inteiro falhar');
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('🏛️  registrarDevolucao — a comunidade é obrigatória (BL-41)\n');
 
 // Antes da migração, a comunidade era espelhada do dizimista e o bot nunca a
@@ -623,6 +726,7 @@ console.log('🧩 Conteúdo que não pode se perder nas fusões\n');
 for (const r of REGRAS_DE_CONTEUDO) {
   enviadas = [];
   gratis   = [];
+  consultas = [];
   const ctx = montarContexto(r.cenario);
   r.roda(ctx);
   const erro = enviadas.length ? r.confere(enviadas, ctx) : 'nenhuma mensagem enviada';
