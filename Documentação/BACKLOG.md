@@ -657,11 +657,11 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
       `listarDevolucoesPorPeriodo` → `dizimo` por padrão, aceita `'oferta'` e `null`;
       `buscarDevolucoesPendentes` e `buscarDevolucaoDetalhada` → **não filtram** (comprovante de oferta também precisa de conferência), mas passam a trazer o campo para a tela dizer o que é.
       7 regras no harness, incluindo a de que **antes da migração não filtra** — filtrar por campo inexistente derrubaria o `search_read` inteiro
-- [ ] **A6.** Menu novo: `[💰 Dízimo] [🎁 Oferta] [⋯ Outras opções]` + submenu em **lista** (4 itens não cabem em 3 botões)
+- [x] **A6.** Menu novo + submenu em lista. ✅ 19/09 — `btn_oferta` também no menu de quem NÃO é cadastrado, já que oferta não exige cadastro. Para não subir botão morto, o `OfertaHandler` foi junto, pelo caminho de conversa (comunidade → valor → card do BL-40)
 - [ ] **A7.** `ferramentas/flow-oferta.json` (comunidade + valor), validado por `valida-flow.js`, com `init-values` pré-preenchendo a comunidade de quem já é cadastrado
 - [ ] **A8.** `FlowHandler`: `TOKEN_OFERTA`, `_processarOferta`, `enviarFlowOferta` + estados novos
-- [ ] **A9.** Handler de oferta montando o card do BL-40 com a comunidade escolhida + fallback por conversa
-- [ ] **A10.** "Convidar alguém" → mensagem com link `wa.me` para encaminhar
+- [x] **A9.** Handler de oferta. ✅ 19/09 — feito junto do A6 para não existir botão sem destino. Caminho de conversa completo; o formulário (A7/A8) entra por cima
+- [x] **A10.** "Convidar alguém". ✅ 19/09 — link em texto, não botão: mensagem interativa é *ou* botões *ou* URL, nunca as duas, e este caminho já custa 2 mensagens. ⚠️ Depende da Script Property nova **`WHATSAPP_NUMERO_EXIBICAO`** (o número do bot, formato 5586988521231) — sem ela o convite sai sem link clicável. Não dá para derivar do `PHONE_ID`, que é o id interno da Meta
 - [ ] **A11.** `FLUXOS.md`: novo fluxo, contagens e diagramas
 
 #### ⏸️ BLOQUEADO — depende de sonda
@@ -675,6 +675,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [ ] **S3.** `backfillTipoContribuicao()` — sem ele, os registros antigos ficam com tipo nulo e somem dos relatórios quando o filtro entrar
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
 - [ ] **S5.** `clasp push` + republicar o deployment
+- [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### As 12 chamadas do item A5
 

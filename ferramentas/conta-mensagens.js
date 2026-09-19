@@ -65,7 +65,8 @@ function montarContexto(cenario) {
       registra('flow', 'formulário de cadastro');
       return true;
     },
-    enviarFlowMembro: () => false
+    enviarFlowMembro: () => false,
+    enviarFlowOferta: () => false
   };
 
   const ctx = {
@@ -103,7 +104,7 @@ function montarContexto(cenario) {
   const ARQUIVOS = [
     'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
     'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
-    'TestePixNativo.gs'
+    'OfertaHandler.gs', 'TestePixNativo.gs'
   ];
   const fontes = ARQUIVOS
     .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
@@ -111,7 +112,7 @@ function montarContexto(cenario) {
 
   const mod = vm.runInContext(
     fontes + '\n;({ Utils, OdooService, MediaService, MenuHandler, CadastroHandler, ' +
-             'DevolucaoHandler, ComprovanteHandler, ESTADOS });',
+             'DevolucaoHandler, ComprovanteHandler, OfertaHandler, ESTADOS });',
     ctx,
     { filename: 'bot.gs' }
   );
@@ -346,6 +347,35 @@ const CENARIOS = [
     porque: 'volta ao texto. Quem pediu ajuda não pode ficar sem contato nenhum'
   },
   {
+    nome: 'Oferta de quem JÁ é dizimista — não pergunta a comunidade',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'o cadastro já respondeu a comunidade; vai direto ao valor'
+  },
+  {
+    nome: 'Oferta de quem NÃO é cadastrado — pergunta a comunidade',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.OfertaHandler.iniciar('55'),
+    esperado: 1,
+    porque: 'oferta não exige cadastro — é o primeiro fluxo do bot nessa condição'
+  },
+  {
+    nome: 'Oferta — valor escolhido no botão leva ao pagamento',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true,
+               sessao: { ofertaComunidadeId: 1, ofertaComunidadeNome: 'Matriz' } },
+    roda: ctx => ctx.OfertaHandler.processarBotaoValor('55', 'ofv_20'),
+    esperado: 1,
+    porque: 'card nativo do BL-40, igual ao dízimo'
+  },
+  {
+    nome: 'Submenu "Outras opções"',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuOutrasOpcoes('55'),
+    esperado: 1,
+    porque: 'lista, porque 4 destinos não cabem em 3 botões. Custa só a quem entra'
+  },
+  {
     nome: 'Menu principal de quem já é dizimista',
     cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true },
     roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
@@ -365,9 +395,17 @@ const REGRAS_DE_BOTAO = [
     roda: ctx => ctx.MenuHandler.menuDizimista('55', DIZIMISTA),
     confere: msgs => {
       const ids = (msgs[0].texto.match(/\[(.*)\]/) || [, ''])[1];
-      const esperado = 'btn_devolver_dizimo, btn_adicionar_membro, btn_secretaria';
+      const esperado = 'btn_devolver_dizimo, btn_oferta, btn_outras_opcoes';
       return ids === esperado ? null : `botões "${ids}", esperado "${esperado}"`;
     }
+  },
+  {
+    nome: 'Quem NÃO é dizimista também vê o botão de Oferta',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true },
+    roda: ctx => ctx.MenuHandler.menuPrincipal('55'),
+    confere: msgs => msgs[0].texto.includes('btn_oferta')
+      ? null
+      : 'oferta não exige cadastro, mas sumiu do menu de quem não é cadastrado'
   },
   {
     nome: 'Menu de quem não é dizimista não oferece "Já sou Dizimista"',
@@ -463,7 +501,7 @@ const REGRAS_DE_CONTEUDO = [
     confere: msgs => {
       const t = msgs[msgs.length - 1].texto;
       if (!t.includes('Cadastro realizado')) return 'a mensagem de sucesso não saiu';
-      const faltam = ['btn_devolver_dizimo', 'btn_adicionar_membro', 'btn_secretaria']
+      const faltam = ['btn_devolver_dizimo', 'btn_oferta', 'btn_outras_opcoes']
         .filter(b => !t.includes(b));
       return faltam.length ? `faltou o botão: ${faltam.join(', ')}` : null;
     }

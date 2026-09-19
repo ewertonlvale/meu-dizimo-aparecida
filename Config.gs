@@ -45,6 +45,14 @@ const ESTADOS = {
   // sessão de coleta a expirar nem log passo a passo a acumular.
   AGUARDANDO_FLOW_CADASTRO:      'AGUARDANDO_FLOW_CADASTRO',
 
+  // ── Oferta (BL-41) ─────────────────────────────────────────────────────────
+  // Oferta NÃO exige cadastro, então estes estados valem também para número
+  // desconhecido — são os primeiros do bot nessa condição.
+  AGUARDANDO_COMUNIDADE_OFERTA:  'AGUARDANDO_COMUNIDADE_OFERTA',
+  AGUARDANDO_VALOR_OFERTA:       'AGUARDANDO_VALOR_OFERTA',
+  AGUARDANDO_COMPROVANTE_OFERTA: 'AGUARDANDO_COMPROVANTE_OFERTA',
+  AGUARDANDO_FLOW_OFERTA:        'AGUARDANDO_FLOW_OFERTA',
+
   AGUARDANDO_NOTIFICACAO:        'AGUARDANDO_NOTIFICACAO',
   AGUARDANDO_DIA_PREFERIDO:      'AGUARDANDO_DIA_PREFERIDO',
 
@@ -206,7 +214,8 @@ function getWhatsAppUrl(path) {
 /**
  * Retorna credenciais do WhatsApp Business API.
  * Lança erro se propriedades obrigatórias não estiverem configuradas.
- * @returns {Object} { WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN }
+ * @returns {Object} { WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, VERIFY_TOKEN,
+ *                      WHATSAPP_NUMERO_EXIBICAO }
  */
 function getConfig() {
   const props = PropertiesService.getScriptProperties();
@@ -215,6 +224,12 @@ function getConfig() {
     WHATSAPP_TOKEN:    props.getProperty('WHATSAPP_TOKEN'),
     WHATSAPP_PHONE_ID: props.getProperty('WHATSAPP_PHONE_ID'),
     VERIFY_TOKEN:      props.getProperty('VERIFY_TOKEN'),
+
+    // BL-41 (A10): o número do bot, para montar o link wa.me do convite.
+    // OPCIONAL — sem ele o convite ainda sai, só sem o link clicável.
+    // Não dá para derivar do PHONE_ID: aquele é o identificador interno da
+    // Meta, não o telefone. Formato: 5586988521231 (internacional, sem '+').
+    WHATSAPP_NUMERO_EXIBICAO: props.getProperty('WHATSAPP_NUMERO_EXIBICAO') || '',
   };
 
   if (!config.WHATSAPP_TOKEN || !config.WHATSAPP_PHONE_ID) {
