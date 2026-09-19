@@ -726,6 +726,78 @@ const TELEFONES = [
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🧭 Métodos chamados que não existem\n');
+
+// POR QUE ISTO EXISTE
+// Em 19/09, com o bot em produção, o Cloud Logging mostrou
+// "this._mesAtual is not a function" repetindo a cada 5 minutos. A função era
+// chamada em QUATRO lugares e nunca tinha sido definida.
+//
+// Ficou invisível porque as três chamadas estavam dentro de `try/catch` com
+// `console.warn`. O bot funcionava; só a medição de consumo estava morta — e
+// `registrarConsumoExterno` lançava na PRIMEIRA linha do try, então nem a cota
+// de UrlFetch chegava a ser gravada.
+//
+// Esta varredura é estática: lê o fonte de cada objeto, junta todo `this.x(`
+// e confere se `x` existe. Não substitui teste de comportamento — pega uma
+// classe de erro que só aparece em runtime, dentro de um catch que ninguém lê.
+{
+  const OBJETOS = [
+    ['Utils.gs',              'Utils'],
+    ['OdooService.gs',        'OdooService'],
+    ['MediaService.gs',       'MediaService'],
+    ['MenuHandler.gs',        'MenuHandler'],
+    ['CadastroHandler.gs',    'CadastroHandler'],
+    ['DevolucaoHandler.gs',   'DevolucaoHandler'],
+    ['ComprovanteHandler.gs', 'ComprovanteHandler'],
+    ['OfertaHandler.gs',      'OfertaHandler'],
+    ['FlowHandler.gs',        'FlowHandler'],
+    ['VisionService.gs',      'VisionService']
+  ];
+
+  // Contexto com TODOS os .gs carregados, para alcançar cada objeto por nome.
+  const ctxTudo = {
+    console: { log() {}, warn() {}, error() {} },
+    Utilities: { formatDate: () => '', sleep() {}, base64Encode: () => '' },
+    Logger: { log() {} },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, getProperties: () => ({}) }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
+    UrlFetchApp: { fetch: () => ({}) },
+    SpreadsheetApp: {}, DriveApp: {}, MailApp: {}, Session: {}
+  };
+  vm.createContext(ctxTudo);
+  const fontes = OBJETOS.map(([arq]) => fs.readFileSync(path.join(RAIZ, arq), 'utf8'));
+  const tudo = vm.runInContext(
+    [fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8')].concat(fontes).join('\n;\n') +
+    '\n;({' + OBJETOS.map(([, nome]) => nome).join(', ') + '});',
+    ctxTudo, { filename: 'todos.gs' }
+  );
+
+  let achados = 0;
+  OBJETOS.forEach(([arquivo, nome], i) => {
+    const obj = tudo[nome];
+    const fonte = fontes[i];
+    const usados = new Set();
+    let m;
+    const re = /this\.(_?[a-zA-Z][\w]*)\s*\(/g;
+    while ((m = re.exec(fonte)) !== null) usados.add(m[1]);
+
+    for (const metodo of usados) {
+      if (typeof obj[metodo] !== 'function') {
+        achados++;
+        falhas++;
+        console.log(`❌ ${nome}.${metodo}() é chamado e NÃO existe  (${arquivo})`);
+      }
+    }
+  });
+
+  if (!achados) {
+    console.log(`✅ ${OBJETOS.length} objetos varridos — todo this.metodo() chamado existe`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('⛔ Lista de bloqueio — BL-36\n');
 
 // A regra que não pode quebrar: bloqueado não recebe NADA. Nem o aviso de

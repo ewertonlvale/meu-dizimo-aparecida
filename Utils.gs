@@ -335,6 +335,26 @@ const Utils = {
   },
 
   /**
+   * Mês em America/Sao_Paulo no formato yyyy-MM. @private
+   *
+   * Era chamada em quatro lugares e NUNCA EXISTIU — bug encontrado em 19/09 no
+   * Cloud Logging, com o bot já em produção. Consequências enquanto durou:
+   *
+   *   - `registrarConsumoExterno` lançava na PRIMEIRA linha do try, antes de
+   *     gravar qualquer contador. Ou seja, nem o consumo de mensagens nem a
+   *     cota de UrlFetch (BL-25) chegaram a ser persistidos uma única vez.
+   *   - `somarMensagensDoMes` e `verificarCotaMensagens` falhavam sempre, então
+   *     `verificarConsumoMensagens()` reportava zero — e o alerta de franquia
+   *     nunca poderia disparar.
+   *
+   * Nada disso APARECIA: as três falhas eram engolidas por `catch` com
+   * `console.warn`. O bot funcionava; só a medição estava morta.
+   */
+  _mesAtual(data) {
+    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
+  },
+
+  /**
    * Posta um payload no endpoint /messages do WhatsApp e verifica o resultado.
    * Centraliza o envio (antes duplicado em enviarSimples/enviarMenu/enviarLista)
    * e — importante — checa o status code, que antes era ignorado: falhas de
