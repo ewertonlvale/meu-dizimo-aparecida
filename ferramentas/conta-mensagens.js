@@ -860,6 +860,30 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       }
     },
     {
+      arquivo: 'TesteCabecalhoFlow.gs',
+      funcao:  'testarCabecalhoFlow',
+      envios:  2,   // flow com cabeçalho de imagem, flow com cabeçalho de texto
+      confere(enviados) {
+        const [comImg, comTxt] = enviados;
+        if (!comImg || comImg.interactive.type !== 'flow') return '1º envio devia ser flow';
+        if (comImg.interactive.header.type !== 'image') return '1º envio devia ter cabeçalho de imagem';
+        if (comTxt.interactive.header.type !== 'text') return '2º envio (controle) devia ter cabeçalho de texto';
+        // O que distingue uma sonda útil de um envio qualquer: entre os dois
+        // envios só o cabeçalho pode mudar. Se o resto divergir, o resultado
+        // não prova nada sobre cabeçalho.
+        const semCabecalho = (p) => {
+          const c = JSON.parse(JSON.stringify(p));
+          delete c.interactive.header;
+          delete c.interactive.body;
+          delete c.interactive.action.parameters.flow_token;  // carrega Date.now()
+          return JSON.stringify(c);
+        };
+        return semCabecalho(comImg) === semCabecalho(comTxt)
+          ? null
+          : 'os dois envios diferem em mais do que o cabeçalho';
+      }
+    },
+    {
       // Não manda mensagem: o que ela faz é apagar cache, sessão e o registro
       // no Odoo. Entra aqui pelo mesmo motivo das outras — é função que só
       // roda no editor, e por isso ninguém a executa antes de você.
@@ -899,6 +923,7 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       NUMERO_TESTE:      '5586988521231',
       WHATSAPP_TOKEN:    'tok',
       WHATSAPP_PHONE_ID: '111',
+      FLOW_ID_CADASTRO:  '123456',
       // Recém-guardado, para a sonda seguir pelo caminho do cache.
       media_id_avatar: JSON.stringify({ id: '999', digital: 'x', em: Date.now() })
     };
@@ -923,6 +948,7 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
         getScriptCache: () => ({ get: () => null, put() {}, remove() {}, removeAll() {} })
       },
       StateManager: { PREFIXO_SESSAO: 'sessao_ativa_' },
+      FlowHandler:  { TOKEN_CADASTRO: 'cadastro:' },
       LockService:  { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
       UrlFetchApp:  { fetch: () => respostaOk },
       Utils: {
@@ -933,12 +959,14 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
       MediaService: {
         MEDIA_ID_VALIDADE_MS: 7 * 24 * 60 * 60 * 1000,
         _descartarMediaId() {},
+        mediaIdDoAvatar: () => '999',
         subirImagem: () => '999',
         _gerarPayloadPix: () => '00020126...BR.GOV.BCB.PIX...6304ABCD'
       },
       OdooService: {
         buscarParametros: () => ({ x_studio_avatar: 'base64', x_studio_chave_pix: 'chave' }),
         buscarContatoBot: () => ({ id: 7, x_name: '5586988521231' }),
+        listarComunidades: () => [{ id: 1, x_name: 'Matriz' }],
         unlink: (modelo) => { apagados.push(modelo); },
         buscarDizimistaPorWhatsapp: () => ({
           id: 1, x_name: 'Fulano',
