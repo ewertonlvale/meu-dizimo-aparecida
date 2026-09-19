@@ -292,3 +292,56 @@ function _campoOdoo(model, name) {
     return null;
   }
 }
+
+
+// ============================================================================
+// PÓS-MIGRAÇÃO — quem não consegue mais devolver
+// ============================================================================
+
+/**
+ * Lista dizimistas SEM comunidade. Só lê.
+ *
+ * POR QUE ISTO PASSOU A IMPORTAR DEPOIS DA MIGRAÇÃO.
+ * Antes, `x_studio_comunidade` era espelho do dizimista: sem comunidade, a
+ * devolução era gravada assim mesmo, com o campo vazio — e ninguém percebia.
+ * Agora `registrarDevolucao` EXIGE a comunidade e lança erro, justamente para
+ * a linha órfã não existir.
+ *
+ * O efeito colateral é que um dizimista sem comunidade no cadastro **não
+ * consegue mais devolver pelo bot**: ele paga, manda o comprovante e recebe
+ * "não consegui registrar sua devolução agora". A falha é honesta — melhor que
+ * gravar um registro que ninguém concilia —, mas é melhor ainda descobrir
+ * antes de acontecer com alguém.
+ *
+ * Rode depois da migração e sempre que importar cadastro de fora.
+ */
+function conferirDizimistasSemComunidade() {
+  Logger.log('\n🔎 Dizimistas sem comunidade — não conseguem devolver pelo bot');
+  Logger.log('═'.repeat(64));
+
+  let registros;
+  try {
+    registros = OdooService.searchRead(
+      'x_dizimista',
+      ['id', 'x_name', 'x_studio_partner_phone'],
+      [['x_studio_comunidade', '=', false], ['x_active', '=', true]],
+      { limit: 200 }
+    );
+  } catch (e) {
+    return Logger.log(`❌ Falhei ao consultar: ${e.message}`);
+  }
+
+  if (!registros || !registros.length) {
+    Logger.log('✅ Nenhum. Todo dizimista ativo tem comunidade.');
+    return;
+  }
+
+  Logger.log(`⚠️ ${registros.length} dizimista(s) ativo(s) SEM comunidade:`);
+  registros.forEach(d => {
+    Logger.log(`   • #${d.id} ${d.x_name || '(sem nome)'}` +
+               `${d.x_studio_partner_phone ? ' — ' + d.x_studio_partner_phone : ' — sem telefone'}`);
+  });
+  Logger.log('');
+  Logger.log('Cada um deles receberá "não consegui registrar sua devolução" ao');
+  Logger.log('tentar devolver. Preencha a comunidade no Odoo antes de divulgar o bot.');
+}

@@ -685,10 +685,12 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 #### 👤 TRILHA B — só você consegue fazer
 
 - [ ] **S1.** Sondar cabeçalho de **imagem** em mensagem de botões (lista só aceita cabeçalho de texto — disso há certeza; de botões, não)
-- [ ] **S2.** No editor do Apps Script, nesta ordem: `conferirMigracaoOferta()` (anote quantas devoluções têm comunidade) → `criarCamposOferta()` → `MODO_TESTE='true'` → `tornarComunidadeGravavel()` (ele mesmo compara a contagem e grita se divergir) → `conferirMigracaoOferta()` de novo. Único passo irreversível
-- [ ] **S3.** `backfillTipoContribuicao()` — sem ele, os registros antigos ficam com tipo nulo e somem dos relatórios quando o filtro entrar
+- [x] **S2.** ✅ **Migração feita em 19/09, 09:23.** `x_studio_comunidade` (id 8310) deixou de ser `related` e virou gravável. **Contagem preservada: 5150 → 5150** — os valores sobreviveram, que era a única dúvida real do passo. Campos criados: `x_studio_tipo_contribuicao` (id 8797) e `x_studio_telefone_ofertante` (id 8799)
+- [x] **S3.** ✅ **Backfill feito em 19/09, 09:27** — 15 registros marcados como `dizimo`, e a varredura final voltou 0 pendentes. (Os ~5.150 restantes eram massa de teste, apagada pelo usuário entre o passo 2 e este.) O sucesso da gravação **confirma que as opções do selection foram criadas certo** via `selection_ids` — parte que não dava para testar fora do Odoo
 - [ ] **S4.** `testarPixNativoPago()` + `verificarConsumoMensagens()` antes/depois — custo do `order_status` (BL-40)
-- [ ] **S5.** `clasp push` + republicar o deployment
+- [x] **S5a.** `clasp push` ✅ (as funções do setup rodaram, logo o código novo está lá)
+- [ ] **S5b.** ⚠️ **Republicar o deployment** — o `doPost` mudou (portão de bloqueio do BL-36, roteamento da oferta). Sem isto, nada do fluxo novo responde no WhatsApp
+- [ ] **S8.** `conferirDizimistasSemComunidade()` — quem estiver sem comunidade **não consegue mais devolver**, porque `registrarDevolucao` agora exige o campo
 - [ ] **S7.** Publicar `ferramentas/flow-oferta.json` no WhatsApp Manager e guardar o id em **`FLOW_ID_OFERTA`** (sem ela, a oferta usa a conversa)
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
