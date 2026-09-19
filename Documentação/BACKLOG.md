@@ -681,10 +681,13 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 
 #### ✅ DESBLOQUEADO PELA S1
 
-- [x] **A12.** Entrada com cabeçalho de imagem. ✅ 19/09 — **quem já é dizimista recebe UMA mensagem**: avatar, boas-vindas e os 3 botões no mesmo balão. Era 2; antes do BL-38, 4. Toda pessoa passa por aqui, uma vez.
-  - **Metade, e de propósito.** Para **número novo** continuam 2. O próximo passo ali é o formulário (`interactive.type = 'flow'`), e a S1 respondeu sobre mensagem de **botões**, não sobre flow. Encurtar no escuro arriscaria a mensagem de quem chega pela primeira vez — justamente quem não pode tropeçar. Ver **S10**.
-  - Sem avatar no Odoo, ou com o Odoo fora do ar, cai nas 2 de sempre. A entrada não pode depender de uma imagem para acontecer.
-  - Quando a primeira mensagem já traz intenção (o botão do lembrete), as boas-vindas seguem sozinhas: não há menu a fundir, porque quem manda no próximo passo é a intenção.
+- [x] **A12.** Entrada com cabeçalho de imagem. ✅ 19/09 — **COMPLETO: todo primeiro contato cabe em UMA mensagem.** Era 2; antes do BL-38, 4. Toda pessoa passa por aqui, uma vez.
+  - **Dizimista** (sonda S1): mensagem de botões, cabeçalho por `image.id` — avatar, boas-vindas e os 3 botões num balão.
+  - **Número novo** (sonda S10): mensagem de flow, cabeçalho por `image.link` — avatar, boas-vindas e o formulário num balão.
+  - **A assimetria, que é o achado do dia:** botões aceitam `image.id`; flow recusa o mesmo id com `(#131008) header image must contain link` e exige URL pública; lista só aceita texto. Não está documentado em lugar visível.
+  - A URL vem da Script Property `AVATAR_URL` (o avatar está em `docs/avatar.png`, servido pelo GitHub Pages a partir do `staging`). Sem ela, a entrada de número novo volta a 2 — e o harness cobre esse caminho.
+  - Outros caminhos de reserva cobertos: sem avatar no Odoo, Odoo fora do ar, formulário desligado. Neste último as boas-vindas são ditas antes da conversa, porque iam dentro do formulário que não saiu.
+  - Quando a primeira mensagem já traz intenção (o botão do lembrete), as boas-vindas seguem sozinhas: não há o que fundir, porque quem manda no próximo passo é a intenção.
 
 #### 👤 TRILHA B — só você consegue fazer
 
@@ -703,7 +706,7 @@ Se um item exigir decisão que não está escrita aqui: **não chute — pule**,
 - [x] **S8.** ✅ 19/09, 09:32 — **zero dizimistas ativos sem comunidade.** Ninguém esbarra no erro novo de `registrarDevolucao`. Vale rodar de novo sempre que importar cadastro de fora do bot
 - [x] **S7.** ✅ 19/09 — formulário de oferta publicado e `FLOW_ID_OFERTA` configurado. Republicado depois da correção da comunidade pré-selecionada
 - [x] **S9.** ✅ 19/09 — `criarCamposOferta()` rodado de novo, `x_studio_nome_ofertante` criado
-- [ ] **S10.** Rodar `testarCabecalhoFlow()` — **1ª rodada feita em 19/09, 11:46, e já respondeu metade.** `image.id` (o que funciona em BOTÕES) é recusado no flow com `(#131008) header image must contain link`. Não é "flow não aceita imagem": é **imagem por URL**. Assimetria que não está documentada em lugar visível. **Falta:** publicar o avatar numa URL pública — o site em `docs/` já é servido em meudizimo.pnscaparecida.com — configurar a Script Property `AVATAR_URL` e rodar de novo. ⚠️ Os formulários são funcionais: preencher cria cadastro
+- [x] **S10.** ✅ **19/09, 12:11 — flow aceita cabeçalho de imagem, mas só por LINK.** Duas rodadas: a 1ª devolveu `(#131008) header image must contain link` com `image.id`; a 2ª, com `AVATAR_URL` apontando para `docs/avatar.png` no GitHub Pages, chegou com a imagem em cima. **A12 fechado.** Na 1ª rodada o veredito da sonda lia HTTP 400 como recusa e teria matado o A12 por engano — passou a ler o `details`. Houve ainda uma rodada perdida porque o `avatar.png` estava no `main` e o Pages construía do `staging`: a URL não abria
 - [ ] **S6.** Script Property **`WHATSAPP_NUMERO_EXIBICAO`** = o número do bot (ex.: `5586988521231`), para o link do convite (A10)
 
 #### 📋 EXECUÇÃO 2026-09-19 07:01 UTC

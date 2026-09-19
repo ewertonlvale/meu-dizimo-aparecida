@@ -18,8 +18,7 @@ o bot envia, não quantas trocas acontecem.
 
 | Fluxo | Mensagens do bot | Frequência esperada |
 |---|---|---|
-| Primeiro contato — quem **já é dizimista** | **1** | uma vez por pessoa |
-| Primeiro contato — número **novo** | **2** | uma vez por pessoa |
+| Primeiro contato (dizimista ou número novo) | **1** | uma vez por pessoa |
 | Cadastro por conversa | **19** | uma vez por pessoa |
 | Cadastro por formulário (Flow) | **4** | uma vez por pessoa |
 | Adicionar membro por conversa | **14** | raro |
@@ -58,8 +57,8 @@ flowchart TD
     B -- sim --> T{O número já é dizimista?}
     B -- não --> D{Tipo da mensagem}
 
-    T -- não --> C["Boas-vindas<br/><b>1 mensagem</b>"]
-    C --> J
+    T -- não --> C["Avatar + boas-vindas + formulário<br/>num balão só (A12)<br/><b>1 mensagem</b>"]
+    C --> N2([Aguarda o formulário])
     T -- sim --> U["Avatar + boas-vindas + 3 botões<br/>num balão só (A12)<br/><b>1 mensagem</b>"]
 
     D -- texto/menu --> E["Menu, decidido pelo número<br/>1 mensagem"]
