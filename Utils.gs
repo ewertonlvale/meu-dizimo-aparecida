@@ -923,10 +923,24 @@ const Utils = {
     const v = this.variantesNumeroBR(e164);
     if (!v) return [{ phone: e164, type: 'CELL', wa_id: e164.replace('+', '') }];
 
-    return [
-      { phone: `+${v.comNove}`, type: 'CELL', wa_id: v.comNove },
-      { phone: `+${v.semNove}`, type: 'CELL', wa_id: v.semNove }
-    ];
+    // Sem confirmação, UM número só — o provável para o DDD.
+    //
+    // Mandar as duas formas garantia que uma abrisse a conversa, mas o cartão
+    // chegava com o mesmo telefone repetido, e tocar no primeiro não fazia
+    // nada. Quem recebe não sabe que existe nono dígito; vê um contato com
+    // dois números iguais, e um deles quebrado.
+    //
+    // ⚠️ `provavel` É HEURÍSTICA — o comentário de `variantesNumeroBR` avisa
+    // que uma conta criada depois da mudança mantém o 9 mesmo num DDD fora da
+    // lista, e que ela não serve para "corrigir sozinho". Aqui não se corrige
+    // nada: o dado do Odoo continua intacto, e a confirmação de
+    // `x_contato_bot` (acima) sempre vence. Isto só escolhe QUAL das duas
+    // formas exibir quando não se sabe — e nesse caso a alternativa não era
+    // acertar, era mostrar as duas e deixar a pessoa adivinhar.
+    //
+    // Quando erra, o cartão mostra "Salvar" em vez de abrir a conversa. Salvar
+    // funciona: o WhatsApp casa o nono dígito sozinho ao sincronizar a agenda.
+    return [{ phone: `+${v.provavel}`, type: 'CELL', wa_id: v.provavel }];
   },
 
   /**

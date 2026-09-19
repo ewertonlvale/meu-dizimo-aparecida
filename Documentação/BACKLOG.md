@@ -75,6 +75,7 @@
 | BL-44 | Cadastro e membro por conversa desligados: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
 | BL-45 | O botão "Corrigir" cancelava o cadastro e apagava os 7 campos | 🔴 | P | ✅ Concluído (19/09) — o formulário volta preenchido. ⚠️ **Exige republicar o Flow na Meta** |
 | BL-46 | Conferir o comprovante contra o cadastro: nome, chave e banco | 🟠 | M | ✅ Concluído (19/09) — extração ancorada em quem RECEBEU; alerta só no totalmente divergente |
+| BL-47 | Cartão de contato mostrava o mesmo telefone 2x, e o primeiro não abria | 🟡 | P | ✅ Concluído (19/09) — um número só, o provável para o DDD |
 
 ---
 
