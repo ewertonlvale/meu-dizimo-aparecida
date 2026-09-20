@@ -775,15 +775,20 @@ const OdooService = {
   registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '', extras = {}) {
     const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
+    // O `split('/')` só faz sentido em dd/mm/aaaa, e precisa CONFERIR que é
+    // isso: com qualquer outro formato ele não lança erro — devolve um pedaço
+    // só, e a data sai `undefined-undefined-24 JUL 2026`. O try/catch daqui
+    // nunca via nada, porque nada era lançado. Desde o BL-52 o VisionService
+    // normaliza, mas o registro no Odoo é o último lugar onde dá para
+    // perceber, e ele não depende de confiança.
     let dataOdoo = hoje;
     if (dadosAnalise?.data) {
-      try {
-        const [dia, mes, ano] = dadosAnalise.data.split('/');
-        dataOdoo = `${ano}-${mes}-${dia}`;
+      const m = String(dadosAnalise.data).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m) {
+        dataOdoo = `${m[3]}-${m[2]}-${m[1]}`;
         console.log(`📅 Data convertida: ${dadosAnalise.data} → ${dataOdoo}`);
-      } catch (e) {
-        console.warn('⚠️ Erro ao converter data:', e.message);
-        dataOdoo = hoje;
+      } else {
+        console.warn(`⚠️ Data fora do formato dd/mm/aaaa ("${dadosAnalise.data}") — usando hoje`);
       }
     }
 

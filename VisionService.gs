@@ -261,20 +261,101 @@ const VisionService = {
     return null;
   },
 
+  /**
+   * A data do pagamento, SEMPRE em dd/mm/aaaa — BL-52.
+   *
+   * Normalizar aqui não é capricho de formato. Quem grava no Odoo faz
+   * `dadosAnalise.data.split('/')` e remonta `ano-mes-dia`. Uma data em
+   * qualquer outro formato NÃO quebra o split: ela sai
+   * `undefined-undefined-24 JUL 2026`, que o Odoo recusa ou guarda torto, sem
+   * erro nenhum na tela. Devolver texto cru era, na prática, devolver lixo.
+   *
+   * E os layouts reais não combinam entre si:
+   *   Itú / BB / Inter   `24/07/2026`            — o único que a versão antiga lia
+   *   Nubank              `24 JUL 2026 - 17:01:03`
+   *   Google Pay          `domingo, 5 de abr., 18:03`   — SEM O ANO
+   *
+   * Daí o ID da transação entrar como fonte: o E2E do BACEN é
+   * `E` + ISPB(8) + aaaammdd + hhmm, e carrega justamente o ano que falta na
+   * tela do Google Pay.
+   *
+   * Ele entra por ÚLTIMO, e nunca na frente de uma data escrita: seu horário
+   * é UTC, então um pagamento das 21h de Brasília aparece nele já como o dia
+   * seguinte. Serve para completar o ano, não para contradizer o dia que o
+   * comprovante mostra.
+   */
   _extrairData(texto) {
-    const padroes = [
-      /(\d{2}\/\d{2}\/\d{4})/,
-      /(\d{4}-\d{2}-\d{2})/,
-      /(\d{2})\s+de\s+\w+\s+de\s+(\d{4})/i
-    ];
+    const t = String(texto || '');
 
-    for (const padrao of padroes) {
-      const match = texto.match(padrao);
-      if (match) {
-        console.log('   ✓ Data encontrada');
-        return match[0];
+    const doisDig = n => String(n).padStart(2, '0');
+    const monta = (d, m, a) => (
+      d >= 1 && d <= 31 && m >= 1 && m <= 12 && a >= 2000 && a <= 2100
+        ? `${doisDig(d)}/${doisDig(m)}/${a}` : null
+    );
+    const achou = (valor, origem) => {
+      console.log(`   ✓ Data encontrada (${origem})`);
+      return valor;
+    };
+
+    // O ID da transação é lido do texto inteiro, mas as datas escritas só das
+    // outras linhas: um E2E é uma tira de dígitos e letras, e dentro dele um
+    // "20260405" qualquer pareceria data. Foi confundindo ID com dado que o
+    // BL-14 nasceu.
+    const ID_LINHA = /id\s*da\s*transa|identificad|autentica[çc][ãa]o|e2e|comprovante\s*n[ºo]/i;
+    const limpo = t.split(/[\n\r]+/).filter(l => !ID_LINHA.test(l)).join('\n');
+
+    const e2e = t.match(/(?<![A-Za-z0-9])E\d{8}(\d{4})(\d{2})(\d{2})\d{4}/);
+
+    // 1) dd/mm/aaaa e dd/mm/aa — Itú, BB, Inter
+    let m = limpo.match(/(?<!\d)(\d{1,2})[\/.](\d{1,2})[\/.](\d{4}|\d{2})(?!\d)/);
+    if (m) {
+      const ano = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+      const r = monta(Number(m[1]), Number(m[2]), ano);
+      if (r) return achou(r, 'dd/mm/aaaa');
+    }
+
+    // 2) aaaa-mm-dd
+    m = limpo.match(/(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)/);
+    if (m) {
+      const r = monta(Number(m[3]), Number(m[2]), Number(m[1]));
+      if (r) return achou(r, 'aaaa-mm-dd');
+    }
+
+    // 3) mês por extenso ou abreviado, com ou sem ano:
+    //    "24 JUL 2026", "24 de julho de 2026", "5 de abr.", "5 de abr., 18:03"
+    const MESES = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
+                    jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
+    const reMes = /(?<!\d)(\d{1,2})\s*(?:º|°)?\s*(?:de\s+)?(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç]*\.?,?(?:\s+de)?\s*(\d{4})?(?!\d)/i;
+    m = limpo.match(reMes);
+    if (m) {
+      const dia = Number(m[1]);
+      const mes = MESES[m[2].toLowerCase()];
+
+      if (m[3]) {
+        const r = monta(dia, mes, Number(m[3]));
+        if (r) return achou(r, 'mês por extenso');
+      } else {
+        // Sem ano na tela. O do E2E é o único que se sabe de fato; sem ele,
+        // o ano corrente — e o anterior quando isso jogaria a data no futuro,
+        // que um comprovante de pagamento já feito nunca tem.
+        let ano = e2e ? Number(e2e[1]) : new Date().getFullYear();
+        if (!e2e) {
+          const hoje = new Date();
+          const candidata = new Date(ano, mes - 1, dia);
+          if (candidata.getTime() > hoje.getTime() + 24 * 60 * 60 * 1000) ano -= 1;
+        }
+        const r = monta(dia, mes, ano);
+        if (r) return achou(r, e2e ? 'mês por extenso + ano do E2E' : 'mês por extenso');
       }
     }
+
+    // 4) Só o E2E. Menos exato (a hora dele é UTC, e pagamento de fim de noite
+    //    cai no dia seguinte), mas muito melhor que não ter data nenhuma.
+    if (e2e) {
+      const r = monta(Number(e2e[3]), Number(e2e[2]), Number(e2e[1]));
+      if (r) return achou(r, 'ID da transação');
+    }
+
     console.log('   ✗ Data não encontrada');
     return null;
   },

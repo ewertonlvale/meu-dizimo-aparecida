@@ -395,13 +395,28 @@ const ComprovanteHandler = {
   /**
    * Comprovante de uma OFERTA (BL-41).
    *
-   * Diferente do dízimo em dois pontos que importam:
-   *   - pode não haver dizimista, e isso é normal — a comunidade vem da
-   *     escolha da pessoa, e o telefone fica no registro para a secretaria
-   *     conseguir falar com quem ofertou;
-   *   - o valor informado prevalece sobre o que o OCR leu. A pessoa disse
-   *     quanto ia ofertar; se o OCR discordar, quem erra é o OCR (BL-14), e
-   *     não faz sentido gravar um valor que ninguém escolheu.
+   * Diferente do dízimo em um ponto que importa: pode não haver dizimista, e
+   * isso é normal — a comunidade vem da escolha da pessoa, e o telefone fica
+   * no registro para a secretaria conseguir falar com quem ofertou.
+   *
+   * O VALOR — BL-53.
+   * Vale o do comprovante. O valor escolhido na tela anterior serve para gerar
+   * o código PIX; o que entrou na conta da paróquia é o do comprovante, e é
+   * esse que o registro precisa ter.
+   *
+   * Aqui valia o escolhido, sob o argumento de que o OCR erra (BL-14). Mas o
+   * escolhido também não é promessa de nada: ninguém é obrigado a pagar
+   * exatamente o que digitou, e trocar de ideia no app do banco é o passo
+   * seguinte mais natural que existe. Quem ofertou R$ 55,00 depois de indicar
+   * R$ 10,00 via a mensagem dizer R$ 10,00, e a paróquia registrava R$ 10,00 —
+   * R$ 45,00 sumiam da prestação de contas sem deixar rastro.
+   *
+   * Quando os dois não batem, a mensagem diz os dois. A diferença não é
+   * acusação (pagar mais, ou menos, é direito de quem oferta): é a chance de
+   * a pessoa reconhecer na hora um valor lido errado.
+   *
+   * Só se o OCR NÃO achar valor nenhum é que o escolhido entra — aí ele é o
+   * único número que existe.
    * @private
    */
   _tratarResultadoOferta(from, resultado, blocoDados) {
@@ -410,13 +425,13 @@ const ComprovanteHandler = {
     const dizimistaId = StateManager.getCampo(from, 'ofertaDizimistaId') || null;
 
     const dados = Object.assign({}, resultado.dados);
-    if (valorEscolhido) dados.valor = valorEscolhido;
+    const valorLido = (dados.valor && dados.valor > 0) ? dados.valor : null;
+    if (!valorLido && valorEscolhido) dados.valor = valorEscolhido;
 
-    // O bloco exibido tem de refletir o que será GRAVADO. Montado antes desta
-    // correção, ele mostraria o valor do OCR enquanto o Odoo receberia o valor
-    // escolhido — a pessoa leria "R$ 50,00" num registro de R$ 20,00 e não teria
-    // como saber qual dos dois vale.
-    blocoDados = this._blocoDados(dados);
+    // O bloco exibido tem de refletir o que será GRAVADO — senão a pessoa lê
+    // um valor na conversa e o Odoo guarda outro, sem que ninguém consiga
+    // saber qual dos dois vale.
+    blocoDados = this._blocoDados(dados) + this._notaValorDiferente(valorLido, valorEscolhido);
 
     let comunidadeRef = null;
     try {
@@ -495,6 +510,28 @@ const ComprovanteHandler = {
     t += `   Banco: ${rec.banco || naoVi}\n`;
 
     return t + '\n━━━━━━━━━━━━━━━━━━━━\n\n';
+  },
+
+  /**
+   * Uma linha quando o comprovante mostra um valor diferente do escolhido na
+   * tela anterior — BL-53.
+   *
+   * Não é alerta e não muda status: pagar mais, ou menos, do que indicou é
+   * direito de quem oferta, e o que a paróquia registra é o que entrou na
+   * conta. A linha existe porque a leitura do valor é reconhecidamente
+   * frágil (BL-14), e quem acabou de pagar é a única pessoa no mundo capaz de
+   * olhar esse número e dizer na hora que está errado.
+   * @private
+   */
+  _notaValorDiferente(valorLido, valorEscolhido) {
+    if (!valorLido || !valorEscolhido) return '';
+    // Centavos: dois valores iguais podem diferir na última casa por
+    // arredondamento, e isso não é diferença nenhuma.
+    if (Math.abs(valorLido - valorEscolhido) < 0.01) return '';
+
+    return `ℹ️ Você havia indicado ${Utils.formatarValor(valorEscolhido)} e o ` +
+           `comprovante mostra ${Utils.formatarValor(valorLido)}. ` +
+           `Registrei o valor do comprovante.\n\n`;
   },
 
   // ==========================================================================
