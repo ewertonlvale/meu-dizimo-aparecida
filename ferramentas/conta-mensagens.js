@@ -41,6 +41,7 @@ const RAIZ = path.join(__dirname, '..');
 let enviadas = [];
 let gratis   = [];   // sinais que NÃO são mensagens cobradas
 let consultas = [];  // domínios enviados ao Odoo, para conferir os filtros
+let gravado  = null; // o último registro escrito no Odoo, para os cenários espiarem
 const registra = (tipo, texto) => enviadas.push({ tipo, texto: String(texto || '') });
 
 /**
@@ -983,17 +984,64 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
-    nome: 'A oferta grava o valor ESCOLHIDO, não o que o OCR leu',
+    // O caso real: oferta indicada de R$ 10,00, comprovante de R$ 55,00. A
+    // mensagem dizia R$ 10,00 e o Odoo guardava R$ 10,00 — R$ 45,00 que
+    // entraram na conta da paróquia sumiam da prestação de contas.
+    nome: 'A oferta grava o valor do COMPROVANTE, não o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
-               comunidadeGravavel: true,
-               sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
+               comunidadeGravavel: true, ocr: { valor: 55 },
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
+               aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
     confere: msgs => {
-      // O OCR devolve 50 no stub; a pessoa escolheu 20. Vale o que ela disse —
-      // a extração de valor é reconhecidamente frágil (BL-14).
       const t = msgs[msgs.length - 1].texto;
       if (!t.includes('Oferta recebida')) return 'não confirmou a oferta';
-      return t.includes('20,00') ? null : 'gravou o valor do OCR, não o escolhido';
+      if (!gravado) return 'nada foi gravado no Odoo';
+      if (gravado.x_studio_value !== 55) return `o Odoo recebeu ${gravado.x_studio_value}`;
+      // A conversa tem de dizer o mesmo número que o registro. Conferir só
+      // "55,00" no texto não bastaria: a nota de divergência cita os DOIS
+      // valores, então "10,00" também aparece — foi exatamente assim que a
+      // versão anterior deste teste passou depois de o comportamento mudar.
+      const m = t.match(/Valor devolvido:\*? (R\$ [\d.]+,\d{2})/);
+      if (!m) return 'o bloco não mostrou valor nenhum';
+      return m[1] === 'R$ 55,00' ? null : `o bloco mostrou ${m[1]}`;
+    }
+  },
+  {
+    nome: 'Valor diferente do escolhido é dito, mas não vira acusação — BL-53',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, ocr: { valor: 55 },
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
+               aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (!t.includes('10,00') || !t.includes('55,00')) return 'a mensagem não citou os dois valores';
+      // A nota diz "registrei o valor do comprovante". O bloco acima dela tem
+      // de mostrar esse mesmo valor — senão a frase é mentira, que foi o que
+      // ela seria antes do BL-53.
+      const bloco = (t.match(/Valor devolvido:\*? (R\$ [\d.]+,\d{2})/) || [])[1];
+      const nota  = (t.match(/comprovante mostra (R\$ [\d.]+,\d{2})/) || [])[1];
+      if (bloco !== nota) return `o bloco diz ${bloco} e a nota diz ${nota}`;
+      // Pagar mais do que indicou não é erro de ninguém: a chave, o titular e o
+      // banco conferem, então o status continua Confirmado e nada de
+      // "será analisado".
+      if (gravado.x_studio_status !== 'Confirmado') return `status virou ${gravado.x_studio_status}`;
+      return /não confere|analisad/i.test(t) ? 'diferença de valor virou alerta' : null;
+    }
+  },
+  {
+    nome: 'OCR sem valor: aí sim vale o escolhido — BL-53',
+    cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, ocr: { valor: null },
+               sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
+               aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (gravado.x_studio_value !== 10) return `o Odoo recebeu ${gravado.x_studio_value}`;
+      // Sem dois números não há divergência a contar — a nota seria só ruído.
+      return t.includes('havia indicado') ? 'notou diferença onde só há um valor' : null;
     }
   },
   {
@@ -1040,6 +1088,7 @@ for (const r of REGRAS_DE_BOTAO) {
   enviadas = [];
   gratis   = [];
   consultas = [];
+  gravado  = null;
   const ctx = montarContexto(r.cenario);
   r.roda(ctx);
   const erro = enviadas.length ? r.confere(enviadas) : 'nenhuma mensagem enviada';
@@ -1622,6 +1671,89 @@ console.log('🏦 Comprovantes REAIS, um por layout de banco — BL-49\n');
     console.log(`${errs.length ? '❌' : '✅'} ${c.nome}` +
                 (errs.length ? `\n     ${errs.join('  ')}` : ''));
   }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📅 A data do pagamento, em qualquer layout — BL-52\n');
+
+// ──────────────────────────────────────────────────────────────────────
+// Três dos seis comprovantes reais lá de cima escrevem a data num formato que
+// a versão antiga não lia — ela só conhecia dd/mm/aaaa. O Nubank escreve
+// "24 JUL 2026"; o Google Pay escreve "domingo, 5 de abr., 18:03", sem ano
+// nenhum.
+//
+// E o resultado de não ler não era um campo vazio. Era pior: quem grava no
+// Odoo faz `data.split('/')`, que não quebra com outro formato — devolve
+// `undefined-undefined-24 JUL 2026`. Por isso todo caso daqui cobra
+// dd/mm/aaaa, e não "alguma data".
+{
+  const V = extratoresDoVision();
+
+  const DATAS = [
+    ['Itaú — dd/mm/aaaa no meio da frase',
+     'Realizado em 24/07/2026 às 09:34:12', '24/07/2026'],
+
+    ['Nubank — mês abreviado em maiúsculas',
+     'Comprovante de transferência\n24 JUL 2026 - 17:01:03\nValor R$ 32,00', '24/07/2026'],
+
+    ['Inter empresas — dia da semana antes da data',
+     'Data da transação Quarta-feira, 15/07/2026\nHorário 19h50', '15/07/2026'],
+
+    // O caso que motivou o BL-52. O ano não está na tela: está no E2E,
+    // E43394419 20260405 2103 — ISPB do Inter, data, hora UTC.
+    ['Google Pay — sem ano na tela, ano vindo do ID da transação',
+     'Concluído • domingo, 5 de abr., 18:03\nID da transação\nPix - E43394419202604052103uuGZ7BZQ3g5',
+     '05/04/2026'],
+
+    ['Um dígito no dia vira dois',
+     'Pago em 5 de abril de 2026', '05/04/2026'],
+
+    ['Ano com dois dígitos', 'Pago em 05/04/26', '05/04/2026'],
+
+    ['Formato ISO', 'Pagamento em 2026-04-05', '05/04/2026'],
+
+    // Sem nenhuma data escrita, o E2E é melhor que nada — com a ressalva de
+    // que a hora dele é UTC e pagamento de fim de noite cai no dia seguinte.
+    ['Só o ID da transação',
+     'Comprovante\nValor R$ 10,00\nID da transação E00416968202607152249MMIICzeJuat', '15/07/2026'],
+
+    // Agência e conta são números soltos em toda tela de comprovante. Um
+    // palpite aqui grava uma data errada que ninguém tem como desconfiar.
+    ['Agência e conta não viram data',
+     'Agência 0001\nConta 33103357-7\nValor R$ 32,00', null],
+
+    ['Sem data alguma é resposta legítima',
+     'Comprovante\nValor R$ 10,00', null]
+  ];
+
+  for (const [nome, texto, esperado] of DATAS) {
+    const r = V._extrairData(texto);
+    const ok = r === esperado;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}` +
+                (ok ? '' : ` — veio ${JSON.stringify(r)}, esperava ${JSON.stringify(esperado)}`));
+  }
+
+  // A prova de que o formato importa: o que sai daqui precisa atravessar
+  // `registrarDevolucao` sem virar `undefined-undefined-...`.
+  const ctx = montarContexto({ dizimista: DIZIMISTA, comunidadeGravavel: true,
+                               aoCriar: (m, d) => { if (m === 'x_devolucao') gravado = d; } });
+  gravado = null;
+  ctx.OdooService.registrarDevolucao(7, { valor: 50, data: V._extrairData('24 JUL 2026 - 17:01:03') });
+  const dataOdoo = gravado && gravado.x_studio_data_da_devolucao;
+  const okOdoo = dataOdoo === '2026-07-24';
+  if (!okOdoo) falhas++;
+  console.log(`${okOdoo ? '✅' : '❌'} A data lida chega ao Odoo como aaaa-mm-dd` +
+              (okOdoo ? '' : ` — chegou ${JSON.stringify(dataOdoo)}`));
+
+  // E uma data fora do formato não entra torta: cai para hoje, com aviso.
+  gravado = null;
+  ctx.OdooService.registrarDevolucao(7, { valor: 50, data: '24 JUL 2026' });
+  const bruta = gravado && gravado.x_studio_data_da_devolucao;
+  const okGuarda = /^\d{4}-\d{2}-\d{2}$/.test(String(bruta));
+  if (!okGuarda) falhas++;
+  console.log(`${okGuarda ? '✅' : '❌'} Data em formato estranho não vira \`undefined-undefined-\``  +
+              (okGuarda ? '' : ` — gravou ${JSON.stringify(bruta)}`));
 }
 
 console.log('\n' + '─'.repeat(64));

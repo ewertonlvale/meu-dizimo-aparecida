@@ -80,6 +80,8 @@
 | BL-49 | A chave extraída podia ser o CNPJ da instituição, no rodapé | 🔴 | P | ✅ Concluído (19/09) — busca ancorada no bloco de quem recebeu. 6 layouts reais viraram teste |
 | BL-50 | Exibir quem recebeu, e oferecer a pastoral quando não confere | 🟠 | P | ✅ Concluído (19/09) — nome, chave, banco e valor no resumo; qualquer campo lido que divirja avisa |
 | BL-51 | Devolução nascia sempre Pendente, mesmo quando o bot já sabia | 🟠 | P | ✅ Concluído (19/09) — Confirmado, Rejeitado ou Pendente conforme a conferência |
+| BL-52 | A data só era lida em dd/mm/aaaa — Nubank e Google Pay passavam em branco | 🟠 | P | ✅ Concluído (20/09) — mês por extenso, ISO, ano de 2 dígitos e o ano vindo do E2E. Saída sempre normalizada |
+| BL-53 | A oferta gravava o valor DIGITADO, nunca o do comprovante | 🔴 | P | ✅ Concluído (20/09) — vale o comprovante; oferta de R$ 10 paga com R$ 55 registrava R$ 10 |
 
 ---
 
