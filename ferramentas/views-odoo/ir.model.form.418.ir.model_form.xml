@@ -1,0 +1,12 @@
+<!-- ir.model · view 418 · ir.model form · herda de 47 · form · prioridade 16 -->
+<data>
+  <field name="transient" position="after">
+    <field name="is_mail_thread" readonly="state != 'manual'" groups="base.group_no_one"/>
+    <field name="is_mail_activity" readonly="state != 'manual'" groups="base.group_no_one"/>
+    <field name="is_mail_blacklist" readonly="state != 'manual'" groups="base.group_no_one"/>
+  </field>
+  <xpath expr="//field[@name='field_id']//field[@name='copied']" position="after">
+    <field name="state" invisible="1"/>
+    <field name="tracking" readonly="state != 'manual'"/>
+  </xpath>
+</data>

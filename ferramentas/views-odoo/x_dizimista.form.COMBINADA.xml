@@ -1,0 +1,58 @@
+<!-- x_dizimista · form combinada (via get_view) · view 593
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<form>
+  <header>
+    <field widget="statusbar" options="{'clickable': '1'}" name="x_studio_classificacao"/>
+  </header>
+  <sheet string="Dizimista">
+    <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
+    <field name="x_active" invisible="1"/>
+    <div class="oe_title">
+      <h1>
+        <field name="x_name" required="1" placeholder="Nome Usual..." string="Nome Usual"/>
+      </h1>
+    </div>
+    <group name="studio_group_2352c2">
+      <group name="studio_group_2352c2_left">
+        <field name="x_studio_nome_completo"/>
+        <field name="x_studio_cpf"/>
+        <field name="x_studio_partner_phone" widget="phone" options="{'enable_sms': True}" string="Telefone"/>
+        <field name="x_studio_date" string="Data de Nascimento"/>
+        <field name="x_studio_endereco"/>
+        <field name="x_studio_data_cadastro"/>
+        <field name="x_studio_comunidade" options="{&quot;create_name_field&quot;:&quot;x_name&quot;,&quot;no_create&quot;:true}" can_create="True" can_write="True"/>
+        <field name="x_studio_value"/>
+        <field name="x_studio_notificacao_ativa" string="Receber Notificações"/>
+        <field name="x_studio_dia_preferido" help="Dia Preferido para Devolução"/>
+      </group>
+      <group name="studio_group_2352c2_right">
+        <field name="x_studio_currency_id" invisible="1" can_create="True" can_write="True"/>
+        <field widget="image" name="x_studio_image" options="{&quot;zoom&quot;:true,&quot;convert_to_webp&quot;:true,&quot;size&quot;:[0,270]}" string="Foto"/>
+      </group>
+    </group>
+    <group name="studio_group_55t_1jh7ir34m">
+      <group name="studio_group_55t_left">
+      </group>
+      <group name="studio_group_55t_right"/>
+    </group>
+    <group name="studio_group_2bv_1jh7kqjbg" string="Devoluções">
+      <group name="studio_group_2bv_left"/>
+      <group name="studio_group_2bv_right"/>
+    </group>
+    <field name="x_studio_devolucoes">
+      <list create="true" default_order="x_studio_data_da_devolucao desc" delete="true" duplicate="false" multi_edit="false">
+        <field name="x_studio_sequence" widget="handle"/>
+        <field name="x_studio_dizimista" optional="show" can_create="True" can_write="True"/>
+        <field name="x_studio_tipo_contribuicao" optional="show"/>
+        <field name="x_studio_comunidade" optional="show" can_create="True" can_write="True"/>
+        <field name="x_studio_competencia" optional="show"/>
+        <field name="x_studio_data_da_devolucao" optional="show"/>
+        <field name="x_studio_currency_id" column_invisible="True" optional="show" can_create="True" can_write="True"/>
+        <field name="x_studio_value" sum="Total"/>
+        <field name="x_studio_status" optional="show"/>
+        <field name="write_date" optional="show" string="Data/Hora Envio"/>
+      </list>
+    </field>
+  </sheet>
+  <chatter/>
+</form>

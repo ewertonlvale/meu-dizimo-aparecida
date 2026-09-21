@@ -1,0 +1,39 @@
+<!-- x_comunidade · view 609 · Odoo Studio: Default form view for x_comunidade customization · herda de 601 · form · prioridade 99 -->
+<data>
+  <xpath expr="/form//group[@name='studio_group_22eae5']" position="after">
+    <notebook name="studio_notebook_8fu_1jhobjioi">
+      <page string="Dizimistas" name="studio_page_8fu">
+        <group name="studio_group_8fu">
+          <group name="studio_group_8fu_left"/>
+          <group name="studio_group_8fu_right"/>
+        </group>
+        <field name="x_studio_dizimistas"/>
+      </page>
+      <page string="Devoluções" name="studio_page_3g1_1jhobldgd">
+        <group name="studio_group_3g1">
+          <group name="studio_group_3g1_left"/>
+          <group name="studio_group_3g1_right"/>
+        </group>
+        <field name="x_studio_devolucoes"/>
+      </page>
+      <page string="Usuários Pastoral" name="studio_page_29o_1jhok4sk1">
+        <group name="studio_group_29o">
+          <group name="studio_group_29o_left"/>
+          <group name="studio_group_29o_right"/>
+        </group>
+        <field name="x_studio_usuarios"/>
+      </page>
+    </notebook>
+  </xpath>
+  <xpath expr="/form//group[@name='studio_group_22eae5_left']" position="inside">
+    <field name="x_studio_coordenador"/>
+    <field name="x_studio_chave_pix"/>
+    <field name="x_studio_titular_conta"/>
+    <field name="x_studio_banco"/>
+    <field name="x_studio_whatsapp_coordenador"/>
+    <field name="x_studio_chave_acesso"/>
+  </xpath>
+  <xpath expr="/form//group[@name='studio_group_22eae5_right']" position="inside">
+    <field widget="image" name="x_studio_qr_code"/>
+  </xpath>
+</data>

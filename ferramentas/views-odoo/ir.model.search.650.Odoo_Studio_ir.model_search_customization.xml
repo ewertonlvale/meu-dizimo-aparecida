@@ -1,0 +1,7 @@
+<!-- ir.model · view 650 · Odoo Studio: ir.model search customization · herda de 49 · search · prioridade 160 -->
+<data>
+  <xpath expr="/search//filter[@name='base']" position="after">
+    <group name="studio_group_by"/>
+    <filter name="studio_group_by_1p5_1jig462fh" string="Type" context="{'group_by': 'state'}"/>
+  </xpath>
+</data>

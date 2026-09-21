@@ -1,0 +1,45 @@
+<!-- x_devolucao · form combinada (via get_view) · view 604
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<form>
+  <header>
+    <field widget="statusbar" options="{'clickable': '1'}" name="x_studio_status"/>
+  </header>
+  <sheet string="Devolução">
+    <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
+    <field name="x_active" invisible="1"/>
+    <div class="oe_title">
+      <h1>
+        <field name="x_name" required="1" placeholder="Name..."/>
+      </h1>
+    </div>
+    <group name="studio_group_c89b90">
+      <group name="studio_group_c89b90_left">
+        <field name="x_studio_currency_id" invisible="1" can_create="True" can_write="True"/>
+        <field name="x_studio_tipo_contribuicao" force_save="0" readonly="False"/>
+        <field name="x_studio_dizimista" options="{&quot;create_name_field&quot;:&quot;x_name&quot;,&quot;no_create&quot;:true}" can_create="True" can_write="True"/>
+        <field name="x_studio_comunidade" options="{&quot;create_name_field&quot;:&quot;x_name&quot;,&quot;no_create&quot;:true}" can_create="True" can_write="True"/>
+        <field name="x_studio_competencia" options="{&quot;numeric&quot;:true}" widget="date" string="Mês Referencia"/>
+        <field name="x_studio_data_da_devolucao"/>
+        <field name="x_studio_value"/>
+        <field name="x_studio_forma_de_pagamento"/>
+        <field name="create_uid" string="Registrado por" options="{&quot;no_create&quot;:true}" force_save="1" readonly="True"/>
+        <field name="write_uid" string="Atualizado por" options="{&quot;no_create&quot;:true}" force_save="1" readonly="True"/>
+        <field name="x_studio_conferencia_pix"/>
+      </group>
+      <group name="studio_group_c89b90_right"/>
+    </group>
+    <group name="studio_group_93u_1ji0ctlq9">
+      <group name="studio_group_93u_left">
+        <field name="x_studio_tipo_comprovante" invisible="True"/>
+        <field name="x_studio_nome_arquivo" invisible="True"/>
+        <!--field name="x_studio_comprovante" widget="binary" filename="x_studio_nome_arquivo"/-->
+        <!-- IMAGEM: exibe inline quando tipo = imagem -->
+        <field name="x_studio_comprovante" widget="image" invisible="x_studio_tipo_comprovante != 'imagem'" string="Comprovante"/>
+        <!-- PDF: exibe inline com visualizador quando tipo = pdf -->
+        <field name="x_studio_comprovante" widget="pdf_viewer" invisible="x_studio_tipo_comprovante != 'pdf'" string="Comprovante"/>
+      </group>
+      <group name="studio_group_93u_right"/>
+    </group>
+  </sheet>
+  <chatter/>
+</form>

@@ -1,0 +1,8 @@
+<!-- x_dizimista · view 592 · Default list view for x_dizimista · base · list · prioridade 16 -->
+<list>
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_name"/>
+  <field name="x_studio_partner_id"/>
+  <field name="x_studio_currency_id" invisible="1"/>
+  <field name="x_studio_value" sum="Total"/>
+</list>

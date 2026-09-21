@@ -1,0 +1,11 @@
+<!-- x_contato_bot · view 649 · Odoo Studio: Default form view for x_contato_bot customization · herda de 647 · form · prioridade 99 -->
+<data>
+  <xpath expr="/form//group[@name='studio_group_c42b9b_left']" position="inside">
+    <field name="x_studio_data_primeiro_contato"/>
+    <field name="x_studio_cadastrou"/>
+    <field name="x_studio_etapa_abandono"/>
+  </xpath>
+  <xpath expr="/form//group[@name='studio_group_c42b9b_right']" position="inside">
+    <field name="x_studio_log_cadastro"/>
+  </xpath>
+</data>

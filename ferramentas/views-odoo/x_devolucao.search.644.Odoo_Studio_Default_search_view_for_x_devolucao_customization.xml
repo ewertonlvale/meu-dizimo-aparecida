@@ -1,0 +1,16 @@
+<!-- x_devolucao · view 644 · Odoo Studio: Default search view for x_devolucao customization · herda de 605 · search · prioridade 99 -->
+<data>
+  <xpath expr="/search//field[@name='x_name']" position="before">
+    <field name="x_studio_dizimista"/>
+    <field name="x_studio_comunidade"/>
+  </xpath>
+  <xpath expr="/search/separator" position="after">
+    <filter domain="[&quot;&amp;&quot;, (&quot;x_studio_competencia&quot;, &quot;&gt;=&quot;, &quot;today =1d&quot;), (&quot;x_studio_competencia&quot;, &quot;&lt;&quot;, &quot;today +1d&quot;)]" name="studio_filter_8fb_1ji0qilv3" string="Mês Atual"/>
+  </xpath>
+  <xpath expr="/search/separator[2]" position="after">
+    <group name="studio_group_by"/>
+    <filter name="studio_group_by_6rd_1ji0pb9u5" string="Status" context="{'group_by': 'x_studio_status'}"/>
+    <filter name="studio_group_by_7b_1ji0pbs65" string="Mês Referencia" context="{'group_by': 'x_studio_competencia'}"/>
+    <filter name="studio_group_by_38d_1ji0p9jjo" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}"/>
+  </xpath>
+</data>

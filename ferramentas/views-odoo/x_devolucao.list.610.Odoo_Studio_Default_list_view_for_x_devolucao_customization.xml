@@ -1,0 +1,40 @@
+<!-- x_devolucao · view 610 · Odoo Studio: Default list view for x_devolucao customization · herda de 603 · list · prioridade 99 -->
+<data>
+  <xpath expr="/list//field[@name='x_name']" position="replace">
+    <field name="x_studio_dizimista" optional="show"/>
+    <field name="x_studio_tipo_contribuicao" optional="show"/>
+    <field name="x_studio_comunidade" optional="show"/>
+    <field name="x_studio_competencia" optional="show"/>
+    <field name="x_studio_data_da_devolucao" optional="show"/>
+  </xpath>
+  <xpath expr="/list//field[@name='x_studio_value']" position="after">
+    <field name="x_studio_status" optional="show"/>
+    <field name="write_date" optional="show" string="Data/Hora Envio"/>
+  </xpath>
+  <xpath expr="/list" position="attributes">
+    <attribute name="create">
+      true
+    </attribute>
+    <attribute name="default_order">
+      x_studio_data_da_devolucao desc
+    </attribute>
+    <attribute name="delete">
+      true
+    </attribute>
+    <attribute name="duplicate">
+      false
+    </attribute>
+    <attribute name="multi_edit">
+      false
+    </attribute>
+  </xpath>
+  <xpath expr="/list//field[@name='x_studio_currency_id']" position="attributes">
+    <attribute name="column_invisible">
+      True
+    </attribute>
+    <attribute name="invisible"/>
+    <attribute name="optional">
+      show
+    </attribute>
+  </xpath>
+</data>

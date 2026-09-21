@@ -1,0 +1,9 @@
+<!-- res.users · view 446 · res.users.view.form.inherit.auth.totp.mail · herda de 232 · form · prioridade 16 -->
+<data>
+  <xpath expr="//div[@name='div_action_totp_enable_wizard']" position="inside">
+    <button groups="base.group_erp_manager" invisible="id == uid or totp_enabled" name="action_totp_invite" string="Invite to use 2FA" type="object" class="btn btn-secondary h-100"/>
+  </xpath>
+  <xpath expr="//div[@name='div_action_totp_enable_wizard']/span" position="attributes">
+    <attribute name="class" add="me-2" separator=" "/>
+  </xpath>
+</data>

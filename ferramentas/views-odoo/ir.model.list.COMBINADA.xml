@@ -1,0 +1,8 @@
+<!-- ir.model · list combinada (via get_view) · view 48
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<list string="Model Description" duplicate="0">
+  <field name="model"/>
+  <field name="name"/>
+  <field name="state"/>
+  <field name="transient"/>
+</list>

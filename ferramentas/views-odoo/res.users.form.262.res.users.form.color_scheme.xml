@@ -1,0 +1,4 @@
+<!-- res.users · view 262 · res.users.form.color_scheme · herda de 167 · form · prioridade 16 -->
+<xpath expr="//group[@name='other_preferences']" position="inside">
+  <field name="color_scheme" widget="radio" string="Theme" options="{'horizontal': true}"/>
+</xpath>

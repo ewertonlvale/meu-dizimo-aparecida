@@ -1,0 +1,24 @@
+<!-- x_contato_bot · form combinada (via get_view) · view 647
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<form>
+  <header/>
+  <sheet string="Contato Bot">
+    <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
+    <field name="x_active" invisible="1"/>
+    <div class="oe_title">
+      <h1>
+        <field name="x_name" required="1" placeholder="Name..."/>
+      </h1>
+    </div>
+    <group name="studio_group_c42b9b">
+      <group name="studio_group_c42b9b_left">
+        <field name="x_studio_data_primeiro_contato"/>
+        <field name="x_studio_cadastrou"/>
+        <field name="x_studio_etapa_abandono"/>
+      </group>
+      <group name="studio_group_c42b9b_right">
+        <field name="x_studio_log_cadastro"/>
+      </group>
+    </group>
+  </sheet>
+</form>

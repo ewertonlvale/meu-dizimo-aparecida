@@ -1,0 +1,6 @@
+<!-- x_devolucao · view 624 · Odoo Studio: Default graph view for x_devolucao customization · herda de 607 · graph · prioridade 99 -->
+<data>
+  <xpath expr="/graph//field[@name='create_date']" position="replace">
+    <field name="x_studio_competencia" type="col"/>
+  </xpath>
+</data>

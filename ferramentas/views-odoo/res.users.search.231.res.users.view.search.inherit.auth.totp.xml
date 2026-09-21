@@ -1,0 +1,6 @@
+<!-- res.users · view 231 · res.users.view.search.inherit.auth.totp · herda de 170 · search · prioridade 16 -->
+<xpath expr="//search" position="inside">
+  <separator/>
+  <filter name="totp_enabled" string="Two-factor authentication Enabled" domain="[('totp_enabled','!=',False)]"/>
+  <filter name="totp_disabled" string="Two-factor authentication Disabled" domain="[('totp_enabled','=',False)]"/>
+</xpath>

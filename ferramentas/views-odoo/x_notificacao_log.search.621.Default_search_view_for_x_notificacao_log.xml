@@ -1,0 +1,7 @@
+<!-- x_notificacao_log · view 621 · Default search view for x_notificacao_log · base · search · prioridade 16 -->
+<search>
+  <field name="x_name"/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_notificacao_log" domain="[['x_active', '=', False]]"/>
+  <separator/>
+</search>

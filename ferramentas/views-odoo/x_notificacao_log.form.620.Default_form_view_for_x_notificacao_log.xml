@@ -1,0 +1,18 @@
+<!-- x_notificacao_log · view 620 · Default form view for x_notificacao_log · base · form · prioridade 16 -->
+<form>
+  <header/>
+  <sheet string="Notificaçao Log">
+    <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
+    <field name="x_active" invisible="1"/>
+    <div class="oe_title">
+      <h1>
+        <field name="x_name" required="1" placeholder="Name..."/>
+      </h1>
+    </div>
+    <group name="studio_group_59ed0e">
+      <group name="studio_group_59ed0e_left"/>
+      <group name="studio_group_59ed0e_right"/>
+    </group>
+  </sheet>
+  <chatter/>
+</form>

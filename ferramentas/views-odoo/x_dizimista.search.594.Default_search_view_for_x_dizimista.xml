@@ -1,0 +1,16 @@
+<!-- x_dizimista · view 594 · Default search view for x_dizimista · base · search · prioridade 16 -->
+<search>
+  <field name="x_name"/>
+  <field name="x_studio_partner_id" operator="child_of"/>
+  <field name="x_studio_comunidade"/>
+  <separator/>
+  <filter date="x_studio_date" name="studio_filter_date" string="Data"/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_dizimista" domain="[['x_active', '=', False]]"/>
+  <separator/>
+  <filter name="groupby_x_partner" string="Usuário" context="{'group_by': 'x_studio_partner_id'}" domain="[]"/>
+  <filter name="groupby_x_comunidade" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}" domain="[]"/>
+  <searchpanel>
+    <field name="x_studio_comunidade" select="one" enable_counters="1" icon="fa-users"/>
+  </searchpanel>
+</search>

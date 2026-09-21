@@ -1,0 +1,142 @@
+<!-- res.users · view 167 · res.users.form · base · form · prioridade 16 -->
+<form string="Users" class="o_res_users_form_view_full">
+  <header>
+  </header>
+  <sheet>
+    <div class="oe_button_box" name="button_box">
+      <button name="action_show_groups" type="object" groups="base.group_no_one" class="oe_stat_button" icon="fa-users" help="Groups that apply to the current user">
+        <field string="Groups" name="groups_count" widget="statinfo"/>
+      </button>
+      <button name="action_show_accesses" type="object" groups="base.group_no_one" class="oe_stat_button" icon="fa-lock">
+        <field string="Access Rights" name="accesses_count" widget="statinfo"/>
+      </button>
+      <button name="action_show_rules" type="object" groups="base.group_no_one" class="oe_stat_button" icon="fa-lock">
+        <field string="Record Rules" name="rules_count" widget="statinfo"/>
+      </button>
+    </div>
+    <widget name="web_ribbon" title="External user" bg_color="text-bg-warning" invisible="not share"/>
+    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+    <div class="alert alert-info text-center o_form_header" invisible="active and active_partner or not active and not active_partner or active and not active_partner" role="alert">
+      <a class="close" data-bs-dismiss="alert" href="#">
+        x
+      </a>
+      <div>
+        <strong>
+          The contact linked to this user is still active
+        </strong>
+      </div>
+      <div>
+        You can archive the contact
+        <field name="partner_id" required="0" readonly="1"/>
+      </div>
+    </div>
+    <div class="d-flex flex-column flex-md-row align-items-center gap-3">
+      <field name="image_1920" widget="contact_image" options="{'preview_image': 'avatar_128', 'size': [130,130], 'img_class': 'rounded-4'}"/>
+      <field name="avatar_128" invisible="1"/>
+      <!-- Needed in contact_image widget -->
+      <group class="o_form_header_details d-flex flex-column gap-md-0 w-100">
+        <label for="name" class="d-md-none"/>
+        <h1>
+          <field name="name" placeholder="e.g. John Doe" required="1"/>
+        </h1>
+        <label for="login" class="d-md-none"/>
+        <div name="login" class="d-flex align-items-baseline w-md-50 gap-2">
+          <i class="d-none d-md-block fa fa-envelope" title="Login / Email" invisible="login != email"/>
+          <i class="d-none d-md-block fa fa-key" title="Login" invisible="login == email"/>
+          <field name="login" placeholder="Login"/>
+        </div>
+        <label for="email" class="d-md-none" invisible="login == email"/>
+        <div name="email" class="d-flex align-items-baseline w-md-50 gap-2" invisible="login == email">
+          <i class="d-none d-md-block fa fa-envelope" title="Email"/>
+          <field name="email" placeholder="Email"/>
+        </div>
+        <label for="phone" class="d-md-none"/>
+        <div name="phone" class="d-flex align-items-baseline w-md-50 gap-2">
+          <i class="d-none d-md-block fa fa-phone" title="Phone"/>
+          <field name="phone" placeholder="Phone"/>
+        </div>
+      </group>
+    </div>
+    <group>
+      <field name="partner_id" groups="base.group_no_one" readonly="1" required="0" invisible="not id"/>
+    </group>
+    <notebook colspan="4">
+      <page name="access_rights" string="Access Rights">
+        <group string="Roles" invisible="share and companies_count &lt;= 1">
+          <field name="role" invisible="share" widget="radio" options="{'horizontal': true}"/>
+          <field string="Companies" name="company_ids" invisible="companies_count &lt;= 1" widget="many2many_tags" options="{'no_create': True, 'color_field': 'color', 'on_tag_click': 'edit_color'}"/>
+          <field string="Default Company" name="company_id" invisible="companies_count &lt;= 1" context="{'user_preference': 0}"/>
+        </group>
+        <field name="group_ids" widget="res_user_group_ids" nolabel="1" colspan="2" groups="base.group_no_one"/>
+        <field name="group_ids" widget="res_user_group_ids" nolabel="1" colspan="2" groups="!base.group_no_one" invisible="share"/>
+      </page>
+      <page string="Preferences" name="preferences">
+        <group>
+          <group>
+            <label for="lang"/>
+            <div class="o_row">
+              <field name="lang" required="1"/>
+              <button type="action" name="44" class="oe_edit_only btn-sm btn-link mb4 fa fa-globe" groups="base.group_system" aria-label="Add a language" title="Add a language"/>
+            </div>
+            <field name="signature" options="{'codeview': true, 'height': 112, 'resizable': true}" class="o_field_border_visible"/>
+          </group>
+          <!-- This group is meant to be used in overrides -->
+          <group name="other_preferences"/>
+        </group>
+      </page>
+      <page name="calendar" string="Calendar">
+        <group>
+          <group name="calendar_preferences">
+            <field name="tz" widget="timezone_mismatch" options="{'tz_offset_field': 'tz_offset'}" readonly="0" invisible="share"/>
+            <field name="tz_offset" invisible="1"/>
+            <!-- needed for the timezone_mismatch widget -->
+          </group>
+          <!-- This group is meant to be used in overrides -->
+          <group name="other_calendar_preferences"/>
+        </group>
+      </page>
+      <page string="Security" name="page_security" invisible="not id">
+        <div name="auth" class="d-flex">
+          <div class="col-7 col-sm-6 col-lg-3 d-flex flex-column">
+            <span class="o_form_label">
+              Change Password
+            </span>
+            <span class="text-muted">
+              Update if compromised.
+            </span>
+          </div>
+          <button invisible="id != uid" name="preference_change_password" type="object" string="Change password" class="btn btn-secondary h-100 my-auto"/>
+          <button invisible="id == uid" name="action_change_password_wizard" type="object" string="Change password" class="btn btn-secondary h-100 my-auto"/>
+        </div>
+        <div name="api_keys" invisible="id != uid" class="d-md-flex mt-3">
+          <div class="col-md-6 col-lg-3 d-flex flex-column">
+            <label for="api_key_wizard" string="API Keys" class="o_form_label"/>
+            <span class="text-muted">
+              Connect external services.
+            </span>
+          </div>
+          <div class="w-md-50 w-lg-75 d-flex flex-column my-auto">
+            <field name="api_key_ids" mode="kanban" invisible="not api_key_ids" class="w-sm-75 w-md-100 w-lg-75 w-xl-50 o_base_api_keys_kanban_view"/>
+            <div>
+              <button name="api_key_wizard" string="Add API Key" type="object" class="btn btn-secondary h-100"/>
+            </div>
+          </div>
+        </div>
+        <div invisible="id != uid" class="d-md-flex mt-3">
+          <div class="w-md-50 w-lg-25  d-flex flex-column">
+            <label for="action_revoke_all_devices" string="Devices" class="o_form_label"/>
+            <span class="text-muted">
+              Check if they are yours.
+            </span>
+          </div>
+          <div class="w-md-50 w-lg-75 d-flex flex-column my-auto">
+            <field name="session_ids" mode="kanban" class="w-sm-75 w-md-100 w-lg-75 w-xl-50 o_base_devices_kanban_view"/>
+            <div>
+              <button name="action_revoke_all_devices" type="object" string="Log out from all devices" class="btn btn-secondary h-100"/>
+            </div>
+          </div>
+        </div>
+      </page>
+    </notebook>
+  </sheet>
+</form>

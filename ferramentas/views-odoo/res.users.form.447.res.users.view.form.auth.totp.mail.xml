@@ -1,0 +1,28 @@
+<!-- res.users · view 447 · res.users.view.form.auth.totp.mail · herda de 173 · form · prioridade 16 -->
+<data>
+  <form position="attributes">
+    <attribute name="create">
+      0
+    </attribute>
+    <attribute name="edit">
+      0
+    </attribute>
+    <attribute name="delete">
+      0
+    </attribute>
+  </form>
+  <notebook position="replace">
+    <div class="d-flex mt-3">
+      <div class="col-7 col-sm-6 col-lg-3 d-flex flex-column">
+        <label for="totp_enabled" string="Two-factor Authentication" class="o_form_label"/>
+        <span class="text-muted">
+          Recommended for extra security.
+        </span>
+      </div>
+      <field name="totp_enabled" invisible="1"/>
+      <!-- Required for the visibility of the 2FA buttons. -->
+      <button invisible="totp_enabled" name="action_totp_enable_wizard" type="object" class="btn btn-secondary h-100" string="Enable 2FA" help="Click to enable 2FA."/>
+      <button invisible="not totp_enabled" name="action_totp_enable_wizard" type="object" disabled="1" class="btn btn-secondary h-100 disabled" string="Enable 2FA"/>
+    </div>
+  </notebook>
+</data>

@@ -1,0 +1,6 @@
+<!-- res.users · view 266 · res.users.preferences.form.mobile · herda de 173 · form · prioridade 16 -->
+<xpath expr="//form" position="attributes">
+  <attribute name="js_class">
+    res_users_preferences_form
+  </attribute>
+</xpath>

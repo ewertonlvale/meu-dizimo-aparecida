@@ -1,0 +1,16 @@
+<!-- ir.model · search combinada (via get_view) · view 49
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<search string="Model Description">
+  <field name="name" filter_domain="['|', ('name','ilike',self), ('model','ilike',self)]" string="Model"/>
+  <field name="model" filter_domain="[('model','ilike',self)]" string="Technical Name"/>
+  <filter string="Mail Thread" name="is_mail_thread" domain="[('is_mail_thread', '=', True)]"/>
+  <filter string="Mail Activity" name="is_mail_activity" domain="[('is_mail_activity', '=', True)]"/>
+  <filter string="Mail Blacklist" name="is_mail_blacklist" domain="[('is_mail_blacklist', '=', True)]"/>
+  <filter string="Abstract" name="abstract" domain="[('abstract', '=', True)]"/>
+  <filter string="Transient" name="transient" domain="[('transient', '=', True)]"/>
+  <separator/>
+  <filter string="Custom" name="custom" domain="[('state', '=', 'manual')]"/>
+  <filter string="Base" name="base" domain="[('state', '=', 'base')]"/>
+  <group name="studio_group_by"/>
+  <filter name="studio_group_by_1p5_1jig462fh" string="Type" context="{'group_by': 'state'}"/>
+</search>

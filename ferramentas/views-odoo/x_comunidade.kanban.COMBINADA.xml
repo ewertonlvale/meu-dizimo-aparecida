@@ -1,0 +1,41 @@
+<!-- x_comunidade · kanban combinada (via get_view) · view 678
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<kanban string="Comunidade">
+  <field name="x_studio_dizimistas"/>
+  <templates>
+    <t t-name="card">
+      <div class="w-100">
+        <field name="x_name" class="fw-bold fs-5 d-block text-truncate"/>
+        <field name="x_studio_banco" class="text-muted small d-block text-truncate"/>
+        <div class="mt-1 mb-2">
+          <t t-set="qtd" t-value="record.x_studio_dizimistas.raw_value or []"/>
+          <span class="badge rounded-pill text-bg-light">
+            <t t-out="qtd.length or qtd.count or 0"/>
+            dizimistas
+          </span>
+        </div>
+        <div class="mt-2">
+          <span class="text-muted small d-block">
+            Chave PIX
+          </span>
+          <field name="x_studio_chave_pix" class="fw-bold d-block text-truncate"/>
+          <div class="text-danger small fw-bold" invisible="x_studio_chave_pix">
+            ⚠ sem chave cadastrada
+          </div>
+        </div>
+        <div class="mt-2">
+          <span class="text-muted small d-block">
+            Titular
+          </span>
+          <field name="x_studio_titular_conta" class="d-block text-truncate"/>
+        </div>
+        <div class="mt-2">
+          <span class="text-muted small d-block">
+            WhatsApp
+          </span>
+          <field name="x_studio_whatsapp_coordenador" class="d-block text-truncate"/>
+        </div>
+      </div>
+    </t>
+  </templates>
+</kanban>

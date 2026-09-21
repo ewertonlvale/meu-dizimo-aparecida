@@ -1,0 +1,4 @@
+<!-- res.users · view 437 · res.users.list.inherit · herda de 168 · list · prioridade 16 -->
+<list position="inside">
+  <field name="state" widget="badge" optional="hide" decoration-info="state == 'new'" decoration-success="state == 'active'"/>
+</list>

@@ -1,0 +1,14 @@
+<!-- x_devolucao · list combinada (via get_view) · view 603
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<list create="true" default_order="x_studio_data_da_devolucao desc" delete="true" duplicate="false" multi_edit="false">
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_studio_dizimista" optional="show" can_create="True" can_write="True"/>
+  <field name="x_studio_tipo_contribuicao" optional="show"/>
+  <field name="x_studio_comunidade" optional="show" can_create="True" can_write="True"/>
+  <field name="x_studio_competencia" optional="show"/>
+  <field name="x_studio_data_da_devolucao" optional="show"/>
+  <field name="x_studio_currency_id" column_invisible="True" optional="show" can_create="True" can_write="True"/>
+  <field name="x_studio_value" sum="Total"/>
+  <field name="x_studio_status" optional="show"/>
+  <field name="write_date" optional="show" string="Data/Hora Envio"/>
+</list>

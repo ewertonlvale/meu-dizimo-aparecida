@@ -1,0 +1,15 @@
+<!-- x_dizimista · list combinada (via get_view) · view 592
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+<list>
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_name"/>
+  <field name="x_studio_nome_completo" optional="show"/>
+  <field name="x_studio_partner_phone" optional="show"/>
+  <field name="x_studio_comunidade" optional="show"/>
+  <field name="x_studio_date" optional="show"/>
+  <field name="x_studio_devolucoes" optional="show"/>
+  <field name="x_studio_currency_id" invisible="False" column_invisible="True"/>
+  <field name="x_studio_value" sum="Total"/>
+  <field name="write_date" optional="show" string="Data/Hora Envio"/>
+  <field name="x_studio_classificacao" optional="show"/>
+</list>

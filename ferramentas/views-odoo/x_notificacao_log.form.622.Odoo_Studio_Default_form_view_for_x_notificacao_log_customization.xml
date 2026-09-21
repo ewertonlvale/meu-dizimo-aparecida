@@ -1,0 +1,11 @@
+<!-- x_notificacao_log · view 622 · Odoo Studio: Default form view for x_notificacao_log customization · herda de 620 · form · prioridade 99 -->
+<data>
+  <xpath expr="/form//group[@name='studio_group_59ed0e_left']" position="inside">
+    <field name="x_studio_dizimista" options="{'create_name_field': 'x_name'}"/>
+    <field name="x_studio_tipo"/>
+    <field name="x_studio_data_envio"/>
+    <field name="x_studio_mes_referencia"/>
+    <field name="x_studio_status_envio"/>
+    <field name="x_studio_mensagem_erro"/>
+  </xpath>
+</data>
