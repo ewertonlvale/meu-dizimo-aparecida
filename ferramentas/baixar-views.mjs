@@ -17,9 +17,10 @@
  *
  *   1. Uma vez só, crie o arquivo de credenciais:
  *        cp ferramentas/.odoo-env.exemplo ferramentas/.odoo-env
- *        chmod 600 ferramentas/.odoo-env
  *      e preencha ODOO_URL, ODOO_DB, ODOO_UID e ODOO_API_KEY.
- *      Esse arquivo está no .gitignore.
+ *      Esse arquivo está no .gitignore. Como restringir o acesso a ele em
+ *      cada sistema está comentado dentro do próprio .exemplo — `chmod` não
+ *      existe no PowerShell.
  *
  *   2. Depois, sempre:
  *        node ferramentas/baixar-views.mjs
@@ -61,6 +62,9 @@ const env = carregarEnv(process.env.ODOO_ENV_FILE || 'ferramentas/.odoo-env');
 if (env?.carregadas.length) {
   console.log(`🔑 ${env.caminho}: ${env.carregadas.join(', ')}`);
 }
+if (env?.vazias.length) {
+  console.log(`⚠️  ${env.caminho}: em branco → ${env.vazias.join(', ')}`);
+}
 
 const argv = process.argv.slice(2);
 const arg = (nome) => {
@@ -90,7 +94,11 @@ if (faltando.length) {
   console.error('❌ Faltou:\n   ' + faltando.join('\n   '));
   console.error('\nO jeito mais simples é o arquivo de credenciais:');
   console.error('   cp ferramentas/.odoo-env.exemplo ferramentas/.odoo-env');
-  console.error('   chmod 600 ferramentas/.odoo-env');
+  // `chmod` não existe no PowerShell, e sugeri-lo ali só produz um erro
+  // vermelho que assusta sem motivo — a cópia já funcionou.
+  console.error(process.platform === 'win32'
+    ? '   icacls ferramentas\\.odoo-env /inheritance:r /grant:r "$($env:USERNAME):(R,W)"   # opcional'
+    : '   chmod 600 ferramentas/.odoo-env');
   console.error('   (preencha os quatro valores — o arquivo está no .gitignore)');
   console.error('\nOu, sem arquivo:');
   console.error('   ODOO_API_KEY=sua-chave node ferramentas/baixar-views.mjs \\');

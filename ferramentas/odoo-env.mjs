@@ -23,8 +23,14 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
  * Carrega o arquivo para dentro de `process.env`, sem sobrescrever o que já
  * estiver definido. Devolve o que foi lido, para o chamador poder avisar.
  *
+ * `carregadas` traz só as chaves com valor. As que existem no arquivo mas
+ * estão em branco saem em `vazias` — é o estado de quem acabou de copiar o
+ * .exemplo, e confundir as duas faz o script anunciar "carreguei" logo antes
+ * de dizer "faltou".
+ *
  * @param {string} caminho
- * @returns {{carregadas: string[], caminho: string}|null} null se não existe
+ * @returns {{carregadas: string[], vazias: string[], caminho: string}|null}
+ *          null quando o arquivo não existe
  */
 export function carregarEnv(caminho = 'ferramentas/.odoo-env') {
   if (!existsSync(caminho)) return null;
@@ -40,6 +46,7 @@ export function carregarEnv(caminho = 'ferramentas/.odoo-env') {
   } catch { /* statSync falhou — não é motivo para impedir a leitura */ }
 
   const carregadas = [];
+  const vazias = [];
 
   for (const linha of readFileSync(caminho, 'utf8').split(/\r?\n/)) {
     const limpa = linha.trim();
@@ -55,9 +62,9 @@ export function carregarEnv(caminho = 'ferramentas/.odoo-env') {
 
     if (process.env[chave] === undefined) {
       process.env[chave] = valor;
-      carregadas.push(chave);
+      (valor ? carregadas : vazias).push(chave);
     }
   }
 
-  return { carregadas, caminho };
+  return { carregadas, vazias, caminho };
 }
