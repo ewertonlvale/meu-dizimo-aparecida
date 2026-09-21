@@ -1,4 +1,4 @@
 <!-- x_dizimista · view 596 · Default map view for x_dizimista · base · map · prioridade 16 -->
 <map res_partner="x_studio_partner_id">
-  <field name="x_studio_partner_id" string="Usuário"/>
+  <field name="x_studio_partner_id" string="Endereço"/>
 </map>

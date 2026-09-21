@@ -4,9 +4,9 @@
  * O QUE ELE CRIA
  *   1. `x_studio_partner_id` em x_comunidade — many2one para res.partner.
  *      É o endereço de verdade, e é o que o mapa lê.
- *   2. Cinco campos RELACIONADOS, que espelham o endereço do parceiro direto
- *      na tela da comunidade: rua, complemento, cidade, UF e CEP. Editáveis —
- *      quem digita ali escreve no parceiro, sem precisar abrir outra tela.
+ *   2. Sete campos RELACIONADOS, que espelham o endereço do parceiro direto
+ *      na tela da comunidade: rua, complemento, cidade, UF, CEP e a coordenada.
+ *      Editáveis: quem digita ali escreve no parceiro.
  *   3. A view de MAPA de x_comunidade, que não existe hoje.
  *   4. `map` no view_mode da ação de Comunidade, senão a view existe e
  *      ninguém a alcança.
@@ -119,6 +119,15 @@ const CAMPOS = [
   { name: 'x_studio_cidade',      label: 'Cidade',              ttype: 'char',      related: `${PARTNER}.city` },
   { name: 'x_studio_uf',          label: 'Estado',              ttype: 'many2one',  relation: 'res.country.state', related: `${PARTNER}.state_id` },
   { name: 'x_studio_cep',         label: 'CEP',                 ttype: 'char',      related: `${PARTNER}.zip` },
+  // Coordenada à mão, e não porque geocodificar seria mais elegante.
+  //
+  // O provedor aqui é o Nominatim (OpenStreetMap), que em cidade brasileira
+  // costuma parar no centroide do bairro ou no meio da rua. Para seis pinos,
+  // colar a coordenada do Google Maps leva um minuto e acerta na porta — e o
+  // mapa usa `partner_latitude`/`partner_longitude` quando existem, sem
+  // consultar provedor nenhum.
+  { name: 'x_studio_latitude',    label: 'Latitude',            ttype: 'float',     related: `${PARTNER}.partner_latitude` },
+  { name: 'x_studio_longitude',   label: 'Longitude',           ttype: 'float',     related: `${PARTNER}.partner_longitude` },
 ];
 
 const [modelo] = await buscar('ir.model', [['model', '=', 'x_comunidade']], ['id'], { limit: 1 });

@@ -49,6 +49,16 @@
     <field name="x_studio_cidade"      invisible="not x_studio_partner_id"/>
     <field name="x_studio_uf"          invisible="not x_studio_partner_id"/>
     <field name="x_studio_cep"         invisible="not x_studio_partner_id"/>
+    <!-- O mapa prefere a coordenada gravada; só geocodifica o endereço quando
+         ela falta. Deixar as duas à vista é o que permite acertar na porta em
+         vez de aceitar o centroide do bairro que o Nominatim devolve. -->
+    <div class="text-muted small mt-2" invisible="not x_studio_partner_id">
+      Coordenada (opcional): no Google Maps, clique com o botão direito sobre o
+      local e copie o par de números. Em branco, o mapa tenta adivinhar pelo
+      endereço.
+    </div>
+    <field name="x_studio_latitude"    invisible="not x_studio_partner_id"/>
+    <field name="x_studio_longitude"   invisible="not x_studio_partner_id"/>
     <separator string="QR Code"/>
     <field widget="image" name="x_studio_qr_code"/>
   </xpath>
