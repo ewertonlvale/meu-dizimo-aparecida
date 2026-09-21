@@ -578,6 +578,12 @@ async function atualizar() {
 
   const indice = JSON.parse(readFileSync(caminhoIndice, 'utf8'));
   let enviadas = 0, iguais = 0, puladas = 0, falhas = 0;
+  // O índice guarda a digital do que o Odoo tinha no último download. Toda
+  // gravação daqui torna esse registro velho — e a trava 3, que compara com
+  // ele, passaria a acusar "mudou no Odoo" no update seguinte. Mudou: por
+  // nossa causa. Então cada write atualiza a digital, e o índice é regravado
+  // no fim.
+  let indiceMudou = false;
 
   for (const entrada of indice.modelos) {
     if (CONFIG.modelos && !CONFIG.modelos.includes(entrada.modelo)) continue;
@@ -667,6 +673,12 @@ async function atualizar() {
         await rpc('ir.ui.view', 'write', [[v.id], { arch: local }]);
         console.log(`   ✓ view ${v.id} (${v.name}) atualizada`);
         enviadas++;
+        // Sem isto, um --update bloqueia o próximo --update com um alarme
+        // falso, e a saída sugere `--forcar` — que é justamente o que desliga
+        // a proteção. Uma trava que atrapalha o uso normal vira hábito de
+        // ignorar trava.
+        v.hash = digital(local);
+        indiceMudou = true;
       } catch (e) {
         // O Odoo valida o arch no write. Uma mensagem dele aqui é diagnóstico,
         // não ruído — é ela que diz qual xpath não casou.
@@ -681,6 +693,10 @@ async function atualizar() {
     if (combinadas.length) {
       console.log(`   · ${combinadas.length} combinada(s) — somente leitura, ignorada(s) (trava 2)`);
     }
+  }
+
+  if (indiceMudou && !CONFIG.simular) {
+    await writeFile(caminhoIndice, JSON.stringify(indice, null, 2), 'utf8');
   }
 
   const verbo = CONFIG.simular ? 'mudariam' : 'atualizadas';
