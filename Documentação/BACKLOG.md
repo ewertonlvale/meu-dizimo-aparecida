@@ -92,6 +92,7 @@
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | 📋 Aberto — o espaço já foi corrigido; falta humanizar os rótulos da seleção no Odoo |
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
+| BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ Código pronto (21/09) — badge versionado + dois botões via instalador. **Falta rodar** `--aplicar` e `--download` |
 
 ---
 
@@ -404,6 +405,42 @@ decisão não cabe numa revisão de formulário.
 **A única razão para devolvê-lo:** se a paróquia usa essa figura para **imprimir cartaz**
 na porta da capela. Nesse caso são duas linhas de volta na view — mas aí vale saber que a
 figura não se atualiza sozinha quando a chave muda.
+
+---
+
+### BL-64 — Validar direto do card do kanban 🟠 (M)
+
+O kanban é a tela que abre no celular, e validar exigia abrir cada registro.
+
+**O que está versionado neste repositório:** o badge de validação no card — cinza enquanto
+ninguém olhou, verde validado, vermelho não recebido. Isso é view pura e sobe com um
+`--update` comum.
+
+**O que não pode ser versionado direto:** os botões. Botão de kanban que faz alguma coisa
+chama uma `ir.actions.server` por **ID numérico**, e esse ID nasce quando a ação é criada
+nesta instância. Um arquivo aqui não tem como carregá-lo, e escrever um número às cegas
+produz botão que aponta para o nada.
+
+**O caminho que resolve isso**, em `ferramentas/instalar-botoes-kanban.mjs`:
+
+1. cria as duas ações (idempotente pelo nome) e descobre os IDs
+2. troca o comentário `MARCADOR-BOTOES-VALIDACAO` do arch pelo bloco de botões já com os
+   números certos, direto no Odoo
+3. um `baixar-views --download` traz o resultado para cá, e a view volta ao caminho normal
+
+Depois do passo 2 o `--update` passa a **pular** esta view, porque o arch do Odoo deixa de
+bater com a impressão digital do índice. É a trava nº 3 do `baixar-views` fazendo o
+trabalho dela, não um defeito — mas é motivo para não adiar o `--download`.
+
+**Descartado: o widget `state_selection`**, que seria uma linha em vez de um instalador. Na
+`saas-19.3` ele não colore: o mapa está cravado no código do widget
+(`{blocked: "red", done: "green"}`) e qualquer outro valor cai em cinza. Os três estados
+ficariam com o mesmo pontinho, e um kanban que não se varre com o olho não serve. Conferido
+na fonte, não deduzido.
+
+**Travado por teste:** `conta-mensagens.js` roda a substituição do marcador contra o arquivo
+de verdade e recusa se ela deixar de pegar — o instalador roda na máquina de quem usa, onde
+o erro apareceria tarde.
 
 ---
 
