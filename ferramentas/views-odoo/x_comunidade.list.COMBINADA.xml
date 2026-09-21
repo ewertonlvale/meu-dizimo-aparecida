@@ -3,6 +3,10 @@
 <list>
   <field name="x_studio_sequence" widget="handle"/>
   <field name="x_name"/>
-  <field name="x_studio_coordenador_dizimo" optional="show"/>
+  <field name="x_studio_coordenador" optional="show"/>
+  <field name="x_studio_coordenador_dizimo" optional="hide"/>
+  <field name="x_studio_chave_pix" optional="show"/>
+  <field name="x_studio_titular_conta" optional="show"/>
+  <field name="x_studio_banco" optional="show"/>
   <field name="x_studio_dizimistas" optional="show"/>
 </list>

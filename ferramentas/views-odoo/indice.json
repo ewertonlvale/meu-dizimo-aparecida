@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-09-21T15:13:51.802Z",
+  "gerado_em": "2026-09-21T17:40:41.600Z",
   "tipo": "todos",
   "modelos": [
     {
@@ -15,7 +15,7 @@
           "mode": "primary",
           "arquivo": "ir.model.form.47.ir.model_form.xml",
           "modulo": "base",
-          "hash": "7d562f219862e93e1497d881e035b8ea49d29548779fd28d906b6f2a5da8a193"
+          "hash": "5d1027652b1f2c3d0c77c036c17934d8214d31b393d64179c5c9c9459ce14bf6"
         },
         {
           "id": 48,
@@ -125,7 +125,7 @@
           "mode": "primary",
           "arquivo": "res.users.form.166.res.users.simplified.form.xml",
           "modulo": "base",
-          "hash": "a14f2242298ac49ef11cc3cebbd232fe7b54e9eb4aecfb4ecd5fa594bc1eee2b"
+          "hash": "417f020a63ccb2450b84a5360d6bd7451f1a76b3a7246f366cb1ff93f213e121"
         },
         {
           "id": 167,
@@ -137,7 +137,7 @@
           "mode": "primary",
           "arquivo": "res.users.form.167.res.users.form.xml",
           "modulo": "base",
-          "hash": "c8c423ac6d17d7bd10affc5c4112f9a693e1ea5c88fff9d6d59b2ed668196351"
+          "hash": "21e622adec2bb4b882e57759f82d6347c6a3e6f13ac37df9fed3abaa042eee31"
         },
         {
           "id": 168,
@@ -197,7 +197,7 @@
           "mode": "extension",
           "arquivo": "res.users.form.232.user_form_add_totp_status.xml",
           "modulo": "auth_totp",
-          "hash": "95a2ec8db9fc9540649c8942c0523b1c5102e186096eb679c2f74d4a2d0a5449"
+          "hash": "8a637a6144cb64a81ba74c870c9ff4f52a1bddf73257b24ab0096f965da22b8c"
         },
         {
           "id": 233,
@@ -209,7 +209,7 @@
           "mode": "extension",
           "arquivo": "res.users.form.233.users_preference_totp.xml",
           "modulo": "auth_totp",
-          "hash": "920d6af24fb860f326f0e656026e0f62e4dd7703872582fe73c1bf829b473fd5"
+          "hash": "f851efcfb24d0751a85d88ad5807ae11f8545421d8ebb62a25699c1f28b760de"
         },
         {
           "id": 252,
@@ -221,7 +221,7 @@
           "mode": "extension",
           "arquivo": "res.users.form.252.auth.passkey.users.form.xml",
           "modulo": "auth_passkey",
-          "hash": "a752807413120f2bebe85ea53808f56d1188c6e5f9faee980e0a3cd7a2c058b9"
+          "hash": "f87f547c8647c8d274bc95dd241f82d23d11b841df4c606179fe4f0ac2cddb07"
         },
         {
           "id": 253,
@@ -233,7 +233,7 @@
           "mode": "extension",
           "arquivo": "res.users.form.253.auth.passkey.users.preferences.xml",
           "modulo": "auth_passkey",
-          "hash": "5f35fe95065e9c8668bc5ec6f0aa72e63de57e7d91e7b2bdcdc120cd07c56e65"
+          "hash": "d7a60977d67d24ae227a5ac87e3034d0358e137b814db4cd4c26643bb0b63e4c"
         },
         {
           "id": 258,
@@ -353,7 +353,7 @@
           "mode": "primary",
           "arquivo": "res.users.form.447.res.users.view.form.auth.totp.mail.xml",
           "modulo": "auth_totp_mail",
-          "hash": "aaa74e2f21cc90b7d0e24b912eaf7640c6e5bdb2abf69c80cb5fd955dbb0f8c3"
+          "hash": "22574e2f5271722acc5cecacaca179f401ac0a970018c8262ccbd06312352ffa"
         },
         {
           "id": 459,
@@ -377,7 +377,7 @@
           "mode": "primary",
           "arquivo": "res.users.form.173.res.users.preferences.form.xml",
           "modulo": "base",
-          "hash": "87f0add1bc353ab819c606d15637c67f6cecf3c8c0c7f303e5cc73978089af13"
+          "hash": "81b8c85ba1839464e981ba0539714c230e6485804a08b5c15beccf20b678ce23"
         },
         {
           "id": 638,
@@ -505,7 +505,19 @@
           "mode": "primary",
           "arquivo": "x_comunidade.kanban.678.Default_kanban_view_for_ir.model_445_.xml",
           "modulo": null,
-          "hash": "5566d72c3fb903e3e262ab93d9e54541834926dc4f15b4da33d4e8c54a88a57f"
+          "hash": "b8a02a6d4d0cfa158c4b4083b92fe0b3a58047423715a2752bafa73a1ebf8982"
+        },
+        {
+          "id": 680,
+          "name": "Default map view for x_comunidade",
+          "tipo": "map",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_comunidade.map.680.Default_map_view_for_x_comunidade.xml",
+          "modulo": null,
+          "hash": "5f932527db7b6187677f6527763099f6e22c178ab10b3d0895b5e11647f6671c"
         },
         {
           "id": 609,
@@ -529,7 +541,7 @@
           "mode": "extension",
           "arquivo": "x_comunidade.list.645.Odoo_Studio_Default_list_view_for_x_comunidade_customization.xml",
           "modulo": "studio_customization",
-          "hash": "c82a0525c84028793bd5204642a4866f5fdbaa0c4120f69abb711c3030dee671"
+          "hash": "82450c7d0556c10241fff95a70c5bb5cab6dd6cb8bc4e84880f785f5cdff43c9"
         }
       ],
       "combinadas": [
@@ -550,6 +562,12 @@
           "arquivo": "x_comunidade.list.COMBINADA.xml",
           "metodo": "get_view",
           "view_id": 600
+        },
+        {
+          "tipo": "map",
+          "arquivo": "x_comunidade.map.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 680
         },
         {
           "tipo": "search",
@@ -573,7 +591,7 @@
           "mode": "primary",
           "arquivo": "x_contato_bot.list.646.Default_list_view_for_x_contato_bot.xml",
           "modulo": "studio_customization",
-          "hash": "7807a171f4658946f84f1d947bd85f969467399075e1de122955ddbcd4114358"
+          "hash": "12cf0901939c700b81ef9575bf64ac499e7dfbd497d1fea4de807d7743787cac"
         },
         {
           "id": 647,
@@ -707,7 +725,7 @@
           "mode": "primary",
           "arquivo": "x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml",
           "modulo": null,
-          "hash": "a7e91f4c897a73e962a673ce7c44d5d296fe211b05682f1c596323e0b514101f"
+          "hash": "93fa85a4212662703e76c6b17996cfc4245bb9db3942ddd1643cb550a263c439"
         },
         {
           "id": 608,
@@ -719,7 +737,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "901fe8ab420859a268ca6bf7c7d2ff48f873e13dd98a653d8e329d9860daa7db"
+          "hash": "8ab483a050dcac152e63dcdfc8e9abea88f669b952070b913f6634c04a122a85"
         },
         {
           "id": 610,
@@ -731,7 +749,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.list.610.Odoo_Studio_Default_list_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "1743aca2390c1a91a9e4d228b966885b36937230dcb0c52cf5e14c56fc88cc3b"
+          "hash": "46ddaaf610d36be8f4a45dea4b69c8ff18e5c87038223e7f3359e607e535432e"
         },
         {
           "id": 624,
@@ -755,7 +773,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.search.644.Odoo_Studio_Default_search_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "f08ff8cd7b6bbddeb5747cf1de177eca229544eb456ea028545a0b92adc642a5"
+          "hash": "d1ed7960115c736cfe79d86d77983ad4839fb2bee39907fff5d25084d3f93b1f"
         }
       ],
       "combinadas": [
@@ -919,7 +937,7 @@
           "mode": "extension",
           "arquivo": "x_dizimista.list.611.Odoo_Studio_Default_list_view_for_x_dizimista_customization.xml",
           "modulo": "studio_customization",
-          "hash": "79d37fec81ac3f47aa78906cb30f06a86918f605d6dfeb5a4b28931295898571"
+          "hash": "3f923d090d50625cdbf230d355a10697c7eebb1da6339b11388f744b336caf27"
         },
         {
           "id": 623,
@@ -1011,7 +1029,7 @@
           "mode": "primary",
           "arquivo": "x_notificacao_log.list.619.Default_list_view_for_x_notificacao_log.xml",
           "modulo": "studio_customization",
-          "hash": "7807a171f4658946f84f1d947bd85f969467399075e1de122955ddbcd4114358"
+          "hash": "9d24ef12dceeff5950b0f9a95081356dbea8b48a338da134feb014e84bde23ae"
         },
         {
           "id": 620,
@@ -1085,7 +1103,7 @@
           "mode": "primary",
           "arquivo": "x_parametros.list.612.Default_list_view_for_x_parametros.xml",
           "modulo": "studio_customization",
-          "hash": "7807a171f4658946f84f1d947bd85f969467399075e1de122955ddbcd4114358"
+          "hash": "8f8bf3cd39c25930e6fb7df27963f7195a5e78d0d4f68ee6e80140ce5bcbf6fa"
         },
         {
           "id": 613,
@@ -1121,7 +1139,7 @@
           "mode": "extension",
           "arquivo": "x_parametros.form.615.Odoo_Studio_Default_form_view_for_x_parametros_customization.xml",
           "modulo": "studio_customization",
-          "hash": "7f29c575fb9770548f736add589c9c0c25fcd5b1a246ab409dd38b437348cc69"
+          "hash": "e3d572a319cafebc029afbcd4ebf7f6b799da8a000920859337daef6e0d0d469"
         }
       ],
       "combinadas": [

@@ -35,6 +35,8 @@
           <list default_order="x_studio_sequence asc,id desc">
             <field name="x_studio_sequence" widget="handle"/>
             <field name="x_name"/>
+            <field name="x_studio_whatsapp"/>
+            <field name="x_studio_notificacao_ativa"/>
           </list>
         </field>
         <field name="x_studio_secretaria_whatsapp"/>

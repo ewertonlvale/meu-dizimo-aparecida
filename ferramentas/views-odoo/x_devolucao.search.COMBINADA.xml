@@ -7,12 +7,17 @@
   <field name="x_studio_dizimista"/>
   <field name="x_studio_comunidade"/>
   <separator/>
-  <filter domain="[&quot;&amp;&quot;, (&quot;x_studio_competencia&quot;, &quot;&gt;=&quot;, &quot;today =1d&quot;), (&quot;x_studio_competencia&quot;, &quot;&lt;&quot;, &quot;today +1d&quot;)]" name="studio_filter_8fb_1ji0qilv3" string="Mês Atual"/>
+  <filter name="studio_filter_8fb_1ji0qilv3" string="Mês Atual" domain="[('x_studio_data_da_devolucao', '&gt;=', (context_today().replace(day=1)).strftime('%Y-%m-%d')),                      ('x_studio_data_da_devolucao', '&lt;', ((context_today().replace(day=1)) + relativedelta(months=1)).strftime('%Y-%m-%d'))]"/>
+  <filter name="filtro_aguardando" string="Aguardando conferência" domain="[('x_studio_status', '=', 'Pendente')]"/>
+  <filter name="filtro_rejeitadas" string="Rejeitadas" domain="[('x_studio_status', '=', 'Rejeitado')]"/>
   <separator/>
   <group name="studio_group_by"/>
   <filter name="studio_group_by_6rd_1ji0pb9u5" string="Status" context="{'group_by': 'x_studio_status'}"/>
   <filter name="studio_group_by_7b_1ji0pbs65" string="Mês Referencia" context="{'group_by': 'x_studio_competencia'}"/>
   <filter name="studio_group_by_38d_1ji0p9jjo" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}"/>
+  <filter name="filtro_sem_comprovante" string="Sem comprovante" domain="[('x_studio_comprovante', '=', False)]"/>
+  <filter name="filtro_sem_comunidade" string="Sem comunidade" domain="[('x_studio_comunidade', '=', False)]"/>
+  <separator/>
   <filter string="Arquivado" name="archived_x_dizimista" domain="[['x_active', '=', False]]"/>
   <separator/>
   <filter name="groupby_x_comunidade" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}" domain="[]"/>

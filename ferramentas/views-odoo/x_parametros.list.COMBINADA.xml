@@ -2,5 +2,8 @@
      SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <list>
   <field name="x_studio_sequence" widget="handle"/>
-  <field name="x_name"/>
+  <field name="x_studio_paroquia"/>
+  <field name="x_studio_secretaria_whatsapp"/>
+  <field name="x_studio_secretaria_email"/>
+  <field name="x_name" optional="hide"/>
 </list>

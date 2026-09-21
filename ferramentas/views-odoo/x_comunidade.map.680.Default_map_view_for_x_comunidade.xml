@@ -1,0 +1,5 @@
+<!-- x_comunidade · view 680 · Default map view for x_comunidade · base · map · prioridade 16 -->
+<map res_partner="x_studio_partner_id">
+  <field name="x_name" string="Comunidade"/>
+  <field name="x_studio_coordenador" string="Coordenador"/>
+</map>
