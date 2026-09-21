@@ -82,6 +82,66 @@
 | BL-51 | Devolução nascia sempre Pendente, mesmo quando o bot já sabia | 🟠 | P | ✅ Concluído (19/09) — Confirmado, Rejeitado ou Pendente conforme a conferência |
 | BL-52 | A data só era lida em dd/mm/aaaa — Nubank e Google Pay passavam em branco | 🟠 | P | ✅ Concluído (20/09) — mês por extenso, ISO, ano de 2 dígitos e o ano vindo do E2E. Saída sempre normalizada |
 | BL-53 | A oferta gravava o valor DIGITADO, nunca o do comprovante | 🔴 | P | ✅ Concluído (20/09) — vale o comprovante; oferta de R$ 10 paga com R$ 55 registrava R$ 10 |
+| BL-54 | Endereço e mapa da comunidade | 🟡 | M | 📋 Aberto — **adiado por decisão do usuário em 21/09.** Desenho já escolhido: via `res.partner` |
+| BL-55 | Sete dos oito formulários do Odoo nunca foram revisados | 🟡 | M | 📋 Aberto — só `x_devolucao.form` foi. Quatro têm coluna direita vazia |
+
+---
+
+## Ajustes no Odoo (adiados, com desenho fechado)
+
+### BL-54 — Endereço e mapa da comunidade 🟡 (M)
+
+**Pedido:** campos de endereço no cadastro da comunidade, e geolocalização para ver no mapa.
+
+**Decisão de desenho (usuário, 21/09): via `res.partner`.** Um campo many2one de contato em
+`x_comunidade`; o endereço é o padrão do Odoo e pode aparecer na tela da comunidade como
+campos relacionados.
+
+**Por que não é escolha de gosto.** O mapa do Odoo geolocaliza **através do `res.partner`** —
+verificado na própria instância, no arch da view de mapa de dizimista:
+
+```xml
+<map res_partner="x_studio_partner_id">
+```
+
+Ele não lê latitude e longitude soltas num modelo qualquer. Campos de endereço próprios em
+`x_comunidade` dariam a tela pedida e **nenhum mapa**.
+
+**Atenção — a mesma dependência já morde o projeto:** o mapa de dizimista existe e vive vazio,
+porque `x_studio_partner_id` nunca é preenchido (0 de 508). Criar o campo não basta; alguém
+tem de povoá-lo. Para 6 comunidades isso é trabalho de uma tarde; para os dizimistas é o
+achado A2/E da análise, ainda em aberto.
+
+**O que falta decidir/verificar antes de executar:**
+- se o módulo de geocodificação está disponível na instância (o mapa mostra pino; converter
+  endereço em coordenada é outra coisa)
+- se o endereço entra também no BR Code do PIX (hoje `MediaService._gerarPayloadPix` recebe
+  cidade fixa)
+
+**Ferramenta:** `baixar-views.mjs` **não cria campo** — só reescreve arch de view. Criar campo
+é `ir.model.fields`, e o projeto já tem o padrão com modo de simulação em
+`SetupCamposOferta.gs`. Vale portar para `ferramentas/`, onde as credenciais já estão.
+
+---
+
+### BL-55 — Sete dos oito formulários nunca foram revisados 🟡 (M)
+
+A revisão de 21/09 cobriu as **listas** e a **busca** de todos os modelos, mas dos oito
+formulários só `x_devolucao.form` foi de fato revisado (PR #91).
+
+| Formulário | Estado |
+|---|---|
+| `x_devolucao` | ✅ revisado e reescrito |
+| `x_parametros` | ⚠️ só a tabela embutida de privilégios |
+| `x_dizimista`, `x_comunidade`, `x_contato_bot`, `x_notificacao_log`, `x_parametros_line_c498a`, `res.users` | ❌ não revisados |
+
+**O ganho conhecido:** pelo menos quatro delas têm a **coluna direita vazia**, o mesmo defeito
+que em devolução deixava o comprovante abaixo da dobra. O `x_parametros_line_c498a.form` é
+literalmente só `x_name` — os quatro campos da linha de privilégio não têm tela própria.
+
+**Risco a lembrar:** formulário é a view mais estrutural para mexer por xpath, e a de
+devolução só foi segura porque os quatro âncoras foram conferidos contra a view base
+versionada. Fazer uma por vez, com `--update --simular` antes.
 
 ---
 
