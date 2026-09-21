@@ -54,6 +54,15 @@
 
     <separator/>
 
+    <!-- A fila do coordenador (BL-60). Grupo próprio: cruza com "Mês Atual" em
+         vez de somar, que é como se pergunta "o que falta validar deste mês". -->
+    <filter name="filtro_a_validar" string="A validar"
+            domain="[('x_studio_validacao', '=', 'a_validar')]"/>
+    <filter name="filtro_nao_recebido" string="Não recebido"
+            domain="[('x_studio_validacao', '=', 'nao_recebido')]"/>
+
+    <separator/>
+
     <filter name="filtro_sem_comprovante" string="Sem comprovante"
             domain="[('x_studio_comprovante', '=', False)]"/>
     <filter name="filtro_sem_comunidade" string="Sem comunidade"
@@ -76,5 +85,7 @@
             context="{'group_by': 'x_studio_competencia'}"/>
     <filter name="studio_group_by_38d_1ji0p9jjo" string="Comunidade"
             context="{'group_by': 'x_studio_comunidade'}"/>
+    <filter name="groupby_validacao" string="Validação"
+            context="{'group_by': 'x_studio_validacao'}"/>
   </xpath>
 </data>

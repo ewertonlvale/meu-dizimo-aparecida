@@ -2350,6 +2350,33 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
   } else {
     console.log(`✅ ${dominios} domínios em ${arquivos.length} views, nenhum usa construção que o py_js não avalia`);
   }
+  // ── `--` dentro de comentário XML ────────────────────────────────────────
+  // XML proíbe dois hifens seguidos dentro de <!-- -->. Isso não é sutileza de
+  // padrão: o Odoo recusa o arch inteiro, e a view não sobe.
+  //
+  // Parece exótico até se lembrar de que os comentários destas views explicam
+  // como rodar as ferramentas, e as ferramentas têm flags. Escrever
+  // "rode com <menos><menos>update" num comentário quebra o arquivo. Já
+  // aconteceu duas vezes: nos 37 arquivos COMBINADA e no formulário de
+  // devolução. A saída é a meia-risca (–), que não é hifen.
+  {
+    const quebrados = [];
+    for (const f of arquivos) {
+      const xml = fs.readFileSync(path.join(dirViews, f), 'utf8');
+      for (const c of xml.matchAll(/<!--([\s\S]*?)-->/g)) {
+        if (c[1].includes('--')) {
+          const trecho = c[1].match(/.{0,30}--.{0,20}/s)?.[0].replace(/\s+/g, ' ').trim();
+          quebrados.push(`${f}: "--" em comentário XML → …${trecho}…`);
+        }
+      }
+    }
+    if (quebrados.length) {
+      falhas += quebrados.length;
+      for (const q of quebrados) console.log(`❌ ${q}`);
+    } else {
+      console.log(`✅ nenhum comentário XML com "--", que o Odoo recusaria`);
+    }
+  }
 }
 
 console.log('\n' + '─'.repeat(64));

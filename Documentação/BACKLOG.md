@@ -88,6 +88,9 @@
 | BL-57 | O agrupamento "Mês Referencia" agrupa por um campo que o bot nunca grava | 🟡 | P | 📋 Aberto — `x_studio_competencia` só é lido, nunca escrito; todo registro do WhatsApp cai num balde "Nenhum" |
 | BL-58 | O mapa de dizimista continua vazio: o campo que ele lê não está no formulário | 🟡 | P | 📋 Aberto — precisa antes saber se `x_studio_partner_phone` é relacionado através de `x_studio_partner_id` |
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
+| BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ Código pronto (21/09) — campo `x_studio_validacao` e barra clicável. **Falta instalar** com `--aplicar` |
+| BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | 📋 Aberto — o espaço já foi corrigido; falta humanizar os rótulos da seleção no Odoo |
+| BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 
 ---
 
@@ -279,6 +282,104 @@ ser atendida.
 **Se a paróquia precisar mesmo decidir caso a caso**, o desenho é um campo de exceção
 (`x_studio_classificacao_manual`, com data e motivo) que a ação agendada respeite e não
 sobrescreva — e não destravar o statusbar. Destravado, o conflito volta a ser invisível.
+
+---
+
+### BL-60 — A validação do coordenador 🟠 (M)
+
+**O problema:** `x_studio_status` carregava a leitura do bot (BL-51) e era clicável.
+Quem quisesse registrar que o dinheiro entrou passava por cima dela — e "Confirmado"
+deixava de dizer quem confirmou. É a mesma forma do BL-59.
+
+São dois julgamentos, de dois autores, sobre coisas diferentes:
+
+| campo | quem decide | sobre o quê |
+|---|---|---|
+| `x_studio_status` | o bot, no ato do registro | o comprovante bate com a comunidade |
+| `x_studio_validacao` | o coordenador | o dinheiro entrou na conta |
+
+O que interessa à paróquia é justamente a **linha em que os dois discordam** — bot diz
+Confirmado, coordenador diz Não recebido. Essa linha só existe se os dois estiverem à
+vista, então as duas colunas ficam juntas na lista.
+
+**Feito em 21/09:**
+- `ferramentas/instalar-validacao-devolucao.mjs` cria o campo (`A validar` → `Validado` /
+  `Não recebido`), o padrão e marca as devoluções existentes como `A validar`
+- A barra de status do topo do formulário passou a ser a da validação, clicável; a leitura
+  do bot desceu para uma linha logo abaixo, como badge só-leitura
+- Coluna e filtros na lista e na busca
+
+**Por que barra de status e não o botão "Validar" que foi pedido:** botão de header no
+Odoo Online chama uma `ir.actions.server` por **ID numérico**, e esse ID só nasce no
+`--aplicar`. O arquivo versionado da view não teria como carregá-lo, e cada `--update`
+quebraria o botão. A barra clicável é view pura — e dá os três estados nomeados num
+clique, em vez de um botão com um destino só.
+
+**Quem validou e quando:** o campo nasce com `tracking` e `x_devolucao` tem chatter, então
+cada mudança vira uma linha no histórico do registro, com autor e horário. Dois campos a
+menos para manter, e um histórico em vez de um instante.
+
+**Aberto neste item:** nada impede um coordenador de validar devolução de outra
+comunidade. Resolver isso é uma *record rule* ligada a `x_studio_coordenador`, e depende
+de esse campo ser um `res.users` — o que ainda não foi verificado (mesma pendência do
+BL-58).
+
+---
+
+### BL-61 — O banner de conferência mostra o código cru 🟡 (P)
+
+O banner do formulário de devolução exibe o valor de `x_studio_conferencia_pix` como ele é
+gravado: `ausente`, `sem_referencia`, `titular_divergente`. Quem lê é o coordenador, e
+"Precisa de conferência: sem_referencia" não diz o que fazer.
+
+O texto humano **já existe**, em `Config.gs`, na tabela `CONFERENCIA` — o campo
+`textoCoordenador` de cada código ("não consegui identificar a chave no comprovante", "a
+comunidade não tem chave PIX cadastrada para comparar"). Ele é usado nas mensagens de
+WhatsApp e não chega ao Odoo.
+
+**A correção é do lado do Odoo, não da view:** os rótulos da seleção
+`x_studio_conferencia_pix` precisam receber esses textos. Um script na forma dos outros
+instaladores resolve, e ganha de graça a lista e os filtros, que mostram o mesmo código.
+
+*Corrigido em 21/09:* o espaço que faltava depois dos dois-pontos — saía
+"Precisa de conferência:ausente", colado.
+
+---
+
+### BL-62 — Dízimo do mês seguinte, criado automaticamente 🟠 (G)
+
+**Desenho fechado com o pároco em 21/09.** Falta implementar.
+
+Quando uma devolução de dízimo é registrada, nasce junto o registro do **mês seguinte** em
+estado `Previsto` — sem valor, sem data, sem comprovante. Quando o pagamento daquele mês
+chega, o bot **preenche o Previsto** em vez de criar um segundo registro.
+
+**Decisões tomadas:**
+
+1. *Quem ganha Previsto:* só quem pagou, no ato do registro. A alternativa — uma ação
+   mensal criando para todo dizimista ativo — daria ao coordenador a lista de quem
+   **falta** pagar, que hoje não existe; foi considerada e descartada por ora.
+2. *Quando há mês em aberto diferente do mês do pagamento:* o bot **pergunta no WhatsApp**
+   ("seu último registro em aberto é de outubro; este dízimo é referente a qual mês?").
+   Se a competência do Previsto bate com o mês do pagamento, preenche calado.
+
+**Consequência da decisão 1 que vale lembrar na implementação:** com Previsto nascendo só
+de pagamento, **nunca há mais de um em aberto por pessoa**. A pergunta da decisão 2 não é
+"qual dos vários", e sim "o aberto é de outubro e estamos em dezembro — qual dos dois?".
+Isso simplifica bastante a busca.
+
+**O que muda no código:**
+- `x_studio_status` ganha o valor `Previsto`
+- `registrarDevolucao` passa a procurar um Previsto aberto do dizimista antes de criar
+- `x_studio_competencia` passa a ser **escrito** — hoje o bot só o lê (BL-57). Este item
+  fecha o BL-57 junto
+- O fluxo de comprovante ganha a pergunta de competência
+
+**Risco:** `registrarDevolucao` é o caminho do dinheiro, onde vivem BL-02, BL-26, BL-27 e
+BL-51. Vai em PR próprio, com teste por cenário antes de subir.
+
+**Fora do desenho, de propósito:** oferta não ganha Previsto. Oferta não é compromisso
+mensal, e pré-criar registro de oferta produziria linha que nunca fecha.
 
 ---
 
