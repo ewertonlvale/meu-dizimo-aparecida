@@ -10,7 +10,10 @@
     <field name="x_studio_conferencia_pix" optional="show" string="Conferência"/>
   </xpath>
   <xpath expr="/list//field[@name='x_studio_value']" position="after">
-    <field name="x_studio_status" optional="show"/>
+    <field name="x_studio_status" optional="show" widget="badge"
+           decoration-success="x_studio_status == 'Confirmado'"
+           decoration-danger="x_studio_status == 'Rejeitado'"
+           decoration-warning="x_studio_status == 'Pendente'"/>
     <field name="write_date" optional="hide" string="Última alteração"/>
   </xpath>
   <xpath expr="/list" position="attributes">
