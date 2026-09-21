@@ -1,5 +1,5 @@
 <!-- x_parametros_line_c498a · form combinada (via get_view) · view 617
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <form>
   <header/>
   <sheet string="parametros_line">

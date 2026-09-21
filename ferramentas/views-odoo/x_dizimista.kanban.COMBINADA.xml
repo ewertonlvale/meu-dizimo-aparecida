@@ -1,5 +1,5 @@
 <!-- x_dizimista · kanban combinada (via get_view) · view 673
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <kanban string="Dizimista">
   <field name="x_studio_classificacao"/>
   <templates>

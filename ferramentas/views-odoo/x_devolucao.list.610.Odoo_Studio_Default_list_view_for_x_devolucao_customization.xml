@@ -6,10 +6,12 @@
     <field name="x_studio_comunidade" optional="show"/>
     <field name="x_studio_competencia" optional="show"/>
     <field name="x_studio_data_da_devolucao" optional="show"/>
+    <field name="x_studio_forma_de_pagamento" optional="show"/>
+    <field name="x_studio_conferencia_pix" optional="show" string="Conferência"/>
   </xpath>
   <xpath expr="/list//field[@name='x_studio_value']" position="after">
     <field name="x_studio_status" optional="show"/>
-    <field name="write_date" optional="show" string="Data/Hora Envio"/>
+    <field name="write_date" optional="hide" string="Última alteração"/>
   </xpath>
   <xpath expr="/list" position="attributes">
     <attribute name="create">

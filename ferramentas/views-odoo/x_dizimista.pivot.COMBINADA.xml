@@ -1,5 +1,5 @@
 <!-- x_dizimista · pivot combinada (via get_view) · view 597
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <pivot sample="1">
   <field name="x_studio_value" type="measure"/>
   <field name="x_studio_date" type="row"/>

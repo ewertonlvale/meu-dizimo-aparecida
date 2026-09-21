@@ -442,8 +442,12 @@ async function baixar() {
         join(CONFIG.saida, arquivo),
         `<!-- ${modelo} · ${tipo} combinada (via ${combinada.metodo})`
           + ` · view ${combinada.view_id ?? '?'}\n`
+          // "--" dentro de comentário XML é ilegal, e este cabeçalho dizia
+          // "O --update ignora...": 37 arquivos saindo malformados. Não
+          // quebrava o script (COMBINADA nunca é lido de volta), mas qualquer
+          // editor de XML recusa. O traço longo diz a mesma coisa e é válido.
           + `     SOMENTE LEITURA: é o resultado das heranças, não existe como`
-          + ` registro. O --update ignora este arquivo. -->\n`
+          + ` registro. O modo –update ignora este arquivo. -->\n`
           + indentar(combinada.arch),
         'utf8'
       );

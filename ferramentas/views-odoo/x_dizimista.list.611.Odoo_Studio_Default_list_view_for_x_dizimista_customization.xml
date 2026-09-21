@@ -1,15 +1,16 @@
 <!-- x_dizimista · view 611 · Odoo Studio: Default list view for x_dizimista customization · herda de 592 · list · prioridade 99 -->
 <data>
   <xpath expr="/list//field[@name='x_studio_partner_id']" position="replace">
-    <field name="x_studio_nome_completo" optional="show"/>
+    <field name="x_studio_nome_completo" optional="hide"/>
     <field name="x_studio_partner_phone" optional="show"/>
     <field name="x_studio_comunidade" optional="show"/>
     <field name="x_studio_date" optional="show"/>
     <field name="x_studio_devolucoes" optional="show"/>
   </xpath>
   <xpath expr="/list//field[@name='x_studio_value']" position="after">
-    <field name="write_date" optional="show" string="Data/Hora Envio"/>
+    <field name="write_date" optional="hide" string="Última alteração"/>
     <field name="x_studio_classificacao" optional="show"/>
+    <field name="x_studio_notificacao_ativa" optional="show" string="Recebe lembrete"/>
   </xpath>
   <xpath expr="/list//field[@name='x_studio_currency_id']" position="attributes">
     <attribute name="column_invisible">

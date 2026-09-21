@@ -1,3 +1,3 @@
 <!-- x_dizimista · calendar combinada (via get_view) · view 595
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <calendar date_start="x_studio_date" create_name_field="x_name"/>

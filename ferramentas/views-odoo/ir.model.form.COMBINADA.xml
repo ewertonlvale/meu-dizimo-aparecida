@@ -1,5 +1,5 @@
 <!-- ir.model · form combinada (via get_view) · view 47
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <form string="Model Description" duplicate="0">
   <header>
     <!-- used for override -->

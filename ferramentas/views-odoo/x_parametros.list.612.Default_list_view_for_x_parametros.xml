@@ -1,5 +1,8 @@
 <!-- x_parametros · view 612 · Default list view for x_parametros · base · list · prioridade 16 -->
 <list>
   <field name="x_studio_sequence" widget="handle"/>
-  <field name="x_name"/>
+  <field name="x_studio_paroquia"/>
+  <field name="x_studio_secretaria_whatsapp"/>
+  <field name="x_studio_secretaria_email"/>
+  <field name="x_name" optional="hide"/>
 </list>
