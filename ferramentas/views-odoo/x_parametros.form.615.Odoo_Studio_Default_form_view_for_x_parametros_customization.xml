@@ -32,6 +32,15 @@
     <field name="x_studio_secretaria_email"/>
   </xpath>
   <xpath expr="/form//group[@name='studio_group_4d76d8_right']" position="inside">
+    <separator string="Classificação do dizimista"/>
+    <div class="text-muted small">
+      Regular: devolveu em cada um dos últimos N meses fechados.
+      Inativo: nenhuma devolução em M meses. Entre os dois, Eventual.
+      Em branco vale 3.
+    </div>
+    <field name="x_studio_meses_regular"/>
+    <field name="x_studio_meses_inativo"/>
+    <separator string="Sistema"/>
     <field name="x_studio_repositorio_driver" widget="url" groups="base.group_system"/>
     <field widget="image" name="x_studio_avatar"/>
   </xpath>

@@ -2,4 +2,5 @@
 <map res_partner="x_studio_partner_id">
   <field name="x_name" string="Comunidade"/>
   <field name="x_studio_coordenador" string="Coordenador"/>
+  <field name="x_studio_cidade" string="Cidade"/>
 </map>
