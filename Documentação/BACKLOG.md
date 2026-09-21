@@ -85,6 +85,9 @@
 | BL-54 | Endereço e mapa da comunidade | 🟡 | M | ✅ Código pronto (21/09) — via `res.partner`, com 5 campos relacionados e view de mapa. **Falta instalar** com `--aplicar` |
 | BL-55 | Sete dos oito formulários do Odoo nunca foram revisados | 🟡 | M | 📋 Aberto — só `x_devolucao.form` foi. Quatro têm coluna direita vazia |
 | BL-56 | Classificação do dizimista era campo manual que ninguém mantinha | 🟠 | M | ✅ Código pronto (21/09) — ação agendada do Odoo, versionada no repo. **Falta instalar** com `--aplicar` |
+| BL-57 | O agrupamento "Mês Referencia" agrupa por um campo que o bot nunca grava | 🟡 | P | 📋 Aberto — `x_studio_competencia` só é lido, nunca escrito; todo registro do WhatsApp cai num balde "Nenhum" |
+| BL-58 | O mapa de dizimista continua vazio: o campo que ele lê não está no formulário | 🟡 | P | 📋 Aberto — precisa antes saber se `x_studio_partner_phone` é relacionado através de `x_studio_partner_id` |
+| BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
 
 ---
 
@@ -202,7 +205,9 @@ formulários só `x_devolucao.form` foi de fato revisado (PR #91).
 |---|---|
 | `x_devolucao` | ✅ revisado e reescrito |
 | `x_parametros` | ⚠️ só a tabela embutida de privilégios |
-| `x_dizimista`, `x_comunidade`, `x_contato_bot`, `x_notificacao_log`, `x_parametros_line_c498a`, `res.users` | ❌ não revisados |
+| `x_comunidade` | ✅ revisado (PR #102/#103) — endereço, mapa e alinhamento do `<group>` |
+| `x_dizimista` | ✅ revisado (21/09) — colunas reequilibradas, grupos vazios removidos, devoluções em aba |
+| `x_contato_bot`, `x_notificacao_log`, `x_parametros_line_c498a`, `res.users` | ❌ não revisados |
 
 **O ganho conhecido:** pelo menos quatro delas têm a **coluna direita vazia**, o mesmo defeito
 que em devolução deixava o comprovante abaixo da dobra. O `x_parametros_line_c498a.form` é
@@ -211,6 +216,69 @@ literalmente só `x_name` — os quatro campos da linha de privilégio não têm
 **Risco a lembrar:** formulário é a view mais estrutural para mexer por xpath, e a de
 devolução só foi segura porque os quatro âncoras foram conferidos contra a view base
 versionada. Fazer uma por vez, com `--update --simular` antes.
+
+---
+
+### BL-57 — "Mês Referencia" agrupa por um campo vazio 🟡 (P)
+
+O menu **Agrupar por → Mês Referencia** de `x_devolucao` usa `x_studio_competencia`.
+Esse campo aparece uma única vez no código do bot, em `OdooService.gs:1024`, e é uma
+**leitura**: `buscarDevolucaoDetalhada` o traz para a tela de detalhe. Nenhum caminho
+o escreve.
+
+Como praticamente toda devolução nasce pelo WhatsApp, o agrupamento devolve um balde
+"Nenhum" com tudo dentro. Quem clica nele conclui que o agrupamento está quebrado — e
+está, só que a causa é o dado, não a view.
+
+**Duas saídas, e a escolha é da paróquia:**
+1. O bot passa a gravar a competência no momento da devolução (o mês da data da
+   devolução, ou o mês que a pessoa disser). Aí o agrupamento vale.
+2. O agrupamento sai do menu, e "Mês Atual" mais o filtro de data cobrem o uso.
+
+Enquanto não se decide, o item fica no menu — tirar uma opção que alguém pode estar
+preenchendo à mão é pior que deixá-la com aviso no arch.
+
+---
+
+### BL-58 — O mapa de dizimista lê um campo que não está no formulário 🟡 (P)
+
+`x_dizimista.map` geolocaliza por `<map res_partner="x_studio_partner_id">`. Só que o
+formulário do dizimista **não mostra esse campo**: a view do Studio o removia com
+`position="replace"`, trocando-o por nome completo e CPF. Não havia, pela tela, como
+preencher o que o mapa lê. Daí os 0 de 508.
+
+**O que precisa ser respondido antes de mexer:** `x_studio_partner_phone` é um campo
+próprio de `x_dizimista`, ou é *relacionado* através de `x_studio_partner_id`, como o
+nome sugere e como o arch base insinua (os três `partner_*` vinham em sequência logo
+depois dele)? Se for relacionado, o telefone não poderia estar preenchido com o
+parceiro vazio — e o bot demonstravelmente usa telefone. Ou seja: ou o parceiro está
+preenchido e os 0 de 508 têm outra explicação, ou o campo é solto e só tem nome de
+relacionado.
+
+A resposta sai de uma leitura de `ir.model.fields` (`related`, `store`) para
+`x_dizimista`. **Sem ela, não dá para desenhar a correção**, e por isso o campo não foi
+devolvido ao formulário na revisão de 21/09: pôr na tela do coordenador um campo cujo
+significado não se conhece é pior que a tela sem ele.
+
+Fechado isso, o caminho é o mesmo do BL-54 na comunidade: parceiro + campos
+relacionados editáveis, e o endereço passando a morar num lugar só.
+
+---
+
+### BL-59 — Classificação manual é desfeita na madrugada seguinte 🟡 (P)
+
+A ação agendada do BL-56 reescreve `x_studio_classificacao` de todos os dizimistas todo
+dia. Enquanto o statusbar do formulário estava `clickable`, um coordenador podia mudar a
+classificação à mão, ver a mudança valer, e encontrá-la desfeita no dia seguinte sem
+aviso nem rastro.
+
+**Feito em 21/09:** o statusbar virou só-leitura, com `help` dizendo que o cálculo é
+diário. O problema deixou de ser silencioso — mas a necessidade, se existir, deixou de
+ser atendida.
+
+**Se a paróquia precisar mesmo decidir caso a caso**, o desenho é um campo de exceção
+(`x_studio_classificacao_manual`, com data e motivo) que a ação agendada respeite e não
+sobrescreva — e não destravar o statusbar. Destravado, o conflito volta a ser invisível.
 
 ---
 
