@@ -27,13 +27,29 @@
   </xpath>
   <xpath expr="/form//group[@name='studio_group_22eae5_left']" position="inside">
     <field name="x_studio_coordenador"/>
+    <field name="x_studio_whatsapp_coordenador"/>
+    <separator string="Recebimento PIX"/>
     <field name="x_studio_chave_pix"/>
     <field name="x_studio_titular_conta"/>
     <field name="x_studio_banco"/>
-    <field name="x_studio_whatsapp_coordenador"/>
-    <field name="x_studio_chave_acesso"/>
+    <field name="x_studio_chave_acesso" groups="base.group_system"/>
   </xpath>
   <xpath expr="/form//group[@name='studio_group_22eae5_right']" position="inside">
+    <separator string="Endereço"/>
+    <field name="x_studio_partner_id" options="{'no_quick_create': True}"/>
+    <!-- Os cinco campos abaixo são RELACIONADOS ao parceiro: escrever neles
+         escreve nele. Sem parceiro escolhido não há onde gravar, e o texto
+         digitado sumiria ao salvar sem dizer por quê. Por isso só aparecem
+         depois que há um, e no lugar deles fica a instrução. -->
+    <div class="text-muted fst-italic" invisible="x_studio_partner_id">
+      Escolha ou crie um contato acima para informar o endereço.
+    </div>
+    <field name="x_studio_rua"         invisible="not x_studio_partner_id"/>
+    <field name="x_studio_complemento" invisible="not x_studio_partner_id"/>
+    <field name="x_studio_cidade"      invisible="not x_studio_partner_id"/>
+    <field name="x_studio_uf"          invisible="not x_studio_partner_id"/>
+    <field name="x_studio_cep"         invisible="not x_studio_partner_id"/>
+    <separator string="QR Code"/>
     <field widget="image" name="x_studio_qr_code"/>
   </xpath>
 </data>
