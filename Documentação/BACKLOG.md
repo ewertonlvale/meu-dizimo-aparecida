@@ -107,7 +107,7 @@ verificado na própria instância, no arch da view de mapa de dizimista:
 Ele não lê latitude e longitude soltas num modelo qualquer. Campos de endereço próprios em
 `x_comunidade` dariam a tela pedida e **nenhum mapa**.
 
-**Atenção — a mesma dependência já morde o projeto:**: o mapa de dizimista existe e vive vazio,
+**Atenção — a mesma dependência já morde o projeto:** o mapa de dizimista existe e vive vazio,
 porque `x_studio_partner_id` nunca é preenchido (0 de 508). Criar o campo não basta; alguém
 tem de povoá-lo. Para 6 comunidades isso é trabalho de uma tarde; para os dizimistas é o
 achado A2/E da análise, ainda em aberto.
