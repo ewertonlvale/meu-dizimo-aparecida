@@ -316,19 +316,24 @@ async function descobrirModelos() {
 }
 
 async function baixar() {
+  // A pasta se protege sozinha NO PRIMEIRO USO: quem clonar o repo e rodar o
+  // download não recebe archs versionados por engano.
+  //
+  // A condição é a PASTA não existir, não o .gitignore. A primeira versão
+  // disto checava o arquivo, e era um laço fechado: versionar os archs se
+  // decide APAGANDO esse .gitignore, e ausência era justamente o gatilho para
+  // recriá-lo. O download seguinte desfazia a decisão em silêncio, e os
+  // arquivos novos sumiam do `git add` sem ninguém entender por quê.
+  //
+  // Pasta já existente significa que alguém já usou isto e já arrumou como
+  // queria. Não é nosso lugar opinar de novo.
+  const pastaNova = !existsSync(CONFIG.saida);
   await mkdir(CONFIG.saida, { recursive: true });
 
-  // A pasta se protege sozinha no primeiro uso: quem clonar o repo não recebe
-  // archs por engano.
-  //
-  // SÓ se ainda não existir. Versionar os archs é uma decisão legítima — dá ao
-  // app do Studio o histórico e o diff que ele não tem (achado D3) — e quem a
-  // tomou apagou este arquivo. Reescrevê-lo a cada execução desfaria essa
-  // escolha em silêncio, que é o pior jeito de discordar de alguém.
-  const ignoreSaida = join(CONFIG.saida, '.gitignore');
-  if (!existsSync(ignoreSaida)) {
-    await writeFile(ignoreSaida, '*\n!.gitignore\n', 'utf8');
-    console.log(`🔒 ${ignoreSaida} criado — apague-o para versionar os archs\n`);
+  if (pastaNova) {
+    await writeFile(join(CONFIG.saida, '.gitignore'), '*\n!.gitignore\n', 'utf8');
+    console.log(`🔒 ${join(CONFIG.saida, '.gitignore')} criado`
+      + ` — apague-o para versionar os archs\n`);
   }
 
   const alvos = CONFIG.modelos || await descobrirModelos();
