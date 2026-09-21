@@ -82,7 +82,7 @@
 | BL-51 | Devolução nascia sempre Pendente, mesmo quando o bot já sabia | 🟠 | P | ✅ Concluído (19/09) — Confirmado, Rejeitado ou Pendente conforme a conferência |
 | BL-52 | A data só era lida em dd/mm/aaaa — Nubank e Google Pay passavam em branco | 🟠 | P | ✅ Concluído (20/09) — mês por extenso, ISO, ano de 2 dígitos e o ano vindo do E2E. Saída sempre normalizada |
 | BL-53 | A oferta gravava o valor DIGITADO, nunca o do comprovante | 🔴 | P | ✅ Concluído (20/09) — vale o comprovante; oferta de R$ 10 paga com R$ 55 registrava R$ 10 |
-| BL-54 | Endereço e mapa da comunidade | 🟡 | M | 📋 Aberto — **adiado por decisão do usuário em 21/09.** Desenho já escolhido: via `res.partner` |
+| BL-54 | Endereço e mapa da comunidade | 🟡 | M | ✅ Código pronto (21/09) — via `res.partner`, com 5 campos relacionados e view de mapa. **Falta instalar** com `--aplicar` |
 | BL-55 | Sete dos oito formulários do Odoo nunca foram revisados | 🟡 | M | 📋 Aberto — só `x_devolucao.form` foi. Quatro têm coluna direita vazia |
 | BL-56 | Classificação do dizimista era campo manual que ninguém mantinha | 🟠 | M | ✅ Código pronto (21/09) — ação agendada do Odoo, versionada no repo. **Falta instalar** com `--aplicar` |
 
@@ -119,9 +119,30 @@ achado A2/E da análise, ainda em aberto.
 - se o endereço entra também no BR Code do PIX (hoje `MediaService._gerarPayloadPix` recebe
   cidade fixa)
 
-**Ferramenta:** `baixar-views.mjs` **não cria campo** — só reescreve arch de view. Criar campo
-é `ir.model.fields`, e o projeto já tem o padrão com modo de simulação em
-`SetupCamposOferta.gs`. Vale portar para `ferramentas/`, onde as credenciais já estão.
+**✅ Implementado em 21/09** — `ferramentas/instalar-endereco-comunidade.mjs`. Cria:
+
+1. `x_studio_partner_id` (many2one `res.partner`) — o endereço de verdade, e o que o mapa lê
+2. cinco campos **relacionados e editáveis**: rua, complemento/bairro, cidade, UF e CEP.
+   Quem digita na tela da comunidade escreve no parceiro — o dado mora num lugar só,
+   então não há duas cópias para manter em sincronia
+3. a view de **mapa** de `x_comunidade`, que não existia
+4. `map` no `view_mode` da ação — senão a view existe e ninguém a alcança
+
+Simula por padrão; gravar exige `--aplicar`. Idempotente: rodar duas vezes não escreve nada
+na segunda. Exercitado contra um Odoo simulado nas três situações (base limpa sem aplicar,
+base limpa aplicando, tudo já instalado).
+
+**⚠️ FALTA INSTALAR** — nada foi criado no Odoo:
+
+```
+node ferramentas/instalar-endereco-comunidade.mjs             # simula
+node ferramentas/instalar-endereco-comunidade.mjs --aplicar   # grava
+node ferramentas/baixar-views.mjs --download                  # versiona a view nova
+```
+
+**Depois, ainda falta:** pôr os campos no formulário de Comunidade (o `baixar-views --update`
+faz, quando os campos existirem) e **preencher o endereço das 6 comunidades** — ver o aviso
+acima.
 
 ---
 
