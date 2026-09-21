@@ -9,7 +9,10 @@
   </xpath>
   <xpath expr="/list//field[@name='x_studio_value']" position="after">
     <field name="write_date" optional="hide" string="Última alteração"/>
-    <field name="x_studio_classificacao" optional="show"/>
+    <field name="x_studio_classificacao" optional="show" widget="badge"
+           decoration-success="x_studio_classificacao == 'Regular'"
+           decoration-warning="x_studio_classificacao == 'Eventual'"
+           decoration-muted="x_studio_classificacao == 'Inativo'"/>
     <field name="x_studio_notificacao_ativa" optional="show" string="Recebe lembrete"/>
   </xpath>
   <xpath expr="/list//field[@name='x_studio_currency_id']" position="attributes">
