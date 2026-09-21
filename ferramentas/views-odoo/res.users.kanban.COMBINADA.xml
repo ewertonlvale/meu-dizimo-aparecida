@@ -1,5 +1,5 @@
 <!-- res.users · kanban combinada (via get_view) · view 169
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <kanban class="o_kanban_mobile" quick_create="true">
   <field name="active"/>
   <field name="login_date"/>

@@ -1,5 +1,5 @@
 <!-- res.users · search combinada (via get_view) · view 170
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <search string="Users">
   <field name="name" filter_domain="['|', '|', ('name','ilike',self), ('login','ilike',self), ('email','ilike',self)]" string="User"/>
   <field name="company_ids" string="Company"/>

@@ -1,7 +1,11 @@
 <!-- x_comunidade · view 645 · Odoo Studio: Default list view for x_comunidade customization · herda de 600 · list · prioridade 99 -->
 <data>
   <xpath expr="/list//field[@name='x_name']" position="after">
-    <field name="x_studio_coordenador_dizimo" optional="show"/>
+    <field name="x_studio_coordenador" optional="show"/>
+    <field name="x_studio_coordenador_dizimo" optional="hide"/>
+    <field name="x_studio_chave_pix" optional="show"/>
+    <field name="x_studio_titular_conta" optional="show"/>
+    <field name="x_studio_banco" optional="show"/>
     <field name="x_studio_dizimistas" optional="show"/>
   </xpath>
 </data>

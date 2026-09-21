@@ -1,5 +1,5 @@
 <!-- x_parametros_line_c498a · search combinada (via get_view) · view 618
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <search>
   <field name="x_name"/>
 </search>

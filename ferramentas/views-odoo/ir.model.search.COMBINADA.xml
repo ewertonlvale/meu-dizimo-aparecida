@@ -1,5 +1,5 @@
 <!-- ir.model · search combinada (via get_view) · view 49
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <search string="Model Description">
   <field name="name" filter_domain="['|', ('name','ilike',self), ('model','ilike',self)]" string="Model"/>
   <field name="model" filter_domain="[('model','ilike',self)]" string="Technical Name"/>

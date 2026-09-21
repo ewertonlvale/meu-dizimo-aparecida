@@ -1,5 +1,5 @@
 <!-- x_devolucao · form combinada (via get_view) · view 604
-     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O --update ignora este arquivo. -->
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <form>
   <header>
     <field widget="statusbar" options="{'clickable': '1'}" name="x_studio_status"/>

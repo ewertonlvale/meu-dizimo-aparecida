@@ -5,7 +5,18 @@
     <field name="x_studio_comunidade"/>
   </xpath>
   <xpath expr="/search/separator" position="after">
-    <filter domain="[&quot;&amp;&quot;, (&quot;x_studio_competencia&quot;, &quot;&gt;=&quot;, &quot;today =1d&quot;), (&quot;x_studio_competencia&quot;, &quot;&lt;&quot;, &quot;today +1d&quot;)]" name="studio_filter_8fb_1ji0qilv3" string="Mês Atual"/>
+    <filter name="studio_filter_8fb_1ji0qilv3" string="Mês Atual"
+            domain="[('x_studio_data_da_devolucao', '&gt;=', (context_today().replace(day=1)).strftime('%Y-%m-%d')),
+                     ('x_studio_data_da_devolucao', '&lt;', ((context_today().replace(day=1)) + relativedelta(months=1)).strftime('%Y-%m-%d'))]"/>
+    <filter name="filtro_aguardando" string="Aguardando conferência"
+            domain="[('x_studio_status', '=', 'Pendente')]"/>
+    <filter name="filtro_rejeitadas" string="Rejeitadas"
+            domain="[('x_studio_status', '=', 'Rejeitado')]"/>
+    <separator/>
+    <filter name="filtro_sem_comprovante" string="Sem comprovante"
+            domain="[('x_studio_comprovante', '=', False)]"/>
+    <filter name="filtro_sem_comunidade" string="Sem comunidade"
+            domain="[('x_studio_comunidade', '=', False)]"/>
   </xpath>
   <xpath expr="/search/separator[2]" position="after">
     <group name="studio_group_by"/>
