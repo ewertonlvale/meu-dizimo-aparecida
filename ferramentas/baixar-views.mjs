@@ -272,10 +272,21 @@ const seguro = (s) => String(s).replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80);
 // idênticas a cada execução — sujando o histórico do Odoo sem motivo.
 const digital = (xml) => createHash('sha256')
   .update(String(xml || '')
-    // Entre tags primeiro: é aí que mora a indentação que o download
-    // acrescenta. Só colapsar espaço em branco não basta — `><` e `> <`
-    // continuariam diferentes, e toda view seria reescrita a cada execução.
-    .replace(/>\s+</g, '><')
+    // Espaço colado às tags, dos DOIS lados — não só entre elas.
+    //
+    // A primeira versão normalizava só `>\s+<`, o espaço ENTRE tags. Mas o
+    // indentador também põe texto solto na própria linha:
+    //
+    //     <attribute name="q">true</attribute>
+    //   vira
+    //     <attribute name="q">\n      true\n    </attribute>
+    //
+    // e ali não há `>` seguido de `<`. As duas formas saíam com digitais
+    // diferentes, então TODA view com texto solto — e as do Studio são
+    // cheias de `<attribute>` — aparecia como alterada para sempre, e o
+    // --update as reescrevia a cada execução sem uma única mudança real.
+    .replace(/>\s+/g, '>')
+    .replace(/\s+</g, '<')
     .replace(/\s+/g, ' ')
     .trim())
   .digest('hex');
