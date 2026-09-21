@@ -30,3 +30,7 @@ ferramentas/odoo-dump.json
 node_modules/
 .DS_Store
 *.log
+
+# Cache do py_js do Odoo, baixado por ferramentas/provar-dominio-filtro.mjs.
+# É código de terceiro, reproduzível a partir da tag fixada no script.
+ferramentas/.cache-pyjs/

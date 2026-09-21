@@ -1,61 +1,101 @@
 <!-- x_dizimista · view 599 · Odoo Studio: Default form view for x_dizimista customization · herda de 593 · form · prioridade 99 -->
 <data>
+
+  <!-- CLASSIFICAÇÃO: mostra, não deixa clicar.
+       O campo é escrito todo dia pela ação agendada do BL-56
+       (ferramentas/odoo-acoes/classificar-dizimistas.py). Enquanto estava
+       `clickable`, quem mudasse à mão via a mudança valer e sumir na próxima
+       madrugada, sem aviso e sem rastro — pior do que não poder clicar.
+       Se a paróquia quiser mesmo decidir caso a caso, o caminho é um campo de
+       exceção que a ação respeite, não destravar este. Está no BL-59. -->
   <xpath expr="/form/header" position="inside">
-    <field widget="statusbar" options="{'clickable': '1'}" name="x_studio_classificacao"/>
+    <field name="x_studio_classificacao" widget="statusbar" readonly="1"
+           help="Calculada todo dia a partir das devoluções registradas. Não se edita à mão."/>
   </xpath>
-  <xpath expr="/form//group[@name='studio_group_2352c2']" position="after">
-    <group name="studio_group_55t_1jh7ir34m">
-      <group name="studio_group_55t_left">
-      </group>
-      <group name="studio_group_55t_right"/>
-    </group>
-    <group name="studio_group_2bv_1jh7kqjbg" string="Devoluções">
-      <group name="studio_group_2bv_left"/>
-      <group name="studio_group_2bv_right"/>
-    </group>
-    <field name="x_studio_devolucoes"/>
-  </xpath>
+
   <xpath expr="/form//field[@name='x_name']" position="attributes">
-    <attribute name="placeholder">
-      Nome Usual...
-    </attribute>
-    <attribute name="string">
-      Nome Usual
-    </attribute>
+    <attribute name="placeholder">Nome Usual...</attribute>
+    <attribute name="string">Nome Usual</attribute>
   </xpath>
-  <xpath expr="/form//field[@name='x_studio_partner_id']" position="replace">
-    <field name="x_studio_nome_completo"/>
-    <field name="x_studio_cpf"/>
-  </xpath>
-  <xpath expr="/form//field[@name='x_studio_partner_email']" position="replace"/>
-  <xpath expr="/form//field[@name='x_studio_date']" position="after">
-    <field name="x_studio_endereco"/>
-    <field name="x_studio_data_cadastro"/>
-    <field name="x_studio_comunidade" options="{&quot;create_name_field&quot;:&quot;x_name&quot;,&quot;no_create&quot;:true}"/>
-    <xpath expr="/form//field[@name='x_studio_value']" position="move"/>
-    <field name="x_studio_notificacao_ativa" string="Receber Notificações"/>
-    <field name="x_studio_dia_preferido" help="Dia Preferido para Devolução"/>
-  </xpath>
-  <xpath expr="/form//field[@name='x_studio_partner_phone']" position="attributes">
-    <attribute name="string">
-      Telefone
-    </attribute>
-  </xpath>
-  <xpath expr="/form//field[@name='x_studio_date']" position="attributes">
-    <attribute name="string">
-      Data de Nascimento
-    </attribute>
-  </xpath>
-  <xpath expr="/form//field[@name='x_studio_currency_id']" position="after">
-    <xpath expr="/form//field[@name='x_studio_image']" position="move"/>
-  </xpath>
+
+  <!-- A foto fica como o arch base a deixou: `oe_avatar`, flutuando no alto à
+       direita, que é onde o Odoo põe foto em toda tela dele.
+       O Studio tinha tirado a classe e enfiado a foto dentro da coluna da
+       direita do grupo. O efeito era o que se via na tela: dez campos
+       espremidos à esquerda e uma coluna à direita ocupada só pela foto. -->
   <xpath expr="/form//field[@name='x_studio_image']" position="attributes">
-    <attribute name="class"/>
-    <attribute name="options">
-      {"zoom":true,"convert_to_webp":true,"size":[0,270]}
-    </attribute>
-    <attribute name="string">
-      Foto
-    </attribute>
+    <attribute name="string">Foto</attribute>
+    <attribute name="options">{"zoom":true,"convert_to_webp":true,"size":[0,270]}</attribute>
+  </xpath>
+
+  <!-- O grupo inteiro é substituído em vez de remendado campo a campo.
+       O que havia antes era uma pilha de xpath de `move` e `replace` do Studio
+       cujo resultado só dava para ler rodando: dez campos de um lado, nenhum
+       do outro, e dois grupos vazios logo abaixo. -->
+  <xpath expr="/form//group[@name='studio_group_2352c2']" position="replace">
+
+    <group>
+      <group string="Pessoa">
+        <field name="x_studio_nome_completo"/>
+        <field name="x_studio_cpf"/>
+        <field name="x_studio_date" string="Data de Nascimento"/>
+        <field name="x_studio_endereco"/>
+      </group>
+      <group string="Contato e comunidade">
+        <field name="x_studio_partner_phone" widget="phone"
+               options="{'enable_sms': True}" string="Telefone"/>
+        <field name="x_studio_comunidade"
+               options="{'create_name_field': 'x_name', 'no_create': true}"/>
+        <field name="x_studio_data_cadastro"/>
+      </group>
+    </group>
+
+    <group>
+      <group string="Devolução combinada">
+        <!-- currency_id precisa estar na view, mesmo escondido: é dele que o
+             widget monetário de x_studio_value tira o símbolo. -->
+        <field name="x_studio_currency_id" invisible="1"/>
+        <field name="x_studio_value" string="Valor de referência"/>
+        <field name="x_studio_dia_preferido" string="Dia preferido"
+               help="Dia do mês em que a pessoa prefere devolver. É o que orienta o lembrete."/>
+      </group>
+      <group string="Lembretes">
+        <field name="x_studio_notificacao_ativa" string="Recebe lembrete no WhatsApp"/>
+        <div colspan="2" class="text-muted small" invisible="x_studio_notificacao_ativa">
+          Desligado: esta pessoa continua cadastrada e pode devolver normalmente,
+          mas o bot não vai procurá-la.
+        </div>
+      </group>
+    </group>
+
+    <!-- Devoluções em aba, que é onde o Odoo põe lista embutida.
+         Antes eram dois grupos vazios — um deles com o título "Devoluções"
+         sobre nada — e a lista solta no meio da folha, logo abaixo.
+
+         As colunas são declaradas aqui em vez de herdar a lista de x_devolucao:
+         aquela traz o dizimista como coluna (redundante, já se está na ficha
+         dele) e um punho de arrastar que não ordena nada neste contexto.
+         `x_studio_tipo_contribuicao` fica à vista de propósito — quem lançar
+         uma devolução por aqui precisa dizer se é dízimo ou oferta, senão
+         nasce um registro que não é nem um nem outro, e esse campo é o que
+         separa os dois em todo o resto do sistema. -->
+    <notebook>
+      <page string="Devoluções" name="devolucoes">
+        <field name="x_studio_devolucoes" nolabel="1">
+          <list default_order="x_studio_data_da_devolucao desc" duplicate="false">
+            <field name="x_studio_data_da_devolucao" string="Data"/>
+            <field name="x_studio_tipo_contribuicao" string="Tipo"/>
+            <field name="x_studio_forma_de_pagamento" string="Forma" optional="show"/>
+            <field name="x_studio_comunidade" optional="hide"/>
+            <field name="x_studio_currency_id" column_invisible="True"/>
+            <field name="x_studio_value" string="Valor" sum="Total"/>
+            <field name="x_studio_status" string="Status" widget="badge"
+                   decoration-success="x_studio_status == 'Confirmado'"
+                   decoration-danger="x_studio_status == 'Rejeitado'"
+                   decoration-warning="x_studio_status == 'Pendente'"/>
+          </list>
+        </field>
+      </page>
+    </notebook>
   </xpath>
 </data>

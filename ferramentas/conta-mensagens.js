@@ -2296,6 +2296,63 @@ for (const r of REGRAS_DE_CONTEUDO) {
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n');
+
+// ──────────────────────────────────────────────────────────────────
+// Domínio de filtro de busca NÃO é avaliado pelo Python do servidor. Quem
+// avalia é o py_js, um Python parcial escrito em JavaScript que roda no
+// navegador — e ele implementa bem menos coisa do que parece.
+//
+// Isso derrubou o filtro "Mês Atual" de x_devolucao, que nasceu com
+// `context_today().replace(day=1)` e NUNCA devolveu nada: o PyDate do py_js
+// não tem `replace`, então a expressão estourava em toda data. Não havia
+// mensagem de erro em lugar nenhum — o filtro simplesmente não filtrava.
+//
+// Esta verificação é de graça e sem rede: procura, nos domínios versionados,
+// as duas construções que já se provaram quebradas. A prova de verdade, que
+// executa os domínios no avaliador real do Odoo, está em
+// ferramentas/provar-dominio-filtro.mjs.
+{
+  const dirViews = path.join(RAIZ, 'ferramentas/views-odoo');
+  const PROIBIDO = [
+    [/\.replace\s*\(/,
+     'PyDate do py_js não tem .replace() — use relativedelta(day=1)'],
+    [/relativedelta\s*\([^)]*\bday\s*=\s*(3[01]|2[89])\b/,
+     'relativedelta(day=31) transborda no py_js (fev vira 03/03) — use months=1, day=1 com "<"'],
+  ];
+
+  const arquivos = fs.existsSync(dirViews)
+    ? fs.readdirSync(dirViews).filter((f) => f.endsWith('.xml') && !f.includes('.COMBINADA.'))
+    : [];
+
+  if (!arquivos.length) {
+    falhas++;
+    console.log('❌ não achei nenhuma view versionada em ferramentas/views-odoo');
+  }
+
+  let dominios = 0;
+  const achados = [];
+  for (const f of arquivos) {
+    const xml = fs.readFileSync(path.join(dirViews, f), 'utf8');
+    // Só o conteúdo de domain="..." interessa: `.replace(` em outro lugar
+    // (num t-out, num help) é JavaScript de verdade e funciona.
+    for (const m of xml.matchAll(/\bdomain\s*=\s*"([^"]*)"/g)) {
+      dominios++;
+      for (const [re, porque] of PROIBIDO) {
+        if (re.test(m[1])) achados.push(`${f}: ${porque}`);
+      }
+    }
+  }
+
+  if (achados.length) {
+    falhas += achados.length;
+    for (const a of achados) console.log(`❌ ${a}`);
+  } else {
+    console.log(`✅ ${dominios} domínios em ${arquivos.length} views, nenhum usa construção que o py_js não avalia`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');
