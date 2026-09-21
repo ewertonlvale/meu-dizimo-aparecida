@@ -91,6 +91,7 @@
 | BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ Código pronto (21/09) — campo `x_studio_validacao` e barra clicável. **Falta instalar** com `--aplicar` |
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | 📋 Aberto — o espaço já foi corrigido; falta humanizar os rótulos da seleção no Odoo |
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
+| BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 
 ---
 
@@ -380,6 +381,29 @@ BL-51. Vai em PR próprio, com teste por cenário antes de subir.
 
 **Fora do desenho, de propósito:** oferta não ganha Previsto. Oferta não é compromisso
 mensal, e pré-criar registro de oferta produziria linha que nunca fecha.
+
+---
+
+### BL-63 — O QR Code do cadastro da comunidade ✅ (P)
+
+O formulário pedia uma imagem de QR Code por comunidade. **O bot nunca leu esse campo:**
+`x_studio_qr_code` não aparece uma única vez no Apps Script.
+
+Quem gera o QR é o `MediaService`, no momento do pagamento, montando o BR Code a partir
+de `x_studio_chave_pix` (`MediaService.gs:563`). E o caminho preferido nem imagem usa — é
+o card PIX nativo da Meta (`enviarCardPix`), que recebe o código como texto.
+
+Pior que inútil, era um dado que **só podia envelhecer**: trocada a chave PIX da
+comunidade, a figura continuaria mostrando a chave antiga, sem nada acusar. Quem
+conferisse pela imagem conferiria errado.
+
+**Feito:** o campo saiu do formulário. **O campo continua existindo no Odoo**, com o que já
+estiver gravado nele — tirar da tela é reversível, apagar campo de imagem não é, e essa
+decisão não cabe numa revisão de formulário.
+
+**A única razão para devolvê-lo:** se a paróquia usa essa figura para **imprimir cartaz**
+na porta da capela. Nesse caso são duas linhas de volta na view — mas aí vale saber que a
+figura não se atualiza sozinha quando a chave muda.
 
 ---
 

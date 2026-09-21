@@ -64,7 +64,17 @@
     </div>
     <field name="x_studio_latitude"    invisible="not x_studio_partner_id"/>
     <field name="x_studio_longitude"   invisible="not x_studio_partner_id"/>
-    <separator string="QR Code"/>
-    <field widget="image" name="x_studio_qr_code"/>
+    <!-- O QR Code SAIU DA TELA (BL-63).
+         Era uma imagem que alguém colava no cadastro, e que o bot nunca leu:
+         `x_studio_qr_code` não aparece uma única vez no Apps Script. Quem gera
+         o QR é o MediaService, na hora do pagamento, montando o BR Code a
+         partir de `x_studio_chave_pix` — e o card nativo da Meta nem imagem
+         usa. Pedir a imagem no cadastro era pedir um dado que só podia
+         envelhecer: trocada a chave, a figura continuaria mostrando a antiga.
+
+         O CAMPO CONTINUA EXISTINDO no Odoo, com as imagens que já estiverem
+         nele. Tirar da tela é reversível; apagar campo de imagem não é, e essa
+         decisão não é de uma revisão de formulário. Se a paróquia usa essa
+         figura para IMPRIMIR cartaz, basta devolver estas duas linhas. -->
   </xpath>
 </data>
