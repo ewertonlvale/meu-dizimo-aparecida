@@ -1,5 +1,5 @@
 /**
- * baixar-views.mjs — Leva e traz as views de um tipo (padrão: kanban) do Odoo.
+ * baixar-views.mjs — Leva e traz as views do app inteiro, entre o Odoo e o git.
  *
  * POR QUE EXISTE
  *   Ler o arch pela tela do Studio dá uma linha só, sem indentação, e obriga a
@@ -10,8 +10,27 @@
  *     1. As views cruas (`ir.ui.view`), inclusive as herdadas, uma por arquivo
  *     2. A view COMBINADA, que é o Odoo aplicando as heranças em cima da base
  *
- *   Para x_dizimista e x_devolucao, que são modelos do Studio sem herança, as
- *   duas costumam coincidir. Para res.users, não: é ali que a diferença conta.
+ *   Para os modelos do Studio, sem herança, as duas costumam coincidir. Para
+ *   res.users, não: é ali que a diferença conta.
+ *
+ * O QUE ELE PEGA, POR PADRÃO
+ *   TODOS os modelos personalizados e TODOS os tipos de view (list, form,
+ *   kanban, search, pivot…). Nada de lista fixa: modelo se descobre no Odoo,
+ *   porque lista escrita à mão envelhece sozinha — a tela criada amanhã
+ *   ficaria de fora sem ninguém notar, e é justamente ela que precisa de
+ *   revisão. `--modelos` e `--tipo` continuam servindo para estreitar.
+ *
+ *   "Personalizado" é a união de duas coisas: os modelos criados no Studio
+ *   (state manual, ou nome x_*) e os modelos de qualquer view que pertença ao
+ *   módulo studio_customization — é assim que res.users entra, porque a tela
+ *   dele foi mexida aqui.
+ *
+ * A PASTA É UM ESPELHO
+ *   Na varredura completa, arquivo que sobrou e não corresponde a nenhuma view
+ *   é removido, um a um e dito em voz alta — view apagada no Odoo não deve
+ *   continuar no disco fingindo que existe. Com `--modelos` ou `--tipo` isso
+ *   não acontece: a varredura viu um pedaço, e apagar o resto seria apagar o
+ *   que nem foi olhado.
  *
  * COMO RODAR (Node 18+, usa fetch nativo — nada para instalar)
  *
@@ -36,8 +55,8 @@
  *                  node ferramentas/baixar-views.mjs --url https://... --db x --uid 2
  *
  *   Opcionais:
- *     --modelos x_dizimista,x_devolucao,res.users   (este é o padrão)
- *     --tipo    kanban                              (list, form, search…)
+ *     --modelos x_dizimista,x_devolucao   (padrão: todos os personalizados)
+ *     --tipo    kanban                    (padrão: todos os tipos)
  *     --saida   ferramentas/views-odoo              (pasta de trabalho)
  *     --simular  no --update, mostra o que mudaria e não grava nada
  *     --forcar   no --update, sobe mesmo se a view mudou no Odoo desde o download
@@ -69,7 +88,7 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -103,10 +122,15 @@ const CONFIG = {
   // da trava de divergência (ver MODO UPDATE).
   simular: argv.includes('--simular') || argv.includes('--dry-run'),
   forcar:  argv.includes('--forcar'),
-  tipo:  arg('tipo')  || 'kanban',
+  // Sem valor fixo nos dois: o padrão é TUDO, descoberto no Odoo.
+  //
+  // Lista fixa de modelo envelhece sozinha — um modelo criado no Studio
+  // amanhã ficaria de fora sem ninguém notar, e é justamente a tela nova que
+  // mais precisa de revisão. Lista fixa de tipo escondia list, form e search,
+  // que são onde o trabalho acontece.
+  tipo:  arg('tipo') || null,
   saida: arg('saida') || 'ferramentas/views-odoo',
-  modelos: (arg('modelos') || 'x_dizimista,x_devolucao,res.users')
-    .split(',').map((m) => m.trim()).filter(Boolean),
+  modelos: arg('modelos') ? arg('modelos').split(',').map((m) => m.trim()).filter(Boolean) : null,
 };
 
 const faltando = [];
@@ -229,7 +253,9 @@ const semCabecalho = (txt) => String(txt || '')
 // ---------------------------------------------------------------------------
 
 console.log(`\n🔌 ${CONFIG.url} (db=${CONFIG.db}, uid=${CONFIG.uid})`);
-console.log(`📐 modo=${CONFIG.modo}  tipo=${CONFIG.tipo}  modelos=${CONFIG.modelos.join(', ')}\n`);
+console.log(`📐 modo=${CONFIG.modo}`
+  + `  tipo=${CONFIG.tipo || 'todos'}`
+  + `  modelos=${CONFIG.modelos ? CONFIG.modelos.join(', ') : 'todos os personalizados'}\n`);
 
 // Sanity check antes de qualquer coisa: uma falha de auth aqui é uma mensagem
 // clara, em vez de um erro obscuro no meio da operação.
@@ -245,6 +271,49 @@ try {
 // ---------------------------------------------------------------------------
 // MODO DOWNLOAD
 // ---------------------------------------------------------------------------
+
+/**
+ * Quais modelos este app personaliza.
+ *
+ * Duas fontes, unidas, porque nenhuma sozinha responde:
+ *
+ *   - `ir.model` com state 'manual' ou nome x_*  — os modelos criados no
+ *     Studio. São o próprio app.
+ *   - os modelos de qualquer view que pertença ao `studio_customization` —
+ *     é assim que res.users entra. Ele não é modelo nosso, mas a tela dele
+ *     foi mexida aqui, e uma tela mexida é tela para revisar.
+ *
+ * O `x_parametros_line_...` e afins entram por serem manual. É o certo: uma
+ * linha de tabela também tem view, e foi numa dessas que a análise achou
+ * quatro campos invisíveis.
+ */
+async function descobrirModelos() {
+  const achados = new Set();
+
+  const modelos = await searchRead('ir.model', [], ['model', 'state']);
+  for (const m of modelos) {
+    if (m.state === 'manual' || m.model.startsWith('x_')) achados.add(m.model);
+  }
+
+  try {
+    const dados = await searchRead(
+      'ir.model.data',
+      [['module', '=', 'studio_customization'], ['model', '=', 'ir.ui.view']],
+      ['res_id']
+    );
+    if (dados.length) {
+      const views = await searchRead(
+        'ir.ui.view', [['id', 'in', dados.map((d) => d.res_id)]], ['model']
+      );
+      for (const v of views) if (v.model) achados.add(v.model);
+    }
+  } catch (e) {
+    console.log(`   ⚠️  não li o studio_customization: ${e.message}`);
+    console.log(`      modelos do core personalizados (res.users) podem ficar de fora.`);
+  }
+
+  return [...achados].sort();
+}
 
 async function baixar() {
   await mkdir(CONFIG.saida, { recursive: true });
@@ -262,17 +331,28 @@ async function baixar() {
     console.log(`🔒 ${ignoreSaida} criado — apague-o para versionar os archs\n`);
   }
 
-  const indice = { gerado_em: new Date().toISOString(), tipo: CONFIG.tipo, modelos: [] };
+  const alvos = CONFIG.modelos || await descobrirModelos();
+  if (!CONFIG.modelos) console.log(`🔎 ${alvos.length} modelo(s) personalizado(s)\n`);
 
-  for (const modelo of CONFIG.modelos) {
+  const indice = {
+    gerado_em: new Date().toISOString(),
+    tipo: CONFIG.tipo || 'todos',
+    modelos: [],
+  };
+  // Tudo que este download escreveu. O que sobrar na pasta e não estiver aqui
+  // é restos de um download anterior — view apagada no Odoo, ou renomeada.
+  const escritos = new Set(['.gitignore', 'indice.json']);
+
+  for (const modelo of alvos) {
     console.log(`── ${modelo}`);
-    const entrada = { modelo, views: [], combinada: null, erros: [] };
+    const entrada = { modelo, views: [], combinadas: [], erros: [] };
 
     let views = [];
     try {
       views = await searchRead(
         'ir.ui.view',
-        [['model', '=', modelo], ['type', '=', CONFIG.tipo]],
+        CONFIG.tipo ? [['model', '=', modelo], ['type', '=', CONFIG.tipo]]
+                    : [['model', '=', modelo]],
         ['id', 'name', 'type', 'model', 'priority', 'inherit_id', 'mode', 'active', 'arch_db'],
         { order: 'priority,id' }
       );
@@ -298,19 +378,24 @@ async function baixar() {
 
     for (const v of views) {
       const heranca = v.inherit_id ? `herda de ${v.inherit_id[0]}` : 'base';
-      const arquivo = `${seguro(modelo)}.${v.id}.${seguro(v.name)}.xml`;
+      // O tipo entra no nome porque os nomes que o Studio gera não ajudam
+      // ("Default kanban view for ir.model(443,)"). Com seis modelos e todos
+      // os tipos são dezenas de arquivos, e achar "a list de dizimista"
+      // precisa ser olhar, não abrir.
+      const arquivo = `${seguro(modelo)}.${seguro(v.type)}.${v.id}.${seguro(v.name)}.xml`;
       await writeFile(
         join(CONFIG.saida, arquivo),
         `<!-- ${modelo} · view ${v.id} · ${v.name} · ${heranca}`
-          + ` · prioridade ${v.priority}${v.active ? '' : ' · INATIVA'} -->\n`
+          + ` · ${v.type} · prioridade ${v.priority}${v.active ? '' : ' · INATIVA'} -->\n`
           + indentar(v.arch_db),
         'utf8'
       );
       const modulo = modulos[v.id] || null;
       const doCore = modulo && modulo !== 'studio_customization';
       console.log(`   ✓ ${arquivo}  (${heranca}${doCore ? `, do módulo ${modulo} — somente leitura` : ''})`);
+      escritos.add(arquivo);
       entrada.views.push({
-        id: v.id, name: v.name, priority: v.priority, active: v.active,
+        id: v.id, name: v.name, tipo: v.type, priority: v.priority, active: v.active,
         inherit_id: v.inherit_id ? v.inherit_id[0] : null, mode: v.mode, arquivo, modulo,
         // A impressão digital do que estava no Odoo AGORA. É ela que o
         // --update compara depois, para não passar por cima de uma alteração
@@ -327,23 +412,30 @@ async function baixar() {
     // `get_view` é o método do Odoo 17+. `fields_view_get` é o nome antigo, e
     // fica como reserva: custa três linhas e evita o script morrer numa base
     // mais velha.
-    let combinada = null;
-    for (const metodo of ['get_view', 'fields_view_get']) {
-      try {
-        const r = metodo === 'get_view'
-          ? await rpc(modelo, 'get_view', [false, CONFIG.tipo])
-          : await rpc(modelo, 'fields_view_get', [], { view_type: CONFIG.tipo });
-        if (r?.arch) { combinada = { metodo, arch: r.arch, view_id: r.id || null }; break; }
-      } catch (e) {
-        entrada.erros.push(`${metodo}: ${e.message}`);
-      }
-    }
+    // Só os tipos que REALMENTE têm view registrada. Pedir `get_view` de um
+    // tipo sem view faz o Odoo gerar um default na hora — um arquivo que não
+    // corresponde a nada no banco e que ninguém pode editar de volta.
+    const tipos = [...new Set(views.map((v) => v.type))].sort();
 
-    if (combinada) {
-      const arquivo = `${seguro(modelo)}.COMBINADA.xml`;
+    for (const tipo of tipos) {
+      let combinada = null;
+      for (const metodo of ['get_view', 'fields_view_get']) {
+        try {
+          const r = metodo === 'get_view'
+            ? await rpc(modelo, 'get_view', [false, tipo])
+            : await rpc(modelo, 'fields_view_get', [], { view_type: tipo });
+          if (r?.arch) { combinada = { metodo, arch: r.arch, view_id: r.id || null }; break; }
+        } catch (e) {
+          entrada.erros.push(`${tipo}/${metodo}: ${e.message}`);
+        }
+      }
+
+      if (!combinada) { console.log(`   ✗ combinada de ${tipo}: não consegui`); continue; }
+
+      const arquivo = `${seguro(modelo)}.${seguro(tipo)}.COMBINADA.xml`;
       await writeFile(
         join(CONFIG.saida, arquivo),
-        `<!-- ${modelo} · ${CONFIG.tipo} combinada (via ${combinada.metodo})`
+        `<!-- ${modelo} · ${tipo} combinada (via ${combinada.metodo})`
           + ` · view ${combinada.view_id ?? '?'}\n`
           + `     SOMENTE LEITURA: é o resultado das heranças, não existe como`
           + ` registro. O --update ignora este arquivo. -->\n`
@@ -351,9 +443,8 @@ async function baixar() {
         'utf8'
       );
       console.log(`   ✓ ${arquivo}  ← é esta que você quer ler`);
-      entrada.combinada = { arquivo, metodo: combinada.metodo, view_id: combinada.view_id };
-    } else {
-      console.log(`   ✗ não consegui a view combinada`);
+      escritos.add(arquivo);
+      entrada.combinadas.push({ tipo, arquivo, metodo: combinada.metodo, view_id: combinada.view_id });
     }
 
     indice.modelos.push(entrada);
@@ -361,8 +452,28 @@ async function baixar() {
 
   await writeFile(join(CONFIG.saida, 'indice.json'), JSON.stringify(indice, null, 2), 'utf8');
 
+  // A pasta é um espelho do Odoo, e espelho não guarda o que sumiu. O que
+  // sobrou aqui é de um download anterior: view apagada no Odoo, ou arquivo
+  // que mudou de nome quando o tipo passou a entrar nele.
+  //
+  // Apagar dá um susto justo, então cada remoção é dita em voz alta. E o
+  // git tem todos eles — é por isso que dá para fazer isso com tranquilidade.
+  //
+  // Só acontece na varredura completa: com --modelos ou --tipo o download
+  // viu um pedaço, e apagar o resto seria apagar o que nem foi olhado.
+  if (!CONFIG.modelos && !CONFIG.tipo) {
+    const sobrando = (await readdir(CONFIG.saida))
+      .filter((f) => f.endsWith('.xml') && !escritos.has(f));
+    for (const f of sobrando) {
+      await rm(join(CONFIG.saida, f));
+      console.log(`🗑️  ${f} — não existe mais no Odoo (ou mudou de nome), removido`);
+    }
+    if (sobrando.length) console.log('');
+  }
+
   const total = indice.modelos.reduce((n, m) => n + m.views.length, 0);
-  console.log(`\n✅ ${total} view(s) + ${indice.modelos.filter((m) => m.combinada).length} combinada(s)`);
+  const comb  = indice.modelos.reduce((n, m) => n + m.combinadas.length, 0);
+  console.log(`\n✅ ${indice.modelos.length} modelo(s), ${total} view(s) + ${comb} combinada(s)`);
   console.log(`   em ${CONFIG.saida}/  (índice em indice.json)\n`);
 }
 
@@ -395,7 +506,8 @@ async function atualizar() {
   let enviadas = 0, iguais = 0, puladas = 0, falhas = 0;
 
   for (const entrada of indice.modelos) {
-    if (!CONFIG.modelos.includes(entrada.modelo)) continue;
+    if (CONFIG.modelos && !CONFIG.modelos.includes(entrada.modelo)) continue;
+    if (CONFIG.tipo && !entrada.views.some((v) => !v.tipo || v.tipo === CONFIG.tipo)) continue;
     console.log(`── ${entrada.modelo}`);
 
     // A que módulo pertence cada view, perguntado AGORA e não lido do
@@ -416,6 +528,7 @@ async function atualizar() {
     }
 
     for (const v of entrada.views) {
+      if (CONFIG.tipo && v.tipo && v.tipo !== CONFIG.tipo) continue;
       const caminho = join(CONFIG.saida, v.arquivo);
       if (!existsSync(caminho)) {
         console.log(`   · ${v.arquivo} — não está no disco, pulando`);
@@ -488,8 +601,11 @@ async function atualizar() {
       }
     }
 
-    if (entrada.combinada) {
-      console.log(`   · ${entrada.combinada.arquivo} — somente leitura, ignorado (trava 2)`);
+    // Aceita o índice novo (uma combinada por tipo) e o antigo (uma só), para
+    // um --update com índice de antes desta mudança não quebrar.
+    const combinadas = entrada.combinadas || (entrada.combinada ? [entrada.combinada] : []);
+    if (combinadas.length) {
+      console.log(`   · ${combinadas.length} combinada(s) — somente leitura, ignorada(s) (trava 2)`);
     }
   }
 
