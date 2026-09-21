@@ -2377,6 +2377,46 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
       console.log(`✅ nenhum comentário XML com "--", que o Odoo recusaria`);
     }
   }
+
+  // ── O marcador dos botões do kanban ──────────────────────────────────────
+  // instalar-botoes-kanban.mjs acha um comentário no arch e o troca pelos dois
+  // botões, com os IDs das ações que ele acabou de criar. Se alguém renomear ou
+  // apagar esse comentário editando a view, o instalador para com um erro — na
+  // máquina de quem usa, longe daqui.
+  //
+  // Esta verificação roda a substituição de verdade, contra o arquivo de
+  // verdade, e confere que ela ainda pega.
+  {
+    const ARQ = 'x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml';
+    const MARCADOR = 'MARCADOR-BOTOES-VALIDACAO';
+    const caminho = path.join(dirViews, ARQ);
+
+    if (!fs.existsSync(caminho)) {
+      falhas++;
+      console.log(`❌ ${ARQ} não existe — o instalador dos botões mira nele`);
+    } else {
+      // O baixar-views tira o cabeçalho da ferramenta antes de subir; o arch
+      // que o instalador vê no Odoo é o resto.
+      const arch = fs.readFileSync(caminho, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
+      const fingidos = '<div class="mt-2"><button name="1" type="action">x</button></div>';
+      const depois = arch.replace(new RegExp(`<!--\\s*${MARCADOR}[\\s\\S]*?-->`), fingidos);
+
+      const erros = [];
+      if (!arch.includes(MARCADOR))   erros.push('o marcador sumiu do arch');
+      if (depois === arch)            erros.push('a troca não pegou');
+      if (depois.includes(MARCADOR))  erros.push('sobrou marcador depois da troca');
+      // O comentário do marcador precisa existir COMO comentário: se virar
+      // texto solto, o Odoo mostra a explicação no card.
+      if (!/<!--\s*MARCADOR-BOTOES-VALIDACAO/.test(arch)) erros.push('o marcador não está dentro de <!-- -->');
+
+      if (erros.length) {
+        falhas += erros.length;
+        for (const e of erros) console.log(`❌ botões do kanban: ${e}`);
+      } else {
+        console.log('✅ o marcador dos botões do kanban ainda é substituível');
+      }
+    }
+  }
 }
 
 console.log('\n' + '─'.repeat(64));
