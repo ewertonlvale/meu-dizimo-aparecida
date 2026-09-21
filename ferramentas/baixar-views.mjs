@@ -15,13 +15,20 @@
  *
  * COMO RODAR (Node 18+, usa fetch nativo — nada para instalar)
  *
- *   bash:
- *     ODOO_API_KEY=... node ferramentas/baixar-views.mjs \
- *       --url https://sua-instancia.odoo.com --db seu_db --uid 2
+ *   1. Uma vez só, crie o arquivo de credenciais:
+ *        cp ferramentas/.odoo-env.exemplo ferramentas/.odoo-env
+ *        chmod 600 ferramentas/.odoo-env
+ *      e preencha ODOO_URL, ODOO_DB, ODOO_UID e ODOO_API_KEY.
+ *      Esse arquivo está no .gitignore.
  *
- *   PowerShell:
- *     $env:ODOO_API_KEY = "sua-chave"
- *     node ferramentas/baixar-views.mjs --url https://... --db seu_db --uid 2
+ *   2. Depois, sempre:
+ *        node ferramentas/baixar-views.mjs
+ *
+ *   Sem o arquivo, tudo continua funcionando por ambiente/argumento:
+ *     bash:        ODOO_API_KEY=... node ferramentas/baixar-views.mjs \
+ *                    --url https://sua-instancia.odoo.com --db seu_db --uid 2
+ *     PowerShell:  $env:ODOO_API_KEY = "sua-chave"
+ *                  node ferramentas/baixar-views.mjs --url https://... --db x --uid 2
  *
  *   Opcionais:
  *     --modelos x_dizimista,x_devolucao,res.users   (este é o padrão)
@@ -46,6 +53,14 @@
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { carregarEnv } from './odoo-env.mjs';
+
+// Credenciais de ferramentas/.odoo-env, quando existir. Variável de ambiente
+// real tem precedência sobre o arquivo — ver odoo-env.mjs.
+const env = carregarEnv(process.env.ODOO_ENV_FILE || 'ferramentas/.odoo-env');
+if (env?.carregadas.length) {
+  console.log(`🔑 ${env.caminho}: ${env.carregadas.join(', ')}`);
+}
 
 const argv = process.argv.slice(2);
 const arg = (nome) => {
@@ -73,7 +88,11 @@ if (!CONFIG.apiKey) faltando.push('ODOO_API_KEY (variável de ambiente)');
 
 if (faltando.length) {
   console.error('❌ Faltou:\n   ' + faltando.join('\n   '));
-  console.error('\nExemplo:');
+  console.error('\nO jeito mais simples é o arquivo de credenciais:');
+  console.error('   cp ferramentas/.odoo-env.exemplo ferramentas/.odoo-env');
+  console.error('   chmod 600 ferramentas/.odoo-env');
+  console.error('   (preencha os quatro valores — o arquivo está no .gitignore)');
+  console.error('\nOu, sem arquivo:');
   console.error('   ODOO_API_KEY=sua-chave node ferramentas/baixar-views.mjs \\');
   console.error('     --url https://sua-instancia.odoo.com --db seu_db --uid 2');
   console.error('\nNada vem preenchido de fábrica de propósito — veja a nota de');
