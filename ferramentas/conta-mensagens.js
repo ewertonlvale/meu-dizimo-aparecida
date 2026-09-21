@@ -31,6 +31,7 @@
 const fs   = require('fs');
 const path = require('path');
 const vm   = require('vm');
+const nodeCrypto = require('node:crypto');
 
 const RAIZ = path.join(__dirname, '..');
 
@@ -1671,6 +1672,50 @@ console.log('🏦 Comprovantes REAIS, um por layout de banco — BL-49\n');
     console.log(`${errs.length ? '❌' : '✅'} ${c.nome}` +
                 (errs.length ? `\n     ${errs.join('  ')}` : ''));
   }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔁 baixar-views: indentar não pode mudar a impressão digital\n');
+
+// ──────────────────────────────────────────────────────────────────
+// O baixar-views compara o arquivo local com o arch do Odoo por uma
+// impressão digital que ignora formatação. Se ela NÃO ignorar, o --update
+// reescreve views idênticas a cada execução, sujando o histórico do Odoo sem
+// uma única mudança real — e escondendo a view que de fato mudou no meio de
+// dez falsos positivos. Foi o que aconteceu em produção.
+//
+// O invariante é simples: indentar não muda o significado, logo não pode
+// mudar a digital. O caso que quebrou não foi o espaço ENTRE tags (esse eu
+// tratei) e sim o texto solto, que o indentador põe na própria linha — e as
+// views do Studio são cheias de `<attribute name="x">true</attribute>`.
+{
+  const fonte = fs.readFileSync(path.join(RAIZ, 'ferramentas/baixar-views.mjs'), 'utf8');
+  const trecho = (de, ate) => fonte.slice(fonte.indexOf(de), fonte.indexOf(ate));
+  const digital  = new Function('createHash', trecho('const digital', '// Tira o comentário') + '; return digital;')(nodeCrypto.createHash);
+  const indentar = new Function(trecho('function indentar', '// Nome de arquivo') + '; return indentar;')();
+
+  const CASOS = [
+    ['arch simples, sem texto solto',
+     '<kanban><field name="a"/></kanban>'],
+    ['<attribute> com texto — o caso que quebrou',
+     '<data><xpath expr="/x" position="attributes"><attribute name="q">true</attribute></xpath></data>'],
+    ['texto dentro de span',
+     '<div><span>ola</span></div>'],
+    ['aninhado, com texto e tag no meio',
+     '<form><group><field name="a"/><div class="x">texto <b>e</b> mais</div></group></form>'],
+  ];
+
+  for (const [nome, xml] of CASOS) {
+    const ok = digital(xml) === digital(indentar(xml));
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}`);
+  }
+
+  // E o contrário: normalizar demais colapsaria mudança de verdade, e aí o
+  // --update deixaria de subir o que precisa subir.
+  const mudou = digital('<list><field name="x"/></list>') !== digital('<list><field name="y"/></list>');
+  if (!mudou) falhas++;
+  console.log(`${mudou ? '✅' : '❌'} campo diferente continua dando digital diferente`);
 }
 
 console.log('\n' + '─'.repeat(64));
