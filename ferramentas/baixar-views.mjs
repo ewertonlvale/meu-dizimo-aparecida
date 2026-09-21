@@ -53,6 +53,7 @@
  */
 
 import { writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { carregarEnv } from './odoo-env.mjs';
 
@@ -194,8 +195,19 @@ try {
 }
 
 await mkdir(CONFIG.saida, { recursive: true });
-// A pasta se protege sozinha: quem clonar o repo não recebe archs por engano.
-await writeFile(join(CONFIG.saida, '.gitignore'), '*\n!.gitignore\n', 'utf8');
+
+// A pasta se protege sozinha no primeiro uso: quem clonar o repo não recebe
+// archs por engano.
+//
+// SÓ se ainda não existir. Versionar os archs é uma decisão legítima — dá ao
+// app do Studio o histórico e o diff que ele não tem (achado D3) — e quem a
+// tomou editou ou apagou este arquivo. Reescrevê-lo a cada execução desfaria
+// essa escolha em silêncio, que é o pior jeito de discordar de alguém.
+const ignoreSaida = join(CONFIG.saida, '.gitignore');
+if (!existsSync(ignoreSaida)) {
+  await writeFile(ignoreSaida, '*\n!.gitignore\n', 'utf8');
+  console.log(`🔒 ${ignoreSaida} criado — apague-o para versionar os archs\n`);
+}
 
 const indice = { gerado_em: new Date().toISOString(), tipo: CONFIG.tipo, modelos: [] };
 
