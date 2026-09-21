@@ -202,19 +202,31 @@ if (faltando.length) {
 // ---------------------------------------------------------------------------
 
 async function rpc(model, method, args = [], kwargs = {}) {
-  const res = await fetch(`${CONFIG.url}/jsonrpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'call',
-      params: {
-        service: 'object',
-        method: 'execute_kw',
-        args: [CONFIG.db, CONFIG.uid, CONFIG.apiKey, model, method, args, kwargs],
-      },
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(`${CONFIG.url}/jsonrpc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'call',
+        params: {
+          service: 'object',
+          method: 'execute_kw',
+          args: [CONFIG.db, CONFIG.uid, CONFIG.apiKey, model, method, args, kwargs],
+        },
+      }),
+    });
+  } catch (e) {
+    // "fetch failed" é tudo que o Node diz quando o pedido nem sai: DNS,
+    // conexão recusada, timeout, TLS. O motivo de verdade está em `cause`,
+    // e sem ele a mensagem manda a pessoa conferir credencial — que é
+    // justamente o que NÃO está errado.
+    const causa = e.cause?.code || e.cause?.message || e.message;
+    const erro = new Error(`não consegui falar com ${CONFIG.url} (${causa})`);
+    erro.rede = true;
+    throw erro;
+  }
   const json = await res.json();
   if (json.error) {
     throw new Error(json.error.data?.message || json.error.message || JSON.stringify(json.error));
@@ -314,8 +326,19 @@ try {
   const eu = await searchRead('res.users', [['id', '=', CONFIG.uid]], ['login'], { limit: 1 });
   if (!eu?.length) throw new Error('uid não encontrado');
 } catch (e) {
-  console.error(`❌ Falha de autenticação: ${e.message}`);
-  console.error('   Confira URL, DB, UID e a API key.');
+  if (e.rede) {
+    console.error(`❌ ${e.message}`);
+    console.error('');
+    console.error('   Isso é CONEXÃO, não credencial — o pedido não chegou ao servidor.');
+    console.error('   Nada foi lido nem gravado.');
+    console.error('');
+    console.error('   Abra o endereço no navegador. Se carregar, foi instabilidade');
+    console.error('   e basta repetir o comando; instância Odoo Online hiberna e');
+    console.error('   leva alguns segundos para acordar.');
+  } else {
+    console.error(`❌ Falha de autenticação: ${e.message}`);
+    console.error('   Confira URL, DB, UID e a API key.');
+  }
   process.exit(1);
 }
 
