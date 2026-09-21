@@ -110,6 +110,46 @@ const arg = (nome) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : undefined;
 };
 
+// Um argumento que o script não conhece é ERRO, não ruído.
+//
+// `--updade` (com o `d` trocado) passava despercebido: o modo caía no padrão,
+// que é baixar, e o download sobrescrevia justamente as edições que a pessoa
+// ia subir. Um dedo torto desfazia o trabalho, em silêncio, fazendo o oposto
+// do que foi pedido.
+{
+  const CONHECIDOS = new Set([
+    '--url', '--db', '--uid', '--modelos', '--tipo', '--saida',
+    '--download', '--update', '--simular', '--dry-run', '--forcar',
+  ]);
+  const estranhos = argv.filter((a) => a.startsWith('--') && !CONHECIDOS.has(a));
+  if (estranhos.length) {
+    console.error(`❌ Não conheço: ${estranhos.join(', ')}`);
+    const proximo = (ruim) => {
+      // distância de edição pobre, mas suficiente para pegar letra trocada
+      const dist = (a, b) => {
+        const m = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+        for (let j = 0; j <= b.length; j++) m[0][j] = j;
+        for (let i = 1; i <= a.length; i++)
+          for (let j = 1; j <= b.length; j++)
+            m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1,
+                               m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+        return m[a.length][b.length];
+      };
+      let melhor = null, menor = 99;
+      for (const c of CONHECIDOS) { const d = dist(ruim, c); if (d < menor) { menor = d; melhor = c; } }
+      return menor <= 3 ? melhor : null;
+    };
+    for (const e of estranhos) {
+      const sugestao = proximo(e);
+      if (sugestao) console.error(`   quis dizer ${sugestao}?`);
+    }
+    console.error('\nConhecidos: ' + [...CONHECIDOS].join(' '));
+    console.error('\nParei aqui de propósito: sem o modo certo eu baixaria, e');
+    console.error('baixar sobrescreve as edições que você talvez fosse subir.');
+    process.exit(1);
+  }
+}
+
 const CONFIG = {
   url: (arg('url') || process.env.ODOO_URL || '').replace(/\/+$/, ''),
   db:   arg('db')  || process.env.ODOO_DB  || '',
