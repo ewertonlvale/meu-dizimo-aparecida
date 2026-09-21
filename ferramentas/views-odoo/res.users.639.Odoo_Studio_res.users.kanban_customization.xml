@@ -1,8 +1,13 @@
 <!-- res.users · view 639 · Odoo Studio: res.users.kanban customization · herda de 169 · prioridade 99 -->
 <data>
   <xpath expr="/kanban" position="attributes">
-    <attribute name="quick_create">
-      true
-    </attribute>
+    <attribute name="quick_create">true</attribute>
+  </xpath>
+  <xpath expr="//main" position="inside">
+    <div class="mt-1">
+      <span class="text-muted small d-block">Comunidades</span>
+      <field name="x_studio_comunidades" widget="many2many_tags"/>
+      <div class="text-muted fst-italic small" invisible="x_studio_comunidades">todas — sem restrição por comunidade</div>
+    </div>
   </xpath>
 </data>
