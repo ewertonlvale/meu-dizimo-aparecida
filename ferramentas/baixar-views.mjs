@@ -432,6 +432,26 @@ async function baixar() {
       entrada.erros.push(`ir.model.data: ${e.message}`);
     }
 
+    // Escreve o arquivo, mas mantém o corpo que já está no disco quando ele
+    // significa a mesma coisa.
+    //
+    // O Odoo reformata o arch ao salvar, então baixar logo depois de subir
+    // devolvia um texto equivalente e diferente byte a byte: dezenas de
+    // arquivos "modified" no `git status` sem uma única mudança real. Quem
+    // revisa aprende a ignorar o ruído, e aí a mudança de verdade passa junto.
+    //
+    // O cabeçalho é sempre reescrito: ele carrega id, herança e prioridade,
+    // que mudam sem o corpo mudar.
+    const escrever = async (arquivo, cabecalho, arch) => {
+      const caminho = join(CONFIG.saida, arquivo);
+      let corpo = indentar(arch);
+      if (existsSync(caminho)) {
+        const noDisco = semCabecalho(readFileSync(caminho, 'utf8'));
+        if (noDisco && digital(noDisco) === digital(arch)) corpo = noDisco;
+      }
+      await writeFile(caminho, cabecalho + corpo, 'utf8');
+    };
+
     for (const v of views) {
       const heranca = v.inherit_id ? `herda de ${v.inherit_id[0]}` : 'base';
       // O tipo entra no nome porque os nomes que o Studio gera não ajudam
@@ -439,13 +459,10 @@ async function baixar() {
       // os tipos são dezenas de arquivos, e achar "a list de dizimista"
       // precisa ser olhar, não abrir.
       const arquivo = `${seguro(modelo)}.${seguro(v.type)}.${v.id}.${seguro(v.name)}.xml`;
-      await writeFile(
-        join(CONFIG.saida, arquivo),
+      await escrever(arquivo,
         `<!-- ${modelo} · view ${v.id} · ${v.name} · ${heranca}`
-          + ` · ${v.type} · prioridade ${v.priority}${v.active ? '' : ' · INATIVA'} -->\n`
-          + indentar(v.arch_db),
-        'utf8'
-      );
+          + ` · ${v.type} · prioridade ${v.priority}${v.active ? '' : ' · INATIVA'} -->\n`,
+        v.arch_db);
       const modulo = modulos[v.id] || null;
       const doCore = modulo && modulo !== 'studio_customization';
       console.log(`   ✓ ${arquivo}  (${heranca}${doCore ? `, do módulo ${modulo} — somente leitura` : ''})`);
@@ -489,8 +506,7 @@ async function baixar() {
       if (!combinada) { console.log(`   ✗ combinada de ${tipo}: não consegui`); continue; }
 
       const arquivo = `${seguro(modelo)}.${seguro(tipo)}.COMBINADA.xml`;
-      await writeFile(
-        join(CONFIG.saida, arquivo),
+      await escrever(arquivo,
         `<!-- ${modelo} · ${tipo} combinada (via ${combinada.metodo})`
           + ` · view ${combinada.view_id ?? '?'}\n`
           // "--" dentro de comentário XML é ilegal, e este cabeçalho dizia
@@ -498,10 +514,8 @@ async function baixar() {
           // quebrava o script (COMBINADA nunca é lido de volta), mas qualquer
           // editor de XML recusa. O traço longo diz a mesma coisa e é válido.
           + `     SOMENTE LEITURA: é o resultado das heranças, não existe como`
-          + ` registro. O modo –update ignora este arquivo. -->\n`
-          + indentar(combinada.arch),
-        'utf8'
-      );
+          + ` registro. O modo –update ignora este arquivo. -->\n`,
+        combinada.arch);
       console.log(`   ✓ ${arquivo}  ← é esta que você quer ler`);
       escritos.add(arquivo);
       entrada.combinadas.push({ tipo, arquivo, metodo: combinada.metodo, view_id: combinada.view_id });
