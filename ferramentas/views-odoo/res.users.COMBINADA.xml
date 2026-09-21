@@ -1,0 +1,30 @@
+<!-- res.users · kanban combinada (via get_view) · view 169 -->
+<kanban class="o_kanban_mobile" quick_create="true">
+  <field name="active"/>
+  <field name="login_date"/>
+  <templates>
+    <t t-name="card" class="flex-row">
+      <aside class="w-25 p-1">
+        <field name="avatar_128" widget="image" alt="Avatar" on_change="1"/>
+      </aside>
+      <main class="w-100 ps-2 pt-1">
+        <div>
+          <div t-if="record.active.raw_value" class="text-success float-end mb4">
+            <i class="fa fa-circle" role="img" aria-label="Ok" title="Ok"/>
+          </div>
+          <div t-else="" class="text-danger float-end mb4">
+            <i class="fa fa-circle" role="img" aria-label="Invalid" title="Invalid"/>
+          </div>
+          <field class="fw-bold" name="name" on_change="1"/>
+        </div>
+        <div>
+          <span class="mb4 text-truncate" title="Login">
+            <i class="fa fa-envelope me-1" role="img" aria-label="Login"/>
+            <field name="login" on_change="1"/>
+          </span>
+          <field class="badge rounded-pill float-end" name="lang" on_change="1"/>
+        </div>
+      </main>
+    </t>
+  </templates>
+</kanban>

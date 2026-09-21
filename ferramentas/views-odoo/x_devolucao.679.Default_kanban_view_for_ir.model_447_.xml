@@ -1,0 +1,8 @@
+<!-- x_devolucao · view 679 · Default kanban view for ir.model(447,) · base · prioridade 16 -->
+<kanban string="Devolução">
+  <templates>
+    <t t-name="card">
+      <field name="x_name"/>
+    </t>
+  </templates>
+</kanban>

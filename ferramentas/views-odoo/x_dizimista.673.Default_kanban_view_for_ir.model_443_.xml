@@ -1,0 +1,8 @@
+<!-- x_dizimista · view 673 · Default kanban view for ir.model(443,) · base · prioridade 16 -->
+<kanban string="Dizimista">
+  <templates>
+    <t t-name="card">
+      <field name="x_name"/>
+    </t>
+  </templates>
+</kanban>

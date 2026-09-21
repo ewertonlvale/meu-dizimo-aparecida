@@ -1,0 +1,8 @@
+<!-- x_devolucao · kanban combinada (via get_view) · view 679 -->
+<kanban string="Devolução">
+  <templates>
+    <t t-name="card">
+      <field name="x_name"/>
+    </t>
+  </templates>
+</kanban>

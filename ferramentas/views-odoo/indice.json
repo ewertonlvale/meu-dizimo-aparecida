@@ -1,0 +1,84 @@
+{
+  "gerado_em": "2026-09-21T14:26:50.639Z",
+  "tipo": "kanban",
+  "modelos": [
+    {
+      "modelo": "x_dizimista",
+      "views": [
+        {
+          "id": 673,
+          "name": "Default kanban view for ir.model(443,)",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.673.Default_kanban_view_for_ir.model_443_.xml"
+        },
+        {
+          "id": 674,
+          "name": "Odoo Studio: Default kanban view for ir.model(443,) customization",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 673,
+          "mode": "extension",
+          "arquivo": "x_dizimista.674.Odoo_Studio_Default_kanban_view_for_ir.model_443_customization.xml"
+        }
+      ],
+      "combinada": {
+        "arquivo": "x_dizimista.COMBINADA.xml",
+        "metodo": "get_view",
+        "view_id": 673
+      },
+      "erros": []
+    },
+    {
+      "modelo": "x_devolucao",
+      "views": [
+        {
+          "id": 679,
+          "name": "Default kanban view for ir.model(447,)",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.679.Default_kanban_view_for_ir.model_447_.xml"
+        }
+      ],
+      "combinada": {
+        "arquivo": "x_devolucao.COMBINADA.xml",
+        "metodo": "get_view",
+        "view_id": 679
+      },
+      "erros": []
+    },
+    {
+      "modelo": "res.users",
+      "views": [
+        {
+          "id": 169,
+          "name": "res.users.kanban",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.169.res.users.kanban.xml"
+        },
+        {
+          "id": 639,
+          "name": "Odoo Studio: res.users.kanban customization",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 169,
+          "mode": "extension",
+          "arquivo": "res.users.639.Odoo_Studio_res.users.kanban_customization.xml"
+        }
+      ],
+      "combinada": {
+        "arquivo": "res.users.COMBINADA.xml",
+        "metodo": "get_view",
+        "view_id": 169
+      },
+      "erros": []
+    }
+  ]
+}

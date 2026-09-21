@@ -1,0 +1,8 @@
+<!-- res.users · view 639 · Odoo Studio: res.users.kanban customization · herda de 169 · prioridade 99 -->
+<data>
+  <xpath expr="/kanban" position="attributes">
+    <attribute name="quick_create">
+      true
+    </attribute>
+  </xpath>
+</data>
