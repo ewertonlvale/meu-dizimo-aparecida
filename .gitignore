@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# .gitignore — o que NUNCA vai para o repositório
+#
+# ⚠️ Este repositório é PÚBLICO. Um segredo commitado aqui não se resolve com
+#    `git rm`: ele fica no histórico e já foi indexado. Trate como vazado e
+#    rotacione.
+# ---------------------------------------------------------------------------
+
+# ── Credenciais do Odoo usadas pelas ferramentas ───────────────────────────
+# O `.exemplo` sobe (nasce vazio e assim fica); o arquivo real, nunca.
+.odoo-env
+**/.odoo-env
+!**/.odoo-env.exemplo
+
+# ── Credenciais do clasp ───────────────────────────────────────────────────
+# .clasprc.json guarda um refresh token com escopo de Drive e Apps Script.
+.clasprc.json
+**/.clasprc.json
+
+# ── Saídas das ferramentas ─────────────────────────────────────────────────
+# Archs, dumps e afins: não são segredo, mas também não precisam subir sem
+# alguém decidir isso.
+ferramentas/views-odoo/
+ferramentas/odoo-dump.json
+
+# ── Ruído de ambiente ──────────────────────────────────────────────────────
+node_modules/
+.DS_Store
+*.log
