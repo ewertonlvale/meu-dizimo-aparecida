@@ -3,8 +3,14 @@
 #
 # COMO USAR
 #   cp ferramentas/.odoo-env.exemplo ferramentas/.odoo-env
-#   chmod 600 ferramentas/.odoo-env       # (no Windows, pule)
 #   preencha os valores abaixo
+#
+# Restringir o acesso ao arquivo (opcional, mas recomendado):
+#   Linux/macOS:  chmod 600 ferramentas/.odoo-env
+#   PowerShell:   icacls ferramentas\.odoo-env /inheritance:r /grant:r "$($env:USERNAME):(R,W)"
+#
+# `chmod` NAO existe no PowerShell — se voce rodou e deu erro vermelho, nada
+# quebrou: a copia acima ja funcionou.
 #
 # O arquivo .odoo-env está no .gitignore e NÃO sobe para o repositório.
 # Este .exemplo sobe — por isso ele nasce vazio, e assim deve continuar.

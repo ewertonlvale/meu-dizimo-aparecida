@@ -18,9 +18,12 @@
 **/.clasprc.json
 
 # ── Saídas das ferramentas ─────────────────────────────────────────────────
-# Archs, dumps e afins: não são segredo, mas também não precisam subir sem
-# alguém decidir isso.
-ferramentas/views-odoo/
+# Não são segredo, mas também não sobem sem alguém decidir isso.
+#
+# `ferramentas/views-odoo/` NÃO está aqui de propósito: aquela pasta tem o
+# próprio .gitignore, criado no primeiro uso. Assim a decisão de versionar os
+# archs se toma num lugar só — apagando aquele arquivo — em vez de exigir
+# lembrar de dois.
 ferramentas/odoo-dump.json
 
 # ── Ruído de ambiente ──────────────────────────────────────────────────────
