@@ -84,6 +84,7 @@
 | BL-53 | A oferta gravava o valor DIGITADO, nunca o do comprovante | 🔴 | P | ✅ Concluído (20/09) — vale o comprovante; oferta de R$ 10 paga com R$ 55 registrava R$ 10 |
 | BL-54 | Endereço e mapa da comunidade | 🟡 | M | 📋 Aberto — **adiado por decisão do usuário em 21/09.** Desenho já escolhido: via `res.partner` |
 | BL-55 | Sete dos oito formulários do Odoo nunca foram revisados | 🟡 | M | 📋 Aberto — só `x_devolucao.form` foi. Quatro têm coluna direita vazia |
+| BL-56 | Classificação do dizimista era campo manual que ninguém mantinha | 🟠 | M | ✅ Código pronto (21/09) — ação agendada do Odoo, versionada no repo. **Falta instalar** com `--aplicar` |
 
 ---
 
@@ -121,6 +122,53 @@ achado A2/E da análise, ainda em aberto.
 **Ferramenta:** `baixar-views.mjs` **não cria campo** — só reescreve arch de view. Criar campo
 é `ir.model.fields`, e o projeto já tem o padrão com modo de simulação em
 `SetupCamposOferta.gs`. Vale portar para `ferramentas/`, onde as credenciais já estão.
+
+---
+
+### BL-56 — Classificação automática do dizimista 🟠 (M)
+
+**Regra** (definida pelo usuário em 21/09, com uma precisão minha onde a frase era ambígua):
+
+| Classificação | Critério |
+|---|---|
+| Regular | devolveu em CADA UM dos últimos **N** meses fechados |
+| Eventual | devolveu ao menos uma vez na janela de **M** meses (mês atual incluído), mas não em todos os N |
+| Inativo | nenhuma devolução na janela de **M** meses |
+
+`N` e `M` são `x_studio_meses_regular` e `x_studio_meses_inativo` em `x_parametros`, padrão 3.
+
+**"Mensalmente" virou "todos os N meses FECHADOS".** O mês corrente não é exigido de
+propósito: dia 2 quase ninguém devolveu ainda, e cobrar o mês aberto rebaixaria a paróquia
+inteira todo dia 1º e a promoveria de volta ao longo do mês. O mês corrente conta a favor
+(evita Inativo), nunca contra.
+
+**Quem acabou de se cadastrar não vira Inativo.** "Mais de 3 meses sem devolver" é falso para
+quem existe há três semanas, e Inativo é um rótulo que a secretaria lê como "desistiu".
+
+**Onde mora:** ação agendada do Odoo (`ir.cron`), diária — escolha do usuário. É também o
+lugar certo: 508 dizimistas pelo Apps Script seriam 508 chamadas RPC contra o teto de 6
+minutos por execução. Aqui é uma leitura só, do lado dos dados. Passa a ser a **primeira
+automação dentro do Odoo** — até aqui eram zero (achado D1).
+
+**O código é versionado:** `ferramentas/odoo-acoes/classificar-dizimistas.py`. Ação agendada
+não tem histórico nem revisão (achado D3); manter a fonte no repo e instalar a partir dela
+devolve as duas coisas. O instalador acusa divergência em vez de sobrescrever calado.
+
+**Testado** com `python3 ferramentas/odoo-acoes/teste-classificar.py` — 13 cenários rodando o
+arquivo de verdade contra um Odoo de mentira, não uma cópia da regra.
+
+**⚠️ FALTA INSTALAR.** Nada foi criado no Odoo:
+
+```
+node ferramentas/instalar-acao-classificacao.mjs             # simula
+node ferramentas/instalar-acao-classificacao.mjs --aplicar   # grava
+```
+
+**Depois de instalar, ainda falta:**
+- pôr os dois campos no formulário de Parâmetros (o `baixar-views` faz, quando os campos
+  existirem)
+- decidir o que acontece quando um coordenador classifica alguém à mão: hoje a ação
+  sobrescreve na próxima execução, sem perguntar
 
 ---
 
