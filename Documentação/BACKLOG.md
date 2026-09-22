@@ -477,11 +477,20 @@ o tratamento sai.
 
 **Arquivos:**
 - `ferramentas/odoo-acoes/atualizar-aniversarios.py` — a fonte versionada da ação
-- `ferramentas/odoo-acoes/teste-aniversarios.py` — 10 cenários executando o arquivo de
+- `ferramentas/odoo-acoes/teste-aniversarios.py` — 13 cenários executando o arquivo de
   verdade contra um Odoo de mentira
 - `ferramentas/instalar-aniversarios.mjs` — campo, cron e `calendar` no view_mode
 - a view 595 reescrita: cor e coluna de filtros por comunidade, balão com telefone,
   nascimento e classificação, `create="false"`
+
+**A data de nascimento não é tocada.** A ação lê `x_studio_date` em dois lugares (o
+domínio da busca e o valor) e escreve num só campo, `x_studio_aniversario`. Como ela varre
+os 508 dizimistas todo dia, um `write` errado ali apagaria a base inteira de datas de
+nascimento, sem volta e sem nada acusando — então a garantia é conferida por três
+verificações, e não combinada: os campos realmente escritos em três execuções, as datas de
+nascimento antes e depois, e uma leitura da árvore sintática do arquivo procurando
+`x_studio_date` dentro de qualquer chamada a `write()`. Conferido que as três acusam quando
+a escrita indevida é introduzida.
 
 **Uma coisa que o instalador conta e vale ler:** quantos dos 508 dizimistas têm data de
 nascimento preenchida. Se forem poucos, o calendário nasce quase vazio — e aí o que falta é
