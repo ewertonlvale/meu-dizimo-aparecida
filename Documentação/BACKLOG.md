@@ -82,9 +82,9 @@
 | BL-51 | Devolução nascia sempre Pendente, mesmo quando o bot já sabia | 🟠 | P | ✅ Concluído (19/09) — Confirmado, Rejeitado ou Pendente conforme a conferência |
 | BL-52 | A data só era lida em dd/mm/aaaa — Nubank e Google Pay passavam em branco | 🟠 | P | ✅ Concluído (20/09) — mês por extenso, ISO, ano de 2 dígitos e o ano vindo do E2E. Saída sempre normalizada |
 | BL-53 | A oferta gravava o valor DIGITADO, nunca o do comprovante | 🔴 | P | ✅ Concluído (20/09) — vale o comprovante; oferta de R$ 10 paga com R$ 55 registrava R$ 10 |
-| BL-54 | Endereço e mapa da comunidade | 🟡 | M | ✅ Código pronto (21/09) — via `res.partner`, com 5 campos relacionados e view de mapa. **Falta instalar** com `--aplicar` |
+| BL-54 | Endereço e mapa da comunidade | 🟡 | M | ✅ **Instalado** (21/09) — campos e view de mapa no ar. Os endereços das 6 comunidades seguem por preencher |
 | BL-55 | Sete dos oito formulários do Odoo nunca foram revisados | 🟡 | M | 📋 Aberto — só `x_devolucao.form` foi. Quatro têm coluna direita vazia |
-| BL-56 | Classificação do dizimista era campo manual que ninguém mantinha | 🟠 | M | ✅ Código pronto (21/09) — ação agendada do Odoo, versionada no repo. **Falta instalar** com `--aplicar` |
+| BL-56 | Classificação do dizimista era campo manual que ninguém mantinha | 🟠 | M | ✅ **Instalado** (21/09) — ação agendada diária, código versionado no repo |
 | BL-57 | O agrupamento "Mês Referencia" agrupa por um campo que o bot nunca grava | 🟡 | P | 📋 Aberto — `x_studio_competencia` só é lido, nunca escrito; todo registro do WhatsApp cai num balde "Nenhum" |
 | BL-58 | O mapa de dizimista continua vazio: o campo que ele lê não está no formulário | 🟡 | P | 📋 Aberto — precisa antes saber se `x_studio_partner_phone` é relacionado através de `x_studio_partner_id` |
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
@@ -93,7 +93,7 @@
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
-| BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ Código pronto (22/09) — campo de aniversário + ação diária + calendário por comunidade. **Falta instalar** com `--aplicar` |
+| BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ **Instalado e conferido na tela** (22/09) — cores e filtro por comunidade funcionando |
 | BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
 | BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
 | BL-68 | "Leitura automática do comprovante" aparecia em lançamento sem comprovante | 🟡 | P | ✅ Concluído (22/09) — o rótulo muda quando não há comprovante |
@@ -532,6 +532,15 @@ verificações, e não combinada: os campos realmente escritos em três execuç�
 nascimento antes e depois, e uma leitura da árvore sintática do arquivo procurando
 `x_studio_date` dentro de qualquer chamada a `write()`. Conferido que as três acusam quando
 a escrita indevida é introduzida.
+
+**Conferido na tela em 22/09**, com um achado que não é defeito: o ano de 2026 inteiro
+mostra **seis** datas, e o painel lateral lista três comunidades em vez de seis. Com 508
+dizimistas o esperado seria quase todo dia colorido. A explicação é que a base atual é de
+**teste**, criada sem data de nascimento — a tela está certa, o dado é que não existe.
+
+⚠️ **Isto volta quando a base real entrar.** Se o import não trouxer a data de nascimento,
+o calendário nasce vazio de novo e vai parecer defeito pela segunda vez. A data precisa
+estar no mapeamento do import.
 
 **Uma coisa que o instalador conta e vale ler:** quantos dos 508 dizimistas têm data de
 nascimento preenchida. Se forem poucos, o calendário nasce quase vazio — e aí o que falta é
