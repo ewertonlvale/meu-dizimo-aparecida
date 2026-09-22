@@ -93,6 +93,7 @@
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ Código pronto (21/09) — badge versionado + dois botões via instalador. **Falta rodar** `--aplicar` e `--download` |
+| BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ Código pronto (22/09) — campo de aniversário + ação diária + calendário por comunidade. **Falta instalar** com `--aplicar` |
 
 ---
 
@@ -441,6 +442,50 @@ na fonte, não deduzido.
 **Travado por teste:** `conta-mensagens.js` roda a substituição do marcador contra o arquivo
 de verdade e recusa se ela deixar de pegar — o instalador roda na máquina de quem usa, onde
 o erro apareceria tarde.
+
+---
+
+### BL-65 — Calendário de aniversariantes por comunidade 🟠 (M)
+
+**O defeito que estava lá desde sempre:** a view de calendário de `x_dizimista` (595) tinha
+`date_start="x_studio_date"` — a **data de nascimento**. O calendário posiciona o evento
+pela data que o campo guarda, e o campo guarda `14/03/1975`. A view abria, funcionava, e
+não mostrava ninguém em nenhum mês que alguém fosse abrir.
+
+Sem erro, sem aviso. Um calendário vazio não parece quebrado: parece que ninguém faz
+aniversário. É a mesma família do filtro "Mês Atual" (BL-57/#104) e do mapa de dizimista
+(BL-58) — tela que existe, não falha, e não serve.
+
+**A solução, e por que ela custa uma ação agendada:**
+
+`x_studio_aniversario` guarda o mesmo dia e mês no **ano corrente**, e é para ele que o
+calendário aponta.
+
+Campo calculado seria mais elegante e não funciona: calculado só recalcula quando uma
+dependência muda. A dependência seria a data de nascimento, que não muda nunca — e o que
+muda é o **ano**, que não é dependência de coisa alguma. Em 1º de janeiro o campo ficaria
+com o ano velho e o calendário esvaziaria de novo, em silêncio.
+
+Campo gravado mais ação diária resolve. O custo é baixo: a ação só **escreve onde o valor
+difere**, então depois da virada do ano são 364 dias de uma leitura e nenhuma escrita. E as
+escritas são agrupadas por data — numa paróquia de 508 pessoas, muitas dividem aniversário.
+
+**29 de fevereiro:** `date(1976,2,29).replace(year=2027)` levanta `ValueError`. Sem tratar,
+**uma pessoa derruba a ação inteira** e ninguém mais é atualizado. Cai em 28/02, como o
+calendário civil brasileiro faz. Está coberto por teste, e conferi que o teste acusa quando
+o tratamento sai.
+
+**Arquivos:**
+- `ferramentas/odoo-acoes/atualizar-aniversarios.py` — a fonte versionada da ação
+- `ferramentas/odoo-acoes/teste-aniversarios.py` — 10 cenários executando o arquivo de
+  verdade contra um Odoo de mentira
+- `ferramentas/instalar-aniversarios.mjs` — campo, cron e `calendar` no view_mode
+- a view 595 reescrita: cor e coluna de filtros por comunidade, balão com telefone,
+  nascimento e classificação, `create="false"`
+
+**Uma coisa que o instalador conta e vale ler:** quantos dos 508 dizimistas têm data de
+nascimento preenchida. Se forem poucos, o calendário nasce quase vazio — e aí o que falta é
+cadastro, não view. Melhor saber antes de abrir a tela.
 
 ---
 
