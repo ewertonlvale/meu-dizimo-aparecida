@@ -7,7 +7,13 @@
     <field name="x_studio_competencia" optional="show"/>
     <field name="x_studio_data_da_devolucao" optional="show"/>
     <field name="x_studio_forma_de_pagamento" optional="show"/>
-    <field name="x_studio_conferencia_pix" optional="show" string="Conferência"/>
+    <!-- BL-61: some do padrão em vez de mostrar `tudo_divergente` numa coluna.
+         Coluna de lista não tem onde traduzir um char — o formulário e o card
+         traduzem com `invisible` por valor, a lista não tem esse recurso.
+         Continua disponível no menu de colunas opcionais para quem quiser o
+         código cru; quem só quer saber se precisa olhar tem o badge de status
+         e o de validação ao lado. -->
+    <field name="x_studio_conferencia_pix" optional="hide" string="Conferência (código)"/>
   </xpath>
   <xpath expr="/list//field[@name='x_studio_value']" position="after">
     <field name="x_studio_status" optional="show" widget="badge" string="Leitura do bot"

@@ -89,13 +89,14 @@
 | BL-58 | O mapa de dizimista continua vazio: o campo que ele lê não está no formulário | 🟡 | P | 📋 Aberto — precisa antes saber se `x_studio_partner_phone` é relacionado através de `x_studio_partner_id` |
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
 | BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ **Instalado (22/09)** — campo, barra clicável, coluna e filtros |
-| BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | 📋 Aberto — o espaço já foi corrigido; falta humanizar os rótulos da seleção no Odoo |
+| BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | ✅ Concluído (22/09) — tradução nas views; o tipo do campo **não pode** mudar, e está explicado |
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ Código pronto (22/09) — campo de aniversário + ação diária + calendário por comunidade. **Falta instalar** com `--aplicar` |
 | BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
 | BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
+| BL-68 | "Leitura automática do comprovante" aparecia em lançamento sem comprovante | 🟡 | P | ✅ Concluído (22/09) — o rótulo muda quando não há comprovante |
 
 ---
 
@@ -341,23 +342,51 @@ BL-58).
 
 ---
 
-### BL-61 — O banner de conferência mostra o código cru 🟡 (P)
+### BL-61 — O código cru da conferência na tela ✅ (P)
 
-O banner do formulário de devolução exibe o valor de `x_studio_conferencia_pix` como ele é
-gravado: `ausente`, `sem_referencia`, `titular_divergente`. Quem lê é o coordenador, e
-"Precisa de conferência: sem_referencia" não diz o que fazer.
+O coordenador via `tudo_divergente`, `sem_referencia`, `ausente` — no banner do formulário,
+no card do kanban e numa coluna da lista.
 
-O texto humano **já existe**, em `Config.gs`, na tabela `CONFERENCIA` — o campo
-`textoCoordenador` de cada código ("não consegui identificar a chave no comprovante", "a
-comunidade não tem chave PIX cadastrada para comparar"). Ele é usado nas mensagens de
-WhatsApp e não chega ao Odoo.
+**O caminho certo não existe aqui.** `x_studio_conferencia_pix` é um campo **char**
+(`SetupCamposFamilia.gs:66-68`): o valor gravado *é* o que aparece, e não há rótulo de
+seleção para humanizar. Converter para `selection` seria a correção de verdade, e o Odoo
+recusa:
 
-**A correção é do lado do Odoo, não da view:** os rótulos da seleção
-`x_studio_conferencia_pix` precisam receber esses textos. Um script na forma dos outros
-instaladores resolve, e ganha de graça a lista e os filtros, que mostram o mesmo código.
+> Changing the type of a field is not yet supported. Please drop it and create it again!
+> — `odoo/addons/base/models/ir_model.py:1152`
 
-*Corrigido em 21/09:* o espaço que faltava depois dos dois-pontos — saía
-"Precisa de conferência:ausente", colado.
+Dropar para recriar apagaria o que o bot já leu em **todos** os registros — o histórico de
+por que cada devolução foi para conferência. Não vale a pena por um rótulo.
+
+**Então a tradução mora nas views**, por `invisible` de valor. As frases são as de
+`Config.gs`, tabela `CONFERENCIA`, campo `textoCoordenador` — as mesmas que a pessoa recebe
+no WhatsApp, sem os asteriscos do negrito. No card elas são mais curtas, porque é card.
+
+**A lista é o caso que não tem solução por view:** coluna de lista não tem onde traduzir um
+char. A coluna saiu do padrão (`optional="hide"`, e passou a se chamar "Conferência
+(código)"), e continua disponível no menu de colunas para quem quiser o valor cru. Quem só
+precisa saber se deve olhar tem o badge de status e o de validação ao lado.
+
+**Duas barreiras contra o código novo esquecido:**
+1. `conta-mensagens.js` lê a tabela `CONFERENCIA` do `Config.gs` de verdade — recortada e
+   avaliada, não copiada — e recusa qualquer código sem frase nas duas views. Conferido que
+   acusa: acrescentei um `chave_ilegivel` ao Config e as quatro checagens ficaram vermelhas.
+2. No arch, um `<span>` de reserva que mostra o código cru quando o valor não é nenhum dos
+   conhecidos. Sem ele, um código novo faria o banner aparecer **vazio** — pior que o código.
+
+*Também corrigido em 21/09:* o espaço que faltava depois dos dois-pontos.
+
+---
+
+### BL-68 — "Leitura automática do comprovante" em lançamento sem comprovante ✅ (P)
+
+A Devolução 02/2026 é um lançamento manual, em dinheiro, sem comprovante nenhum — e o
+formulário anunciava "Leitura automática do comprovante: Pendente". O rótulo prometia uma
+leitura que não houve.
+
+Sem comprovante o rótulo passa a ser "Situação (lançamento sem comprovante)". O badge
+continua: `Pendente` segue significando alguma coisa num lançamento manual — ninguém
+conferiu ainda.
 
 ---
 

@@ -45,9 +45,15 @@
   <xpath expr="/form//div[@class='oe_title']" position="before">
     <!-- A leitura do bot, à vista e só-leitura. Quem valida precisa dela para
          decidir, e não precisa poder mudá-la: ela é o que o OCR encontrou, não
-         uma opinião que se revise. -->
+         uma opinião que se revise.
+
+         Sem comprovante não houve leitura nenhuma: o registro foi lançado à
+         mão, em dinheiro. O rótulo antigo aparecia assim mesmo, prometendo uma
+         leitura automática que não existiu. Agora ele muda de nome, e o badge
+         continua — "Pendente" segue significando algo num lançamento manual. -->
     <div class="d-flex align-items-center gap-2 mb-2">
-      <span class="text-muted small">Leitura automática do comprovante:</span>
+      <span class="text-muted small" invisible="not x_studio_comprovante">Leitura automática do comprovante:</span>
+      <span class="text-muted small" invisible="x_studio_comprovante">Situação (lançamento sem comprovante):</span>
       <field name="x_studio_status" widget="badge" readonly="1" nolabel="1"
              decoration-success="x_studio_status == 'Confirmado'"
              decoration-danger="x_studio_status == 'Rejeitado'"
@@ -67,7 +73,30 @@
          invisible="not x_studio_conferencia_pix or x_studio_conferencia_pix == 'ok'">
       <i class="fa fa-exclamation-triangle me-2" role="img" aria-label="Atenção"/>
       <span class="fw-bold">Precisa de conferência: </span>
-      <field name="x_studio_conferencia_pix" readonly="1" nolabel="1" class="d-inline"/>
+      <!-- BL-61: o texto humano, e não o código gravado.
+           `x_studio_conferencia_pix` é um campo CHAR — o valor gravado é o que
+           aparece. Não há rótulo de seleção para humanizar, e converter o campo
+           para selection não é possível: o Odoo recusa mudar o tipo de um campo
+           ("Changing the type of a field is not yet supported", ir_model.py),
+           e dropar para recriar apagaria o que o bot já leu em todo registro.
+
+           Então a tradução mora aqui. As frases são as de Config.gs, na tabela
+           CONFERENCIA, campo textoCoordenador — as mesmas que a pessoa recebe
+           no WhatsApp, sem os asteriscos do negrito. -->
+      <span invisible="x_studio_conferencia_pix != 'ausente'">não consegui identificar a chave PIX no comprovante</span>
+      <span invisible="x_studio_conferencia_pix != 'divergente'">a chave do comprovante diverge da chave da comunidade</span>
+      <span invisible="x_studio_conferencia_pix != 'sem_referencia'">a comunidade não tem chave PIX cadastrada para comparar</span>
+      <span invisible="x_studio_conferencia_pix != 'titular_divergente'">o nome de quem recebeu diverge do titular da comunidade</span>
+      <span invisible="x_studio_conferencia_pix != 'banco_divergente'">o banco de destino diverge do cadastrado na comunidade</span>
+      <span invisible="x_studio_conferencia_pix != 'tudo_divergente'">nome e banco de quem recebeu divergem dos da comunidade</span>
+      <!-- Rede de segurança: se o Config.gs ganhar um código novo e ninguém
+           traduzir aqui, o banner apareceria VAZIO — pior que mostrar o código.
+           Com isto ele volta a mostrar o código cru, que ao menos é pesquisável.
+           O conta-mensagens.js recusa esse estado, então isto é a segunda
+           barreira, não a primeira. -->
+      <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente']">
+        <field name="x_studio_conferencia_pix" readonly="1" nolabel="1" class="d-inline"/>
+      </span>
     </div>
   </xpath>
 
