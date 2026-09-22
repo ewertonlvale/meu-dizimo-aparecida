@@ -1,4 +1,35 @@
 <!-- x_devolucao · view 606 · Default pivot view for x_devolucao · base · pivot · prioridade 16 -->
-<pivot sample="1">
-  <field name="x_studio_value" type="measure"/>
+<!-- DÍZIMOS E OFERTAS POR MÊS (BL-66)
+
+     A tela era `<pivot><field name="x_studio_value" type="measure"/></pivot>`:
+     abria num número só, o total de tudo desde sempre, sem linha nem coluna.
+
+     "Informo a comunidade e o mês" acontece assim:
+       · a COMUNIDADE fica no painel da esquerda, que a view de busca já traz
+         (`<searchpanel>` com x_studio_comunidade). Um clique isola a sua.
+       · o MÊS é a primeira linha. Não se escolhe um: aparecem todos, e o de
+         setembro fica ao lado do de agosto — que é a pergunta que vem depois
+         de "quanto entrou em setembro".
+
+     Agrupa pela DATA DA DEVOLUÇÃO, e não por x_studio_competencia como o
+     gráfico fazia. Competência é escrita à mão e o bot nunca a grava (BL-57):
+     agrupar por ela joga quase tudo num balde "Nenhum".
+
+     ⚠️ O TOTAL É BRUTO. Entra tudo que foi registrado, inclusive o que o bot
+     marcou como Rejeitado e o que o coordenador marcou como Não recebido.
+     Isso é de propósito: relatório que esconde linha sozinho faz o dinheiro
+     sumir sem explicação. Para separar, acrescente "Validação" como linha ou
+     coluna pelo menu do próprio pivô — o agrupamento já está na view de busca. -->
+<pivot sample="1" string="Dízimos e ofertas por mês">
+  <field name="x_studio_data_da_devolucao" interval="month" type="row"/>
+  <field name="x_studio_comunidade" type="row"/>
+  <field name="x_studio_tipo_contribuicao" type="col"/>
+
+  <field name="x_studio_value" type="measure" string="Valor"/>
+  <!-- Medida many2one o Odoo agrega como count_distinct: quantas PESSOAS
+       diferentes contribuíram, que não é o mesmo que quantas devoluções.
+       Trinta e oito pessoas em quarenta e dois lançamentos conta uma história
+       que só o valor não conta. -->
+  <field name="x_studio_dizimista" type="measure" string="Pessoas"/>
+  <field name="__count" type="measure" string="Quantidade"/>
 </pivot>

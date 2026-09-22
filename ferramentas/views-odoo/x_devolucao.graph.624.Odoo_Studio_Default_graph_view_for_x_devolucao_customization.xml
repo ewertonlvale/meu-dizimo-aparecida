@@ -1,6 +1,19 @@
 <!-- x_devolucao · view 624 · Odoo Studio: Default graph view for x_devolucao customization · herda de 607 · graph · prioridade 99 -->
 <data>
+  <!-- O gráfico agrupava por x_studio_competencia, que o bot NUNCA grava —
+       só lê, em OdooService.gs:1024 (BL-57). Como quase toda devolução nasce
+       pelo WhatsApp, o gráfico virava uma barra só, chamada "Nenhum".
+
+       Passa a agrupar pela data da devolução, por mês, com dízimo e oferta
+       empilhados na mesma barra: é assim que se vê o mês inteiro e a divisão
+       entre os dois de uma vez. -->
   <xpath expr="/graph//field[@name='create_date']" position="replace">
-    <field name="x_studio_competencia" type="col"/>
+    <field name="x_studio_data_da_devolucao" interval="month" type="row"/>
+    <field name="x_studio_tipo_contribuicao" type="col"/>
+  </xpath>
+  <xpath expr="/graph" position="attributes">
+    <attribute name="string">Dízimos e ofertas por mês</attribute>
+    <attribute name="type">bar</attribute>
+    <attribute name="stacked">1</attribute>
   </xpath>
 </data>
