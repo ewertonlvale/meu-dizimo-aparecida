@@ -32,9 +32,20 @@
         <div class="text-danger small fw-bold mt-1" invisible="x_studio_comprovante">
           ⚠ sem comprovante
         </div>
+        <!-- BL-61: texto humano no lugar do código. Aqui as frases são curtas
+             — é card, não formulário. O motivo de a tradução morar na view (e
+             não em rótulo de seleção) está no arch do formulário. -->
         <div class="text-warning small mt-1" invisible="not x_studio_conferencia_pix or x_studio_conferencia_pix == 'ok'">
-          ⚠ conferência:
-          <field name="x_studio_conferencia_pix"/>
+          <span invisible="x_studio_conferencia_pix != 'ausente'">⚠ chave PIX não identificada no comprovante</span>
+          <span invisible="x_studio_conferencia_pix != 'divergente'">⚠ chave do comprovante diverge da comunidade</span>
+          <span invisible="x_studio_conferencia_pix != 'sem_referencia'">⚠ comunidade sem chave PIX cadastrada</span>
+          <span invisible="x_studio_conferencia_pix != 'titular_divergente'">⚠ titular diverge do cadastrado</span>
+          <span invisible="x_studio_conferencia_pix != 'banco_divergente'">⚠ banco de destino diverge</span>
+          <span invisible="x_studio_conferencia_pix != 'tudo_divergente'">🚨 titular E banco divergem</span>
+          <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente']">
+            ⚠ conferência:
+            <field name="x_studio_conferencia_pix"/>
+          </span>
         </div>
         <!-- A validação do coordenador, para varrer com o olho (BL-60). O badge de cima é a leitura do bot; este é o julgamento humano. Cinza enquanto ninguém olhou, verde quando o dinheiro entrou, vermelho quando não entrou. -->
         <div class="mt-2">

@@ -2296,6 +2296,79 @@ for (const r of REGRAS_DE_CONTEUDO) {
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
+
+// ──────────────────────────────────────────────────────────────────
+// `x_studio_conferencia_pix` é um campo CHAR: o valor gravado é o que aparece
+// na tela. O coordenador via "tudo_divergente" e "sem_referencia".
+//
+// Converter para selection e dar rótulos seria o certo, e o Odoo não deixa:
+// "Changing the type of a field is not yet supported. Please drop it and
+// create it again!" (ir_model.py). Dropar apagaria o que o bot já leu em todo
+// registro. Então a tradução mora nas views, por `invisible` de valor.
+//
+// O risco disso é óbvio: o Config.gs ganha um código novo, ninguém lembra das
+// views, e aquele caso passa a aparecer sem texto — ou pior, some. É isso que
+// esta verificação impede. A rede de segurança no arch é a SEGUNDA barreira;
+// esta é a primeira.
+{
+  // A tabela vem do Config.gs de verdade, recortada e avaliada. Uma lista
+  // copiada aqui envelheceria em silêncio — que é exatamente o problema que
+  // esta verificação existe para pegar.
+  const cfg = fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8');
+  const de = cfg.indexOf('const CONFERENCIA = {');
+  const ate = cfg.indexOf('\n};', de) + 3;
+  const CONFERENCIA = de < 0 ? {} : new Function(cfg.slice(de, ate) + '; return CONFERENCIA;')();
+
+  const codigos = Object.keys(CONFERENCIA).filter((c) => c !== 'ok');
+  if (!codigos.length) {
+    falhas++;
+    console.log('❌ não consegui ler a tabela CONFERENCIA do Config.gs');
+  }
+
+  const VISTAS = [
+    ['formulário', 'x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml'],
+    ['card do kanban', 'x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml'],
+  ];
+
+  for (const [rotulo, arq] of VISTAS) {
+    const caminho = path.join(RAIZ, 'ferramentas/views-odoo', arq);
+    if (!fs.existsSync(caminho)) {
+      falhas++;
+      console.log(`❌ ${rotulo}: ${arq} não existe`);
+      continue;
+    }
+    const xml = fs.readFileSync(caminho, 'utf8');
+
+    // Um código está traduzido quando há um <span invisible="… != 'codigo'">
+    // com texto dentro — é essa a forma que faz a frase aparecer só no caso dele.
+    const semTexto = [];
+    for (const c of codigos) {
+      const re = new RegExp(`<span invisible="x_studio_conferencia_pix != '${c}'">\\s*([^<]*\\S)`, 's');
+      if (!re.test(xml)) semTexto.push(c);
+    }
+
+    // E a rede de segurança precisa listar TODOS os códigos, senão ela dispara
+    // junto com uma frase e a tela mostra as duas coisas.
+    const rede = xml.match(/invisible="x_studio_conferencia_pix in \[([^\]]*)\]"/);
+    const naRede = rede ? [...rede[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]) : [];
+    const foraDaRede = Object.keys(CONFERENCIA).filter((c) => !naRede.includes(c));
+
+    const erros = [];
+    if (semTexto.length) erros.push(`sem tradução: ${semTexto.join(', ')}`);
+    if (!rede) erros.push('não achei a rede de segurança do código desconhecido');
+    else if (foraDaRede.length) erros.push(`fora da rede de segurança: ${foraDaRede.join(', ')}`);
+
+    if (erros.length) {
+      falhas += erros.length;
+      for (const e of erros) console.log(`❌ ${rotulo}: ${e}`);
+    } else {
+      console.log(`✅ ${rotulo}: os ${codigos.length} códigos têm frase, e a rede cobre os ${naRede.length}`);
+    }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('🛡️  baixar-views: o --download não pode apagar edição local\n');
 
 // ──────────────────────────────────────────────────────────────────
