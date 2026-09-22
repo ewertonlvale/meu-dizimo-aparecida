@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-09-21T17:40:41.600Z",
+  "gerado_em": "2026-09-22T10:40:57.843Z",
   "tipo": "todos",
   "modelos": [
     {
@@ -401,7 +401,7 @@
           "mode": "extension",
           "arquivo": "res.users.kanban.639.Odoo_Studio_res.users.kanban_customization.xml",
           "modulo": "studio_customization",
-          "hash": "63e566495641781554966d4a4ca132448432ba4fa01332692f16bf633d255529"
+          "hash": "a35ab050c94fafe8f7d1608d1896255237898ded87524a0e9510da351d7baf38"
         },
         {
           "id": 640,
@@ -517,7 +517,7 @@
           "mode": "primary",
           "arquivo": "x_comunidade.map.680.Default_map_view_for_x_comunidade.xml",
           "modulo": null,
-          "hash": "5f932527db7b6187677f6527763099f6e22c178ab10b3d0895b5e11647f6671c"
+          "hash": "800e513ac2a1edc73f77e671eac771e85bf059fd1ecaef6813361fea794d65e4"
         },
         {
           "id": 609,
@@ -529,7 +529,7 @@
           "mode": "extension",
           "arquivo": "x_comunidade.form.609.Odoo_Studio_Default_form_view_for_x_comunidade_customization.xml",
           "modulo": "studio_customization",
-          "hash": "b9cef536291ba38a27af1adfb38e80eee394457c42333f009cb1ff857bc2f43c"
+          "hash": "fcd56d30343b154744374b3369214c814e5f43ce3c98d4f0b83fa8db878a6cf5"
         },
         {
           "id": 645,
@@ -725,7 +725,7 @@
           "mode": "primary",
           "arquivo": "x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml",
           "modulo": null,
-          "hash": "93fa85a4212662703e76c6b17996cfc4245bb9db3942ddd1643cb550a263c439"
+          "hash": "af4a482a0d2cf976d43812328951f9906ee6a98d6d193e8660c2e31b130c8720"
         },
         {
           "id": 608,
@@ -737,7 +737,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "8ab483a050dcac152e63dcdfc8e9abea88f669b952070b913f6634c04a122a85"
+          "hash": "07ea1616fdf7b916fcd02f8463302c45b0908ee73e895118a981c413cb0dfc43"
         },
         {
           "id": 610,
@@ -749,7 +749,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.list.610.Odoo_Studio_Default_list_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "46ddaaf610d36be8f4a45dea4b69c8ff18e5c87038223e7f3359e607e535432e"
+          "hash": "f826f28270977b6c481af5734b532889558c2aa81f7bad2ba6d4c12eaf8e4677"
         },
         {
           "id": 624,
@@ -761,7 +761,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.graph.624.Odoo_Studio_Default_graph_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "2e9d50a10eb36400e2717a77a49dbc4653e3c1655069855c8d925b81214f4d5f"
+          "hash": "965d28b5010d8e3188eb9628543b7ed87acb3864ebd9bb16b5cd3ec1425cd723"
         },
         {
           "id": 644,
@@ -773,7 +773,7 @@
           "mode": "extension",
           "arquivo": "x_devolucao.search.644.Odoo_Studio_Default_search_view_for_x_devolucao_customization.xml",
           "modulo": "studio_customization",
-          "hash": "d1ed7960115c736cfe79d86d77983ad4839fb2bee39907fff5d25084d3f93b1f"
+          "hash": "a18ff805ca2a2edf5336a4bc116666f6bcb98c5cd4e13124a3c133a663f9d994"
         }
       ],
       "combinadas": [
@@ -877,7 +877,7 @@
           "mode": "primary",
           "arquivo": "x_dizimista.map.596.Default_map_view_for_x_dizimista.xml",
           "modulo": "studio_customization",
-          "hash": "87d25db9446553930a9f8662ed90008ca9b219b628f207a6fb9f137a068b6f5b"
+          "hash": "c502f2a6018683307dd4a246bc7f2bf6dbc7079e606b67c99cb85656d9d6d35f"
         },
         {
           "id": 597,
@@ -925,7 +925,7 @@
           "mode": "extension",
           "arquivo": "x_dizimista.form.599.Odoo_Studio_Default_form_view_for_x_dizimista_customization.xml",
           "modulo": "studio_customization",
-          "hash": "42cf9ea4823091d45016f81942cfcd28516aca5576cb13bd11710e55c23dd320"
+          "hash": "f892f5ed74715c0eaf6a552ea6d9a71d32651279525dd79d20a2732eb271cc74"
         },
         {
           "id": 611,
@@ -1139,7 +1139,7 @@
           "mode": "extension",
           "arquivo": "x_parametros.form.615.Odoo_Studio_Default_form_view_for_x_parametros_customization.xml",
           "modulo": "studio_customization",
-          "hash": "e3d572a319cafebc029afbcd4ebf7f6b799da8a000920859337daef6e0d0d469"
+          "hash": "0c4427647841b303b060f6c327667fccf0f07169e172012672b0e0b6e27b5496"
         }
       ],
       "combinadas": [

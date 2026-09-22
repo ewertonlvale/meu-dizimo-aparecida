@@ -7,16 +7,27 @@
   <field name="x_studio_dizimista"/>
   <field name="x_studio_comunidade"/>
   <separator/>
-  <filter name="studio_filter_8fb_1ji0qilv3" string="Mês Atual" domain="[('x_studio_data_da_devolucao', '&gt;=', (context_today().replace(day=1)).strftime('%Y-%m-%d')),                      ('x_studio_data_da_devolucao', '&lt;', ((context_today().replace(day=1)) + relativedelta(months=1)).strftime('%Y-%m-%d'))]"/>
+  <!-- MÊS ATUAL — duas coisas erradas aqui, e as duas passavam calado. Conferido com ferramentas/provar-dominio-filtro.mjs, que roda estes domínios no mesmo avaliador que o navegador usa. 1. `context_today().replace(day=1)` NÃO EXISTE no navegador. Domínio de filtro é avaliado pelo py_js, um Python parcial escrito em JS, e o PyDate de lá tem today/strftime/add/substract/toordinal — e nenhum `replace`. A expressão estourava em TODA data, então o filtro nunca devolveu nada desde o dia em que foi criado. 2. A forma canônica do próprio Odoo, `relativedelta(day=31)` com `<=`, também erra — no py_js, e não só aqui. Onde o dateutil de verdade limita o dia ao fim do mês, o py_js deixa transbordar: em fevereiro de 2026 o limite superior vira 03/03 e o "mês atual" arrasta três dias de março. Só acerta em mês de 31 dias. A forma abaixo — primeiro dia deste mês, primeiro dia do mês que vem, com `<` — foi conferida em dez datas, incluindo virada de ano e 29/02. `months=1` em dezembro transborda para o mês 13, e o py_js normaliza para janeiro do ano seguinte. -->
+  <filter name="studio_filter_8fb_1ji0qilv3" string="Mês Atual" domain="[('x_studio_data_da_devolucao', '&gt;=', (context_today() + relativedelta(day=1)).strftime('%Y-%m-%d')),                      ('x_studio_data_da_devolucao', '&lt;',  (context_today() + relativedelta(months=1, day=1)).strftime('%Y-%m-%d'))]"/>
+  <!-- Separator não é enfeite: filtros vizinhos se somam com OU, e é o separator que abre um grupo novo, que cruza com E. Sem ele, "Mês Atual" + "Aguardando conferência" pedia *deste mês OU pendente* — trazia junto todo pendente de todos os meses, que é exatamente o oposto do que quem confere o mês quer ver. -->
+  <separator/>
+  <!-- Estes dois ficam em OU entre si de propósito: são valores do mesmo campo, então marcar os dois quer dizer "pendentes e rejeitadas". -->
   <filter name="filtro_aguardando" string="Aguardando conferência" domain="[('x_studio_status', '=', 'Pendente')]"/>
   <filter name="filtro_rejeitadas" string="Rejeitadas" domain="[('x_studio_status', '=', 'Rejeitado')]"/>
   <separator/>
+  <!-- A fila do coordenador (BL-60). Grupo próprio: cruza com "Mês Atual" em vez de somar, que é como se pergunta "o que falta validar deste mês". -->
+  <filter name="filtro_a_validar" string="A validar" domain="[('x_studio_validacao', '=', 'a_validar')]"/>
+  <filter name="filtro_nao_recebido" string="Não recebido" domain="[('x_studio_validacao', '=', 'nao_recebido')]"/>
+  <separator/>
+  <filter name="filtro_sem_comprovante" string="Sem comprovante" domain="[('x_studio_comprovante', '=', False)]"/>
+  <filter name="filtro_sem_comunidade" string="Sem comunidade" domain="[('x_studio_comunidade', '=', False)]"/>
+  <separator/>
+  <!-- Agrupamentos. Não dependem de posição: o Odoo manda para o menu "Agrupar por" todo filtro que traga `group_by` no context. ⚠️ "Mês Referencia" agrupa por x_studio_competencia, que o bot NUNCA grava (OdooService.gs só lê esse campo, em buscarDevolucaoDetalhada). Em registro vindo do WhatsApp — que são praticamente todos — ele cai num balde "Nenhum" só. Fica porque alguém pode preencher à mão; está anotado no backlog como BL-57. -->
   <group name="studio_group_by"/>
   <filter name="studio_group_by_6rd_1ji0pb9u5" string="Status" context="{'group_by': 'x_studio_status'}"/>
   <filter name="studio_group_by_7b_1ji0pbs65" string="Mês Referencia" context="{'group_by': 'x_studio_competencia'}"/>
   <filter name="studio_group_by_38d_1ji0p9jjo" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}"/>
-  <filter name="filtro_sem_comprovante" string="Sem comprovante" domain="[('x_studio_comprovante', '=', False)]"/>
-  <filter name="filtro_sem_comunidade" string="Sem comunidade" domain="[('x_studio_comunidade', '=', False)]"/>
+  <filter name="groupby_validacao" string="Validação" context="{'group_by': 'x_studio_validacao'}"/>
   <separator/>
   <filter string="Arquivado" name="archived_x_dizimista" domain="[['x_active', '=', False]]"/>
   <separator/>

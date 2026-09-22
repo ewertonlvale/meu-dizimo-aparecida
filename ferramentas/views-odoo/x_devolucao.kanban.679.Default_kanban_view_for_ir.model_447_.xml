@@ -36,29 +36,18 @@
           ⚠ conferência:
           <field name="x_studio_conferencia_pix"/>
         </div>
-
-        <!-- A validação do coordenador, para varrer com o olho (BL-60).
-             O badge de cima é a leitura do bot; este é o julgamento humano.
-             Cinza enquanto ninguém olhou, verde quando o dinheiro entrou,
-             vermelho quando não entrou. -->
+        <!-- A validação do coordenador, para varrer com o olho (BL-60). O badge de cima é a leitura do bot; este é o julgamento humano. Cinza enquanto ninguém olhou, verde quando o dinheiro entrou, vermelho quando não entrou. -->
         <div class="mt-2">
           <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_validacao.raw_value == 'validado' ? 'success' : record.x_studio_validacao.raw_value == 'nao_recebido' ? 'danger' : 'secondary' }}" t-out="record.x_studio_validacao.value"/>
         </div>
-
-        <!-- MARCADOR-BOTOES-VALIDACAO
-             Os dois botões entram AQUI, e não neste arquivo, porque cada um
-             chama uma ir.actions.server por ID numérico — e esse ID só existe
-             depois de alguém rodar ferramentas/instalar-botoes-kanban.mjs
-             contra esta instância. Escrever um número aqui às cegas produziria
-             um botão que aponta para o nada.
-
-             O instalador substitui este comentário pelos botões, direto no
-             Odoo. Depois um –download traz o resultado para cá, já com os IDs
-             certos, e a view volta a percorrer o caminho normal.
-
-             Enquanto o instalador não roda, o card funciona sem os botões: o
-             badge acima mostra o estado, e a barra do formulário continua
-             sendo onde se valida. -->
+        <div class="mt-2 d-flex gap-1">
+          <button name="234" type="action" class="btn btn-sm btn-outline-success" invisible="x_studio_validacao == 'validado'">
+            Validado
+          </button>
+          <button name="235" type="action" class="btn btn-sm btn-outline-danger" invisible="x_studio_validacao == 'nao_recebido'">
+            Não recebido
+          </button>
+        </div>
       </div>
     </t>
   </templates>

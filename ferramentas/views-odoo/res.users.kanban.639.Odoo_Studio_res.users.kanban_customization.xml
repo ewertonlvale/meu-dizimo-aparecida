@@ -5,15 +5,16 @@
       true
     </attribute>
   </xpath>
-  <xpath expr="//main" position="inside">
-    <div class="mt-1">
+  <xpath expr="/kanban/templates/t[@t-name='card']/main/div[2]" position="after">
+    <div class="mt-1" name="studio_div_7bbe03">
       <span class="text-muted small d-block">
         Comunidades
       </span>
       <field name="x_studio_comunidades" widget="many2many_tags"/>
-      <div class="text-muted fst-italic small" invisible="x_studio_comunidades">
+      <div class="text-muted fst-italic small" invisible="x_studio_comunidades" name="studio_div_23642c">
         todas — sem restrição por comunidade
       </div>
     </div>
   </xpath>
+  <xpath expr="/kanban//field[@name='lang']" position="replace"/>
 </data>

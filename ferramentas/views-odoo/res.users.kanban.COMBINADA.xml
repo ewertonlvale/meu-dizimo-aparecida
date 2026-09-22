@@ -23,14 +23,13 @@
             <i class="fa fa-envelope me-1" role="img" aria-label="Login"/>
             <field name="login" on_change="1"/>
           </span>
-          <field class="badge rounded-pill float-end" name="lang" on_change="1"/>
         </div>
-        <div class="mt-1">
+        <div class="mt-1" name="studio_div_7bbe03">
           <span class="text-muted small d-block">
             Comunidades
           </span>
           <field name="x_studio_comunidades" widget="many2many_tags"/>
-          <div class="text-muted fst-italic small" invisible="x_studio_comunidades">
+          <div class="text-muted fst-italic small" invisible="x_studio_comunidades" name="studio_div_23642c">
             todas — sem restrição por comunidade
           </div>
         </div>

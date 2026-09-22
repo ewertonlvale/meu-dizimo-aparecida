@@ -2,11 +2,19 @@
      SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <form>
   <header>
-    <field widget="statusbar" options="{'clickable': '1'}" name="x_studio_status"/>
+    <field name="x_studio_validacao" widget="statusbar" options="{'clickable': '1'}"/>
   </header>
   <sheet string="Devolução">
     <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
     <field name="x_active" invisible="1"/>
+    <!-- A leitura do bot, à vista e só-leitura. Quem valida precisa dela para decidir, e não precisa poder mudá-la: ela é o que o OCR encontrou, não uma opinião que se revise. -->
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="text-muted small">
+        Leitura automática do comprovante:
+      </span>
+      <field name="x_studio_status" widget="badge" readonly="1" nolabel="1" decoration-success="x_studio_status == 'Confirmado'" decoration-danger="x_studio_status == 'Rejeitado'" decoration-warning="x_studio_status == 'Pendente'"/>
+    </div>
+    <!-- O alerta da conferência sai do meio do formulário e vira banner no topo. Ele estava como um campo de texto entre outros dez, e é a informação que decide se este registro precisa de atenção humana. Some quando está 'ok', que é a maioria e não é notícia. O espaço depois dos dois-pontos é literal de propósito: sem ele o Odoo encosta o rótulo no valor e sai "Precisa de conferência:ausente". O valor ainda é o código cru — humanizar os rótulos da seleção é do lado do Odoo, não da view, e está no BL-61. -->
     <div class="alert alert-warning mb-3" role="alert" invisible="not x_studio_conferencia_pix or x_studio_conferencia_pix == 'ok'">
       <i class="fa fa-exclamation-triangle me-2" role="img" aria-label="Atenção"/>
       <span class="fw-bold">
