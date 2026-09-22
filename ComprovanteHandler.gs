@@ -229,6 +229,82 @@ const ComprovanteHandler = {
     ]);
   },
 
+  /**
+   * Pergunta o mês DEPOIS de registrar, e só quando há dúvida real. (BL-62)
+   *
+   * A dúvida existe quando a pessoa tinha um mês em aberto ANTERIOR ao que
+   * acabou de ser registrado: pagou em dezembro tendo setembro em aberto. O bot
+   * não tem como saber de qual mês é o pagamento, e adivinhar seria inventar um
+   * fato sobre dinheiro.
+   *
+   * ⚠️ SÓ MANDA MENSAGEM QUANDO HÁ DÚVIDA. No caso comum — a competência do
+   *    pagamento bate com o mês em aberto, ou não há mês em aberto — nada é
+   *    enviado, e a contagem de mensagens do fluxo normal não muda. O harness
+   *    guarda essa contagem.
+   *
+   * Os dois ids viajam DENTRO do id do botão, e não em sessão. É o que permite
+   * a correção não depender de estado nenhum — a pessoa pode tocar em Corrigir
+   * horas depois, de outro aparelho, e funciona.
+   *
+   * @private
+   */
+  _ofereceCorrigirMes(from, devolucaoId, dizimistaId) {
+    if (!devolucaoId || !dizimistaId) return;
+    let reg, aberto;
+    try {
+      reg = OdooService.searchRead('x_devolucao', ['x_studio_competencia'],
+        [['id', '=', devolucaoId]], { limit: 1 });
+      const competencia = reg && reg[0] && reg[0].x_studio_competencia;
+      if (!competencia) return;
+      aberto = OdooService.mesEmAbertoAnterior(dizimistaId, competencia);
+      if (!aberto) return;
+
+      Utils.enviarMenu(from,
+        `📅 Registrei como referente a *${Utils.mesPorExtenso(competencia)}*.\n\n` +
+        `Vi que você tem *${Utils.mesPorExtenso(aberto.competencia)}* em aberto. ` +
+        'Se este dízimo era daquele mês, é só me dizer que eu acerto.',
+        [
+          { id: `comp_${devolucaoId}_${aberto.id}`, title: Utils.mesPorExtenso(aberto.competencia).substring(0, 20) },
+          { id: 'comp_ok', title: 'Está certo' }
+        ]
+      );
+    } catch (e) {
+      // Nunca derruba nada: a devolução já está registrada e confirmada. O pior
+      // que acontece é a pessoa não receber a oferta de corrigir.
+      console.warn(`⚠️ [Competência] Não consegui oferecer a correção: ${e.message}`);
+    }
+  },
+
+  /**
+   * A pessoa disse que o dízimo era do mês em aberto. (BL-62)
+   *
+   * @param {string} buttonId - `comp_<idPago>_<idAberto>` ou `comp_ok`
+   */
+  corrigirMes(from, buttonId) {
+    if (buttonId === 'comp_ok') {
+      Utils.enviarComBotaoMenu(from, '👍 Perfeito, deixo como está. Obrigado!');
+      return;
+    }
+    const m = String(buttonId).match(/^comp_(\d+)_(\d+)$/);
+    if (!m) {
+      Utils.enviarComBotaoMenu(from, '⚠️ Não entendi qual mês corrigir. Fale com a secretaria, por favor.');
+      return;
+    }
+    try {
+      const ok = OdooService.trocarCompetencia(Number(m[1]), Number(m[2]));
+      Utils.enviarComBotaoMenu(from, ok
+        ? '✅ Corrigido! O dízimo passou a valer para o mês que estava em aberto, ' +
+          'e o mês atual voltou a ficar em aberto.'
+        : '⚠️ Não consegui corrigir agora. A devolução *está registrada* — ' +
+          'só o mês de referência ficou como estava. Fale com a secretaria.');
+    } catch (e) {
+      console.error(`❌ [Competência] Falha ao corrigir: ${e.message}`);
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ Não consegui corrigir agora. Sua devolução *continua registrada* — ' +
+        'apenas o mês de referência não mudou. Fale com a secretaria.');
+    }
+  },
+
   _conferirComprovante(dados, comunidade) {
     dados = dados || {};
     comunidade = comunidade || {};
@@ -683,6 +759,7 @@ const ComprovanteHandler = {
         '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!',
         motivoConferencia
       );
+      this._ofereceCorrigirMes(from, devolucaoId, dizimista && dizimista.id);
       return;
     }
 

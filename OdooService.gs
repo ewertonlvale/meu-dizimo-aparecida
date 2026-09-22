@@ -938,6 +938,63 @@ const OdooService = {
   },
 
   /**
+   * Há um mês em aberto ANTERIOR ao que acabou de ser registrado? (BL-62)
+   *
+   * Quando alguém paga em dezembro e tem setembro em aberto, o bot não tem como
+   * saber de qual mês é o pagamento. A resposta honesta é registrar dezembro e
+   * deixar setembro aberto — e então PERGUNTAR, em vez de adivinhar.
+   *
+   * Perguntar ANTES de registrar não cabe: obrigaria a segurar o comprovante em
+   * sessão enquanto se espera a resposta, e comprovante é base64 de 100 KB a
+   * 1 MB, contra 100 KB por chave no CacheService e 9 KB por valor no
+   * PropertiesService. Além de criar um caminho em que a pessoa some no meio e
+   * o pagamento se perde. Registrar primeiro tira o dinheiro do ar.
+   *
+   * @returns {{id: number, competencia: string}|null}
+   */
+  mesEmAbertoAnterior(dizimistaId, competenciaRegistrada, tipo = 'dizimo') {
+    if (!dizimistaId || tipo === 'oferta') return null;
+    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
+    try {
+      const regs = this.searchRead('x_devolucao', ['id', 'x_studio_competencia'], [
+        ['x_studio_dizimista',   '=', dizimistaId],
+        ['x_studio_status',      '=', STATUS_A_DEVOLVER],
+        ['x_studio_competencia', '<', competenciaRegistrada]
+      ], { order: 'x_studio_competencia asc', limit: 1 });
+      const r = regs && regs[0];
+      return r ? { id: r.id, competencia: r.x_studio_competencia } : null;
+    } catch (e) {
+      console.warn(`⚠️ [Devolução] Não consegui procurar mês anterior em aberto: ${e.message}`);
+      return null;
+    }
+  },
+
+  /**
+   * Troca a competência entre o registro pago e o mês que estava em aberto.
+   * (BL-62)
+   *
+   * TROCA, e não copia: se o pagamento era de setembro, setembro passa a ser o
+   * mês pago e dezembro volta a ficar em aberto. Copiar deixaria dois registros
+   * de setembro — um pago e um em aberto que nunca fecharia.
+   *
+   * @returns {boolean} true se a troca aconteceu
+   */
+  trocarCompetencia(idPago, idAberto) {
+    const regs = this.searchRead('x_devolucao', ['id', 'x_studio_competencia'],
+      [['id', 'in', [idPago, idAberto]]]);
+    const pago   = (regs || []).find((r) => r.id === idPago);
+    const aberto = (regs || []).find((r) => r.id === idAberto);
+    if (!pago || !aberto) {
+      console.warn('⚠️ [Devolução] Troca de competência: um dos registros sumiu');
+      return false;
+    }
+    this.write('x_devolucao', idPago,   { x_studio_competencia: aberto.x_studio_competencia });
+    this.write('x_devolucao', idAberto, { x_studio_competencia: pago.x_studio_competencia });
+    console.log(`🔁 [Devolução] Competências trocadas: ${idPago} ↔ ${idAberto}`);
+    return true;
+  },
+
+  /**
    * O "A devolver" desta pessoa para ESTA competência, se existir. (BL-62)
    *
    * @param {number} dizimistaId

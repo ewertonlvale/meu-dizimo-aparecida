@@ -90,7 +90,7 @@
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
 | BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ **Instalado (22/09)** — campo, barra clicável, coluna e filtros |
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | ✅ Concluído (22/09) — tradução nas views; o tipo do campo **não pode** mudar, e está explicado |
-| BL-62 | O ciclo de vida da devolução: A devolver → Em conferência → Conferido / Não confere | 🟠 | G | 🔶 **Odoo instalado e bot pronto (22/09)**. Falta só a pergunta da competência — precisa de `clasp push` |
+| BL-62 | O ciclo de vida da devolução: A devolver → Em conferência → Conferido / Não confere | 🟠 | G | ✅ **Concluído (22/09)** — Odoo instalado, bot pronto, pergunta da competência incluída. **Precisa de `clasp push`** |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ **Instalado e conferido na tela** (22/09) — cores e filtro por comunidade funcionando |
@@ -455,27 +455,45 @@ o bot já disse Conferido ou Não confere: A validar → Validado / Não recebid
 **todo caminho guardado por `campoExiste` era pulado** e parecia coberto — o BL-62 nasceu
 verde sem nunca ter rodado uma linha. O cenário agora declara quais campos existem.
 
-#### Falta: a pergunta da competência
+#### A pergunta da competência — feita em 22/09, invertendo a ordem
 
-Quando o `A devolver` em aberto é de setembro e o pagamento chega em dezembro, o bot
-**não quita setembro**: registra dezembro e deixa setembro aberto, que é a verdade. Falta
-perguntar à pessoa a que mês o pagamento se refere.
+Quando a pessoa tinha um mês em aberto **anterior** ao que acabou de ser registrado — pagou
+em dezembro com setembro em aberto — o bot não tem como saber de qual mês é o pagamento, e
+adivinhar seria inventar um fato sobre dinheiro.
 
-**O obstáculo é concreto, e não é preguiça.** Perguntar antes de registrar obriga a segurar
-o comprovante em sessão enquanto se espera a resposta — e comprovante é base64 de imagem ou
-PDF, tipicamente de 100 KB a 1 MB. O `CacheService` do Apps Script tem **100 KB por chave** e
-o `PropertiesService`, **9 KB por valor**. Não cabe. E se coubesse, criaria um caminho em que
-a pessoa some no meio e o pagamento se perde.
+**Registra primeiro, pergunta depois.** Perguntar antes obrigaria a segurar o comprovante em
+sessão: base64 de 100 KB a 1 MB, contra **100 KB por chave** no `CacheService` e **9 KB por
+valor** no `PropertiesService`. Não cabe — e criaria um caminho em que a pessoa some no meio
+e o pagamento se perde.
 
-**O desenho que resolve:** registrar primeiro, perguntar depois.
+> 📅 Registrei como referente a **dezembro/2026**.
+> Vi que você tem **setembro/2026** em aberto. Se este dízimo era daquele mês, é só me dizer
+> que eu acerto.
+> `[ setembro/2026 ]` `[ Está certo ]`
 
-> "Registrei R$ 50 como referente a **setembro** (era o seu mês em aberto).
-> Se este dízimo é de outro mês, toque em Corrigir."
+**Os dois ids viajam dentro do id do botão**, não em sessão. É o que faz a correção funcionar
+horas depois, com a sessão já expirada — que é o caso normal, já que a devolução é encerrada
+antes de a pergunta sair.
 
-O dinheiro nunca fica no ar, não há base64 em sessão, e a pessoa ainda corrige. Custa um
-botão, uma entrada no roteador e a lógica de mover a competência — reabrindo o mês anterior
-se for o caso. **Isso é o próximo PR**, e honra a decisão de 22/09 (perguntar no WhatsApp),
-só invertendo a ordem.
+**A correção TROCA as competências**, não copia: se o dízimo era de setembro, setembro passa
+a ser o mês pago e dezembro volta a ficar em aberto. Copiar deixaria dois registros de
+setembro, um pago e um que nunca fecharia.
+
+**Só manda mensagem quando há dúvida de verdade.** Competência que bate, ou nenhum mês
+anterior em aberto: nada é enviado, e a contagem de mensagens do fluxo normal não muda.
+
+**Coberto por 7 cenários**, incluindo o caso em que o mês em aberto é o mesmo que foi pago
+(não pergunta), o botão estragado (avisa em vez de estourar) e o "Está certo" (não escreve
+nada).
+
+**Um defeito achado no próprio harness:** o Odoo de mentira tratava todo domínio como
+igualdade e ignorava o operador. A busca pelo mês anterior usa `<` — então ela não achava
+nada, enquanto o mês *igual* ao pago era devolvido como se fosse anterior. Mentia nos dois
+sentidos. O fake passou a honrar `<`, `<=`, `>` e `>=`.
+
+**O que ficou de fora, de propósito:** o lote de família (`ComprovanteHandler.gs:359`) não
+oferece correção. São várias devoluções numa submissão, e uma pergunta por membro viraria
+uma rajada de mensagens. Quem lança por família corrige pela tela do Odoo.
 
 **Fora do desenho, de propósito:** oferta não ganha `A devolver`. Oferta não é compromisso
 mensal, e pré-criar registro de oferta produziria linha que nunca fecha.

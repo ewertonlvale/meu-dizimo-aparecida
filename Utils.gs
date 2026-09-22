@@ -1139,6 +1139,25 @@ const Utils = {
    * @param {string} dataOdoo - Ex: "2025-03-15"
    * @returns {string} Ex: "15/03/2025"
    */
+  /**
+   * 'aaaa-mm-01' → 'setembro/2026'. (BL-62)
+   *
+   * A competência é uma data no Odoo, e o dia dela é sempre 1º — ele não
+   * significa nada. Mostrar "01/09/2026" a quem devolveu o dízimo faria a
+   * pessoa procurar o que aconteceu naquele dia. O mês é o dado.
+   *
+   * @param {string} competencia - 'aaaa-mm-dd'
+   * @returns {string}
+   */
+  mesPorExtenso(competencia) {
+    const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+                   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const m = String(competencia || '').match(/^(\d{4})-(\d{2})/);
+    if (!m) return String(competencia || '');
+    const mes = MESES[Number(m[2]) - 1];
+    return mes ? `${mes}/${m[1]}` : String(competencia);
+  },
+
   formatarDataOdoo(dataOdoo) {
     if (!dataOdoo) return '—';
     const partes = dataOdoo.split('-');

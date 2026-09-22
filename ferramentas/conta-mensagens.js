@@ -281,13 +281,32 @@ function montarContexto(cenario) {
         // BL-62: a busca pelo mês em aberto e a que confere se o mês seguinte
         // já existe. Vêm antes das outras porque as duas citam competência, e
         // cair no ramo do histórico daria resposta errada em silêncio.
+        // Busca por id: é como a oferta de corrigir descobre a competência do
+        // registro que acabou de ser gravado, e como a troca lê as duas.
+        const porId = (dominio || []).find(d => d[0] === 'id');
+        if (porId) {
+          const fonte = cenario.devolucaoPorId;
+          const lista = Array.isArray(fonte) ? fonte : (fonte ? [fonte] : []);
+          return porId[1] === 'in'
+            ? lista.filter(r => (porId[2] || []).indexOf(r.id) >= 0)
+            : lista.filter(r => r.id === porId[2]);
+        }
         const porCompetencia = (dominio || []).find(d => d[0] === 'x_studio_competencia');
         if (porCompetencia) {
+          // O OPERADOR IMPORTA, e ignorá-lo mentia nos dois sentidos: a busca
+          // pelo mês anterior usa '<' e não achava nada, enquanto o mês igual
+          // ao pago era devolvido como se fosse anterior. Um fake que trata
+          // todo domínio como igualdade não testa a consulta — testa a si mesmo.
+          const [, op, alvo] = porCompetencia;
+          const bate = (v) => op === '<'  ? v <  alvo
+                            : op === '<=' ? v <= alvo
+                            : op === '>'  ? v >  alvo
+                            : op === '>=' ? v >= alvo
+                            : v === alvo;
           const querStatus = (dominio || []).find(d => d[0] === 'x_studio_status');
-          const lista = (cenario.devolucoesPorCompetencia || []).filter(r =>
-            r.x_studio_competencia === porCompetencia[2]
+          return (cenario.devolucoesPorCompetencia || []).filter(r =>
+            bate(r.x_studio_competencia)
             && (!querStatus || r.x_studio_status === querStatus[2]));
-          return lista;
         }
         // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
         // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
@@ -2548,6 +2567,92 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
     confere('sem o campo de competência, registra como antes e não abre mês',
       criados.length === 1 && !('x_studio_competencia' in criados[0]),
       `criados=${criados.length}`);
+  }
+
+  // ── A pergunta do mês: registra primeiro, pergunta depois ───────────────
+  //
+  // Perguntar ANTES de registrar obrigaria a segurar o comprovante em sessão —
+  // base64 de 100 KB a 1 MB, contra 100 KB por chave no CacheService. Não cabe,
+  // e criaria um caminho em que a pessoa some no meio e o pagamento se perde.
+  //
+  // O que estes casos protegem é o custo dessa escolha: a pergunta só pode
+  // aparecer quando há dúvida de verdade, senão todo mundo passa a receber uma
+  // mensagem a mais em todo dízimo.
+  {
+    const MESES = ['x_studio_competencia'];
+    function ofereceu(abertos, competenciaDoPago) {
+      const enviadas = [];
+      const ctx = montarContexto({
+        camposOdoo: MESES,
+        devolucoesPorCompetencia: abertos,
+        devolucaoPorId: { id: 90, x_studio_competencia: competenciaDoPago },
+      });
+      ctx.Utils.enviarMenu = (to, texto, botoes) => enviadas.push({ texto, botoes });
+      ctx.Utils.enviarComBotaoMenu = (to, texto) => enviadas.push({ texto, botoes: [] });
+      ctx.ComprovanteHandler._ofereceCorrigirMes('55', 90, 7);
+      return enviadas;
+    }
+
+    // Tem setembro em aberto e o pagamento foi registrado em dezembro
+    const comDuvida = ofereceu(
+      [{ id: 41, x_studio_competencia: '2026-09-01', x_studio_status: 'A devolver' }],
+      '2026-12-01');
+    confere('com mês anterior em aberto, oferece corrigir',
+      comDuvida.length === 1 && /setembro\/2026/.test(comDuvida[0].texto),
+      JSON.stringify(comDuvida));
+    confere('o botão carrega os dois ids, sem depender de sessão',
+      comDuvida.length === 1 && comDuvida[0].botoes[0].id === 'comp_90_41',
+      JSON.stringify(comDuvida[0] && comDuvida[0].botoes));
+
+    // Sem mês anterior em aberto: NADA é enviado
+    const semDuvida = ofereceu([], '2026-12-01');
+    confere('sem mês anterior em aberto, não manda mensagem nenhuma',
+      semDuvida.length === 0, JSON.stringify(semDuvida));
+
+    // Mês em aberto é o MESMO que foi pago: também não pergunta
+    const mesmoMes = ofereceu(
+      [{ id: 41, x_studio_competencia: '2026-12-01', x_studio_status: 'A devolver' }],
+      '2026-12-01');
+    confere('mês em aberto igual ao pago não gera pergunta',
+      mesmoMes.length === 0, JSON.stringify(mesmoMes));
+
+    // A correção troca as competências, e não copia
+    {
+      const escritos = [];
+      const ctx = montarContexto({
+        camposOdoo: MESES,
+        devolucaoPorId: [{ id: 90, x_studio_competencia: '2026-12-01' },
+                         { id: 41, x_studio_competencia: '2026-09-01' }],
+        aoEscrever: (m, id, d) => escritos.push([id, d.x_studio_competencia]),
+      });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.ComprovanteHandler.corrigirMes('55', 'comp_90_41');
+      const pago   = escritos.find(([id]) => id === 90);
+      const aberto = escritos.find(([id]) => id === 41);
+      confere('Corrigir TROCA as competências — não deixa dois do mesmo mês',
+        !!pago && pago[1] === '2026-09-01' && !!aberto && aberto[1] === '2026-12-01',
+        JSON.stringify(escritos));
+    }
+
+    // "Está certo" não escreve nada
+    {
+      const escritos = [];
+      const ctx = montarContexto({ camposOdoo: MESES, aoEscrever: (m, id) => escritos.push(id) });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.ComprovanteHandler.corrigirMes('55', 'comp_ok');
+      confere('"Está certo" não mexe em registro nenhum', escritos.length === 0,
+        JSON.stringify(escritos));
+    }
+
+    // Botão malformado não estoura nem mente
+    {
+      const ditos = [];
+      const ctx = montarContexto({ camposOdoo: MESES });
+      ctx.Utils.enviarComBotaoMenu = (to, t) => ditos.push(t);
+      ctx.ComprovanteHandler.corrigirMes('55', 'comp_lixo');
+      confere('id de botão estragado avisa em vez de estourar',
+        ditos.length === 1 && /não entendi/i.test(ditos[0]), JSON.stringify(ditos));
+    }
   }
 
   for (const [nome, ok, detalhe] of CASOS) {
