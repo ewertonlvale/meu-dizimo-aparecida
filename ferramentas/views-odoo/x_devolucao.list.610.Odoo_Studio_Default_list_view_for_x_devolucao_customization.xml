@@ -19,7 +19,8 @@
     <field name="x_studio_status" optional="show" widget="badge" string="Leitura do bot"
            decoration-success="x_studio_status == 'Confirmado'"
            decoration-danger="x_studio_status == 'Rejeitado'"
-           decoration-warning="x_studio_status == 'Pendente'"/>
+           decoration-warning="x_studio_status == 'Pendente'"
+           decoration-muted="x_studio_status == 'A devolver'"/>
     <!-- As duas colunas juntas, de propósito (BL-60). Uma é o que o bot leu no
          comprovante; a outra é o que o coordenador viu no extrato. É a LINHA em
          que elas discordam — bot diz Confirmado, coordenador diz Não recebido —

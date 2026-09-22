@@ -90,7 +90,7 @@
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
 | BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ **Instalado (22/09)** — campo, barra clicável, coluna e filtros |
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | ✅ Concluído (22/09) — tradução nas views; o tipo do campo **não pode** mudar, e está explicado |
-| BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | ⚠️ **Revisado (22/09) — não implementar como está.** 7 interações achadas; a parte valiosa (escrever a competência) é separável e barata |
+| BL-62 | O ciclo de vida da devolução: A devolver → Em conferência → Conferido / Não confere | 🟠 | G | 🔶 **Odoo pronto (22/09)**, falta instalar com `--aplicar`. O Apps Script vai em PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ **Instalado e conferido na tela** (22/09) — cores e filtro por comunidade funcionando |
@@ -390,79 +390,74 @@ conferiu ainda.
 
 ---
 
-### BL-62 — Dízimo do mês seguinte, criado automaticamente 🟠 (G)
+### BL-62 — O ciclo de vida da devolução 🟠 (G)
 
-**Desenho de 21/09, revisado contra o código em 22/09.** A revisão achou sete interações e
-mudou a recomendação. **Não implementar como está.**
+**Desenho fechado em 22/09**, depois de uma revisão que mudou a forma. O Odoo já está
+pronto; falta o Apps Script.
 
-#### O que a revisão encontrou
+#### Os quatro estados, e por que não são três
 
-**1. Tudo depende de um campo ficar vazio — e o formulário proíbe isso.**
+A proposta inicial tinha três: Pendente (não devolvido), Confirmado, Rejeitado. A revisão
+achou o buraco: **hoje `Pendente` não significa "não devolveu"** — significa "o comprovante
+chegou e o bot não conseguiu confirmar", e é a maioria dos casos (7 de 9 na tela de
+Ofertas). Com três estados, quem pagou com comprovante ilegível apareceria junto com quem
+não pagou, sem como distinguir depois.
 
-Três leitores do modelo filtram por `x_studio_data_da_devolucao`:
-`classificar-dizimistas.py` (a janela da classificação), `jaDevolveueEsteMes`
-(`NotificacaoHandler.gs:297`) e `devolucoesDoMes` (`OdooService.gs:928`). Um Previsto sem
-data é invisível para os três, porque em SQL `NULL >= '2026-06-01'` não é verdadeiro. É o
-que **salva** o desenho.
+| valor gravado | rótulo | o que é |
+|---|---|---|
+| `A devolver` | A devolver | o mês existe como compromisso e ninguém devolveu ainda |
+| `Pendente` | Em conferência | o comprovante chegou, o bot não confirmou |
+| `Confirmado` | Conferido | o comprovante bate com o cadastro da comunidade |
+| `Rejeitado` | Não confere | o comprovante diverge |
 
-Mas o formulário declara `x_studio_data_da_devolucao required="1"` e
-`x_studio_value required="1"`. Um coordenador que abrir um Previsto e salvar é **obrigado**
-a inventar data e valor — e nesse instante o registro passa a contar como devolução paga
-para a classificação e para o lembrete mensal. A pessoa deixa de receber a cobrança do mês
-e vira Regular sem ter pago nada. Sem erro, sem aviso.
+**Só um valor novo.** Os três que existem mantêm o valor gravado e mudaram só o rótulo —
+nada foi migrado, e o `Config.gs` não muda uma linha.
 
-Uma invariante que depende de ninguém abrir um registro não é uma invariante.
+"Rejeitado" virou "Não confere" porque acusava a pessoa: o registro não foi rejeitado, o
+comprovante não bateu. Quem lê isso antes de ligar para alguém precisa da diferença.
 
-**2. "Nunca há mais de um Previsto aberto" está errado.** Era minha própria conclusão da
-decisão 1, e não se sustenta: quando o bot pergunta o mês e a pessoa responde "é do mês
-corrente", o Previsto antigo continua aberto e nasce outro. Dois em aberto. A simplificação
-que justificava a decisão 2 desaparece.
+Em cima disso continua a **validação do agente da pastoral** (BL-60), que vale mesmo quando
+o bot já disse Conferido ou Não confere: A validar → Validado / Não recebido.
 
-**3. O Previsto entra na fila de validação.** O `ir.default` do BL-60 faz todo registro
-nascer `A validar`. A fila que o coordenador acabou de ganhar encheria de meses futuros que
-ninguém pagou — ruído exatamente onde a tela precisa ser limpa.
+#### Feito no Odoo (22/09)
 
-**4. O relatório ganha um balde "Nenhum".** O pivô agrupa por mês pela data da devolução.
-Previstos sem data caem todos num bucket sem nome, com R$ 0 e contagem alta. A medida
-"Pessoas" também os conta.
+- `ferramentas/instalar-status-dizimo.mjs` — acrescenta `A devolver`, renomeia os rótulos,
+  ordena o ciclo. **Confere que o campo é `selection` antes de escrever**, e para com
+  explicação se não for: foi supor exatamente isso que fez o BL-61 mudar de plano no meio.
+- **Obrigatoriedade condicional no formulário.** Era `required="1"` fixo em data e valor.
+  Um `A devolver` não tem nenhum dos dois, e quem abrisse um desses e salvasse seria
+  obrigado a inventá-los — transformando o registro em devolução paga aos olhos da
+  classificação, do lembrete mensal e do relatório. Agora é
+  `required="x_studio_status != 'A devolver'"`.
+- A validação **some** no `A devolver`, no card e nos botões: mês que ninguém pagou não tem
+  o que validar, e enchê-la de meses futuros arruinaria a fila do BL-60.
+- Badge cinza para o estado novo, na lista, no card e no formulário.
 
-**5. A pergunta no WhatsApp cai no meio do caminho do dinheiro.** Hoje o comprovante é
-analisado e registrado numa passada só. Perguntar a competência obriga a **segurar o
-comprovante em sessão** — base64 de imagem ou PDF — enquanto se espera a resposta. Isso
-esbarra em BL-21 e BL-22, que já são os gargalos conhecidos, e cria um caminho novo em que
-a pessoa some no meio e o comprovante se perde.
+#### Falta no Apps Script — PR próprio
 
-**6. São três os pontos de entrada.** `ComprovanteHandler.gs` chama `registrarDevolucao` em
-três lugares (`:359`, `:446`, `:656`). A busca-e-preenche e a pergunta de competência
-precisam valer nos três, ou o comportamento fica dependendo de por onde a pessoa entrou.
+1. **Escrever `x_studio_competencia`** em toda devolução: o mês da data da devolução. Fecha
+   o BL-57 junto, e é o que faz a lista de atrasados existir (um `A devolver` com
+   competência anterior ao mês corrente é uma dívida).
+2. **Procurar o `A devolver` em aberto** do dizimista antes de criar registro novo, e
+   preenchê-lo em vez de criar um segundo.
+3. **Criar o `A devolver` do mês seguinte** ao registrar uma devolução de dízimo. Ele nasce
+   sem data, sem valor, sem comprovante e **sem validação** — os três leitores que filtram
+   por data preenchida precisam continuar sem enxergá-lo.
+4. **Perguntar a competência** quando o aberto é de um mês e o pagamento chega em outro:
+   *"seu dízimo em aberto é o de setembro. Este pagamento é referente a setembro?"* — sim ou
+   não. Decisão de 22/09.
 
-**7. E o que tudo isso compra?** Sob a decisão 1 — Previsto só para quem já pagou — o
-registro futuro não diz quem **falta** pagar; ele só existe para que o próximo pagamento
-preencha uma linha em vez de criar outra. Para quem usa a tela, o resultado é idêntico.
+**Riscos conhecidos desta parte:**
+- `registrarDevolucao` é o caminho do dinheiro, onde vivem BL-02, BL-26, BL-27 e BL-51.
+- São **três** os pontos de entrada em `ComprovanteHandler.gs` (`:359`, `:446`, `:656`); a
+  busca-e-preenche e a pergunta precisam valer nos três.
+- A pergunta obriga a **segurar o comprovante em sessão** (base64) enquanto se espera a
+  resposta. Esbarra em BL-21 e BL-22, e cria um caminho novo em que a pessoa some no meio e
+  o comprovante se perde. Precisa de prazo e de descarte explícito.
+- Dois `A devolver` abertos passam a ser possíveis (quando a resposta é "não, é do mês
+  corrente"). Não é defeito: são dois meses devidos. Mas a busca precisa lidar com isso.
 
-#### A parte valiosa é separável, e é barata
-
-O ganho concreto do BL-62 é `x_studio_competencia` passar a ser **escrito** — hoje o bot só
-o lê (`OdooService.gs:1024`), e por isso o agrupamento "Mês Referencia" cai num balde
-"Nenhum" (BL-57).
-
-Mas escrever a competência **não precisa de Previsto nenhum**. É uma linha em
-`registrarDevolucao`: a competência é o mês da data da devolução. Fecha o BL-57, não toca em
-nenhum dos sete pontos acima, e não cria registro que não existia.
-
-#### Recomendação
-
-- **BL-62a — escrever a competência.** Fazer agora. Pequeno, fecha o BL-57.
-- **BL-62b — os registros Previsto.** Rever a decisão 1 antes de implementar. Na versão
-  descartada (uma ação mensal criando para todo dizimista Regular ou Eventual), a lista de
-  Previstos do mês **é** a lista de quem falta pagar — o relatório que a paróquia não tem.
-  Isso justifica pagar os sete custos. Na versão aprovada, eles se pagam com quase nada.
-
-  Se o caminho for esse, o desenho ainda precisa resolver: tirar o `required` do formulário
-  para Previstos, mantê-los fora da fila de validação e fora do relatório, e decidir o que
-  acontece com os que nunca são pagos.
-
-**Fora do desenho, de propósito:** oferta não ganha Previsto. Oferta não é compromisso
+**Fora do desenho, de propósito:** oferta não ganha `A devolver`. Oferta não é compromisso
 mensal, e pré-criar registro de oferta produziria linha que nunca fecha.
 
 ---
