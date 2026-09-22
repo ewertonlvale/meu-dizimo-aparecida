@@ -207,6 +207,25 @@ function statusDaDevolucao(codigo) {
 }
 
 /**
+ * O estado de um mês que existe como compromisso e ainda não foi devolvido.
+ * (BL-62)
+ *
+ * É o único valor NOVO do ciclo. Os outros três continuam gravados como
+ * sempre — 'Pendente', 'Confirmado', 'Rejeitado' — e só mudaram de rótulo no
+ * Odoo: Em conferência, Conferido, Não confere. Nada aqui precisou mudar por
+ * causa disso, e essa foi a razão de renomear rótulo em vez de valor.
+ *
+ * ⚠️ Um registro neste estado NÃO PODE TER DATA DE DEVOLUÇÃO.
+ *    Três leitores decidem coisas sérias filtrando por data preenchida:
+ *    a classificação (classificar-dizimistas.py), o lembrete mensal
+ *    (`jaDevolveueEsteMes`) e `devolucoesDoMes`. Um "A devolver" sem data é
+ *    invisível para os três, que é o que se quer — ele é uma previsão, não uma
+ *    devolução. Com data, a pessoa deixaria de ser cobrada e viraria Regular
+ *    sem ter pago nada, sem nada acusar.
+ */
+const STATUS_A_DEVOLVER = 'A devolver';
+
+/**
  * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
  *
  * Bem mais restrito que `exigeConferencia`. Ali o custo de errar é um olhar
