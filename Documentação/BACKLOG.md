@@ -90,7 +90,7 @@
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
 | BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ **Instalado (22/09)** — campo, barra clicável, coluna e filtros |
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | ✅ Concluído (22/09) — tradução nas views; o tipo do campo **não pode** mudar, e está explicado |
-| BL-62 | O ciclo de vida da devolução: A devolver → Em conferência → Conferido / Não confere | 🟠 | G | 🔶 **Odoo pronto (22/09)**, falta instalar com `--aplicar`. O Apps Script vai em PR próprio |
+| BL-62 | O ciclo de vida da devolução: A devolver → Em conferência → Conferido / Não confere | 🟠 | G | 🔶 **Odoo instalado e bot pronto (22/09)**. Falta só a pergunta da competência — precisa de `clasp push` |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ **Instalado e conferido na tela** (22/09) — cores e filtro por comunidade funcionando |
@@ -433,29 +433,49 @@ o bot já disse Conferido ou Não confere: A validar → Validado / Não recebid
   o que validar, e enchê-la de meses futuros arruinaria a fila do BL-60.
 - Badge cinza para o estado novo, na lista, no card e no formulário.
 
-#### Falta no Apps Script — PR próprio
+#### Feito no Apps Script (22/09)
 
-1. **Escrever `x_studio_competencia`** em toda devolução: o mês da data da devolução. Fecha
-   o BL-57 junto, e é o que faz a lista de atrasados existir (um `A devolver` com
-   competência anterior ao mês corrente é uma dívida).
-2. **Procurar o `A devolver` em aberto** do dizimista antes de criar registro novo, e
-   preenchê-lo em vez de criar um segundo.
-3. **Criar o `A devolver` do mês seguinte** ao registrar uma devolução de dízimo. Ele nasce
-   sem data, sem valor, sem comprovante e **sem validação** — os três leitores que filtram
-   por data preenchida precisam continuar sem enxergá-lo.
-4. **Perguntar a competência** quando o aberto é de um mês e o pagamento chega em outro:
-   *"seu dízimo em aberto é o de setembro. Este pagamento é referente a setembro?"* — sim ou
-   não. Decisão de 22/09.
+- **A competência é gravada** em toda devolução: o mês da data da devolução.
+  **Fecha o BL-57** — o agrupamento "Mês Referencia" deixa de cair num balde "Nenhum".
+- **O mês em aberto é preenchido**, não duplicado: quando existe um `A devolver` da mesma
+  competência, é nele que o pagamento entra (`write`, não `create`).
+- **O mês seguinte é aberto** ao registrar um dízimo — sem data, sem valor, sem comprovante
+  e **sem validação**. Idempotente: se já existir em qualquer estado, nada acontece.
+- Dezembro abre janeiro do ano seguinte.
+- Oferta não entra no ciclo.
+- Tudo guardado por `campoExiste`: numa base sem o campo de competência, o bot registra
+  exatamente como registrava antes.
+- A abertura do mês seguinte roda em `try` próprio: previsibilidade não pode derrubar o
+  registro de um pagamento que já aconteceu.
 
-**Riscos conhecidos desta parte:**
-- `registrarDevolucao` é o caminho do dinheiro, onde vivem BL-02, BL-26, BL-27 e BL-51.
-- São **três** os pontos de entrada em `ComprovanteHandler.gs` (`:359`, `:446`, `:656`); a
-  busca-e-preenche e a pergunta precisam valer nos três.
-- A pergunta obriga a **segurar o comprovante em sessão** (base64) enquanto se espera a
-  resposta. Esbarra em BL-21 e BL-22, e cria um caminho novo em que a pessoa some no meio e
-  o comprovante se perde. Precisa de prazo e de descarte explícito.
-- Dois `A devolver` abertos passam a ser possíveis (quando a resposta é "não, é do mês
-  corrente"). Não é defeito: são dois meses devidos. Mas a busca precisa lidar com isso.
+**13 cenários no `conta-mensagens.js`, contra o `registrarDevolucao` de verdade.**
+
+**Um achado do próprio harness, que valia mais que os testes:** o Odoo de mentira devolvia
+`[]` para qualquer pergunta de schema fora de dois casos especiais. Isso significa que
+**todo caminho guardado por `campoExiste` era pulado** e parecia coberto — o BL-62 nasceu
+verde sem nunca ter rodado uma linha. O cenário agora declara quais campos existem.
+
+#### Falta: a pergunta da competência
+
+Quando o `A devolver` em aberto é de setembro e o pagamento chega em dezembro, o bot
+**não quita setembro**: registra dezembro e deixa setembro aberto, que é a verdade. Falta
+perguntar à pessoa a que mês o pagamento se refere.
+
+**O obstáculo é concreto, e não é preguiça.** Perguntar antes de registrar obriga a segurar
+o comprovante em sessão enquanto se espera a resposta — e comprovante é base64 de imagem ou
+PDF, tipicamente de 100 KB a 1 MB. O `CacheService` do Apps Script tem **100 KB por chave** e
+o `PropertiesService`, **9 KB por valor**. Não cabe. E se coubesse, criaria um caminho em que
+a pessoa some no meio e o pagamento se perde.
+
+**O desenho que resolve:** registrar primeiro, perguntar depois.
+
+> "Registrei R$ 50 como referente a **setembro** (era o seu mês em aberto).
+> Se este dízimo é de outro mês, toque em Corrigir."
+
+O dinheiro nunca fica no ar, não há base64 em sessão, e a pessoa ainda corrige. Custa um
+botão, uma entrada no roteador e a lógica de mover a competência — reabrindo o mês anterior
+se for o caso. **Isso é o próximo PR**, e honra a decisão de 22/09 (perguntar no WhatsApp),
+só invertendo a ordem.
 
 **Fora do desenho, de propósito:** oferta não ganha `A devolver`. Oferta não é compromisso
 mensal, e pré-criar registro de oferta produziria linha que nunca fecha.

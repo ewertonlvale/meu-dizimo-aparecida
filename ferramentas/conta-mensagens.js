@@ -246,6 +246,15 @@ function montarContexto(cenario) {
             ? [{ id: 2, related: false, readonly: false }]
             : [{ id: 2, related: 'x_studio_dizimista.x_studio_comunidade', readonly: true }];
         }
+        // Qualquer outro campo opcional: o cenário diz quais existem.
+        //
+        // Antes daqui, este ramo devolvia [] para tudo que não fosse um dos
+        // casos acima — e a consequência era pior que um teste faltando: TODO
+        // caminho guardado por `campoExiste` era pulado no harness e parecia
+        // coberto. Foi assim que o BL-62 nasceu verde sem nunca ter rodado.
+        if ((cenario.camposOdoo || []).indexOf(quer) >= 0) {
+          return [{ id: 3, name: quer, related: false, readonly: false }];
+        }
         return [];
       }
       // Quem já escreveu ao bot: é aqui que mora o `wa_id` de verdade. O
@@ -269,6 +278,17 @@ function montarContexto(cenario) {
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
       if (modelo === 'x_devolucao') {
+        // BL-62: a busca pelo mês em aberto e a que confere se o mês seguinte
+        // já existe. Vêm antes das outras porque as duas citam competência, e
+        // cair no ramo do histórico daria resposta errada em silêncio.
+        const porCompetencia = (dominio || []).find(d => d[0] === 'x_studio_competencia');
+        if (porCompetencia) {
+          const querStatus = (dominio || []).find(d => d[0] === 'x_studio_status');
+          const lista = (cenario.devolucoesPorCompetencia || []).filter(r =>
+            r.x_studio_competencia === porCompetencia[2]
+            && (!querStatus || r.x_studio_status === querStatus[2]));
+          return lista;
+        }
         // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
         // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
         // com histórico também dispararia o aviso de duplicata, e o teste
@@ -284,6 +304,13 @@ function montarContexto(cenario) {
     create: (modelo, dados) => {
       if (cenario.aoCriar) cenario.aoCriar(modelo, dados);
       return 99;
+    },
+    // BL-62: preencher um "A devolver" é um write, não um create. Sem espiar o
+    // write, o teste não distingue "preencheu o mês em aberto" de "criou outro
+    // registro" — que é exatamente a diferença que o item inteiro produz.
+    write: (modelo, id, dados) => {
+      if (cenario.aoEscrever) cenario.aoEscrever(modelo, id, dados);
+      return true;
     },
     buscarParametros:               () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
     listarComunidades:              () => [{ id: 1, x_name: 'Matriz' }],
@@ -2365,6 +2392,167 @@ console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
     } else {
       console.log(`✅ ${rotulo}: os ${codigos.length} códigos têm frase, e a rede cobre os ${naRede.length}`);
     }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês seguinte\n');
+
+// ──────────────────────────────────────────────────────────────────
+// BL-62, dentro do `registrarDevolucao` DE VERDADE — não de um stub. É o
+// caminho do dinheiro, onde já viveram BL-02, BL-26, BL-27 e BL-51, e o modo
+// de falhar aqui é caro nos dois sentidos: um registro a mais deixa o mês com
+// duas linhas, e um "A devolver" com data faz a pessoa parar de ser cobrada e
+// virar Regular sem ter pago nada.
+{
+  const CAMPOS = ['x_studio_competencia', 'x_studio_tipo_contribuicao',
+                  'x_studio_comunidade', 'x_studio_validacao'];
+
+  // `registrarDevolucao` exige comunidade (BL-41), e a tira do dizimista.
+  const DIZIMISTA = { id: 7, x_name: 'Ewerton', x_studio_comunidade: [3, 'Matriz'] };
+
+  function registra(cenario, dadosAnalise, extras) {
+    const criados = [], escritos = [];
+    const ctx = montarContexto(Object.assign({
+      camposOdoo: CAMPOS,
+      dizimistaNoOdoo: DIZIMISTA,
+      aoCriar:    (m, d) => { if (m === 'x_devolucao') criados.push(d); },
+      aoEscrever: (m, id, d) => { if (m === 'x_devolucao') escritos.push([id, d]); },
+    }, cenario));
+    const id = ctx.OdooService.registrarDevolucao(
+      7, dadosAnalise, null, 'imagem', 'ok',
+      Object.assign({ tipo: 'dizimo' }, extras || {}));
+    return { id, criados, escritos };
+  }
+
+  const CASOS = [];
+  const confere = (nome, ok, detalhe) => CASOS.push([nome, ok, detalhe]);
+
+  // 1. A competência é gravada, e é o mês da DATA DA DEVOLUÇÃO
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' });
+    const d = r.criados[0] || {};
+    confere('a competência sai do mês da data da devolução',
+      d.x_studio_competencia === '2026-09-01', JSON.stringify(d.x_studio_competencia));
+  }
+
+  // 2. Com mês em aberto DA MESMA competência: preenche, não cria
+  {
+    const r = registra({
+      devolucoesPorCompetencia: [{ id: 41, x_studio_competencia: '2026-09-01',
+                                   x_studio_status: 'A devolver' }],
+    }, { valor: 50, data: '20/09/2026' });
+    const pagou = r.escritos.find(([, d]) => d.x_studio_value === 50);
+    confere('mês em aberto da mesma competência é PREENCHIDO, não duplicado',
+      !!pagou && pagou[0] === 41 && r.id === 41,
+      `escritos=${JSON.stringify(r.escritos.map(e => e[0]))} criados=${r.criados.length}`);
+  }
+
+  // 3. Sem mês em aberto: cria normalmente
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' });
+    confere('sem mês em aberto, cria como sempre criou',
+      r.escritos.length === 0 && r.criados.length >= 1,
+      `escritos=${r.escritos.length} criados=${r.criados.length}`);
+  }
+
+  // 4. O mês SEGUINTE nasce, e nasce sem data
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' });
+    const aberto = r.criados.find((d) => d.x_studio_status === 'A devolver');
+    confere('o mês seguinte é aberto como "A devolver"',
+      !!aberto && aberto.x_studio_competencia === '2026-10-01',
+      JSON.stringify(aberto));
+    confere('e nasce SEM data — é isso que o torna invisível para a classificação',
+      !!aberto && !('x_studio_data_da_devolucao' in aberto),
+      JSON.stringify(aberto && Object.keys(aberto)));
+    confere('e SEM validação, para não entupir a fila do coordenador',
+      !!aberto && aberto.x_studio_validacao === false,
+      JSON.stringify(aberto && aberto.x_studio_validacao));
+  }
+
+  // 4b. A comunidade no mês aberto segue a MESMA guarda do BL-41: só é gravada
+  //     quando o campo aceita escrita. Enquanto for `related`, o Odoo a espelha
+  //     sozinho e gravá-la faria a escrita INTEIRA ser recusada — a devolução
+  //     se perderia. Os dois estados precisam estar cobertos, porque a base já
+  //     rodou nos dois.
+  {
+    const grava = registra({ comunidadeGravavel: true }, { valor: 50, data: '20/09/2026' });
+    const abertoG = grava.criados.find((d) => d.x_studio_status === 'A devolver');
+    confere('campo gravável: o mês aberto leva a comunidade do dizimista',
+      !!abertoG && abertoG.x_studio_comunidade === 3,
+      JSON.stringify(abertoG && abertoG.x_studio_comunidade));
+
+    const espelha = registra({}, { valor: 50, data: '20/09/2026' });
+    const abertoE = espelha.criados.find((d) => d.x_studio_status === 'A devolver');
+    confere('campo ainda related: NÃO grava comunidade, e o mês abre do mesmo jeito',
+      !!abertoE && !('x_studio_comunidade' in abertoE),
+      JSON.stringify(abertoE && Object.keys(abertoE)));
+  }
+
+  // 5. Dezembro vira janeiro do ano seguinte
+  {
+    const r = registra({}, { valor: 50, data: '15/12/2026' });
+    const aberto = r.criados.find((d) => d.x_studio_status === 'A devolver');
+    confere('dezembro abre janeiro do ano seguinte',
+      !!aberto && aberto.x_studio_competencia === '2027-01-01',
+      JSON.stringify(aberto && aberto.x_studio_competencia));
+  }
+
+  // 6. Se o mês seguinte JÁ existe, não nasce outro
+  {
+    const r = registra({
+      devolucoesPorCompetencia: [{ id: 55, x_studio_competencia: '2026-10-01',
+                                   x_studio_status: 'A devolver' }],
+    }, { valor: 50, data: '20/09/2026' });
+    const abertos = r.criados.filter((d) => d.x_studio_status === 'A devolver');
+    confere('mês seguinte que já existe não é criado de novo',
+      abertos.length === 0, `abertos criados=${abertos.length}`);
+  }
+
+  // 7. OFERTA não entra nesse ciclo
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' }, { tipo: 'oferta' });
+    const abertos = r.criados.filter((d) => d.x_studio_status === 'A devolver');
+    confere('oferta não abre mês nenhum — não é compromisso mensal',
+      abertos.length === 0, `abertos=${abertos.length}`);
+  }
+
+  // 8. Competência de OUTRO mês não é preenchida às cegas
+  //    O aberto é de setembro, o pagamento chega em dezembro. Enquanto a
+  //    pergunta ao dizimista não existir, setembro CONTINUA devendo — quitá-lo
+  //    sozinho seria inventar um fato.
+  {
+    const r = registra({
+      devolucoesPorCompetencia: [{ id: 41, x_studio_competencia: '2026-09-01',
+                                   x_studio_status: 'A devolver' }],
+    }, { valor: 50, data: '10/12/2026' });
+    const pagou = r.escritos.find(([, d]) => d.x_studio_value === 50);
+    confere('pagamento de dezembro NÃO quita o aberto de setembro',
+      !pagou && r.criados.length >= 1,
+      `escritos=${JSON.stringify(r.escritos.map(e => e[0]))}`);
+  }
+
+  // 9. Sem o campo de competência no Odoo, nada disso acontece
+  //    A base rodou muito tempo sem campos que vieram depois; o bot não pode
+  //    exigir schema que talvez não esteja lá.
+  {
+    const criados = [];
+    const ctx = montarContexto({
+      camposOdoo: ['x_studio_tipo_contribuicao', 'x_studio_comunidade'],
+      dizimistaNoOdoo: DIZIMISTA,
+      aoCriar: (m, d) => { if (m === 'x_devolucao') criados.push(d); },
+    });
+    ctx.OdooService.registrarDevolucao(7, { valor: 50, data: '20/09/2026' },
+      null, 'imagem', 'ok', { tipo: 'dizimo' });
+    confere('sem o campo de competência, registra como antes e não abre mês',
+      criados.length === 1 && !('x_studio_competencia' in criados[0]),
+      `criados=${criados.length}`);
+  }
+
+  for (const [nome, ok, detalhe] of CASOS) {
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}${ok ? '' : '\n     ' + detalhe}`);
   }
 }
 
