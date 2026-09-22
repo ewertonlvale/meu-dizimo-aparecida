@@ -164,6 +164,37 @@ esc, logs = roda([Rec(1, _dt.date(1975, 3, 14))], COM_CAMPO, _dt.date(2026, 9, 2
 confere('o log traz ano, quantos têm data e quantos mudaram',
         logs and '2026' in logs[0] and '1 atualizado' in logs[0], repr(logs))
 
+# 9. A DATA DE NASCIMENTO NUNCA É ESCRITA.
+#
+#    Esta ação varre os 508 dizimistas todo dia. Se um dia ela passar a gravar
+#    em x_studio_date — por um CAMPO trocado, por um copiar-e-colar de outra
+#    ação — o estrago é a base inteira de datas de nascimento, sem volta e sem
+#    nada acusando. É a garantia mais cara deste arquivo, então é a que fica
+#    conferida em vez de combinada.
+misto = [Rec(1, _dt.date(1975, 3, 14)), Rec(2, _dt.date(1976, 2, 29)), Rec(3, None)]
+nascimentos_antes = [r.x_studio_date for r in misto]
+
+campos_escritos = set()
+for hoje in (_dt.date(2026, 9, 22), _dt.date(2027, 1, 1), _dt.date(2028, 3, 5)):
+    esc, _ = roda(misto, COM_CAMPO, hoje)
+    for _ids, vals in esc:
+        campos_escritos |= set(vals)
+
+confere('a ação só escreve em x_studio_aniversario',
+        campos_escritos == {'x_studio_aniversario'}, repr(sorted(campos_escritos)))
+confere('as datas de nascimento saem intactas de três execuções',
+        [r.x_studio_date for r in misto] == nascimentos_antes,
+        repr([r.x_studio_date for r in misto]))
+
+# A mesma garantia, lida direto da fonte: vale também para um caminho que estes
+# cenários não exercitem.
+_escritas = [n for n in ast.walk(ast.parse(open(FONTE).read()))
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == 'write']
+_citam = [ast.dump(c)[:80] for c in _escritas if 'x_studio_date' in ast.dump(c)]
+confere('nenhuma chamada a write() no arquivo cita x_studio_date',
+        bool(_escritas) and not _citam, repr(_citam))
+
 print('\n' + '─' * 64)
 if falhas:
     print('❌ %d verificação(ões) fora do esperado.\n' % falhas)
