@@ -2539,7 +2539,19 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
         if (!erros.length) console.log('✅ o marcador dos botões do kanban ainda é substituível');
       } else {
         // Já instalado: os dois botões precisam continuar de pé.
-        const botoes = [...arch.matchAll(/<button\s+name="(\d+)"\s+type="action"[^>]*invisible="x_studio_validacao == '([a-z_]+)'"/g)];
+        // A tag inteira, e só depois os pedaços. A versão anterior casava o
+        // texto exato do `invisible`, e quebrou no dia em que a condição ganhou
+        // um segundo termo (` or x_studio_status == 'A devolver'`) — acusando
+        // "achei 0 botões" quando os dois estavam lá, corretos. Teste que
+        // depende da redação de um atributo testa a redação, não o que importa.
+        const botoes = [...arch.matchAll(/<button\s[^>]*>/g)]
+          .map((m) => ({
+            id: m[0].match(/name="(\d+)"/)?.[1],
+            acao: m[0].includes('type="action"'),
+            estado: m[0].match(/x_studio_validacao == '([a-z_]+)'/)?.[1],
+          }))
+          .filter((b) => b.id && b.acao && b.estado)
+          .map((b) => [null, b.id, b.estado]);
         const estados = botoes.map((b) => b[2]).sort();
         if (botoes.length !== 2) {
           erros.push(`esperava 2 botões de ação no card, achei ${botoes.length}`);
@@ -2573,8 +2585,10 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
       if (!fs.existsSync(caminho)) return null;
       const xml = fs.readFileSync(caminho, 'utf8');
       const achados = {};
-      for (const m of xml.matchAll(/<button\s+name="(\d+)"\s+type="action"[\s\S]*?invisible="x_studio_validacao == '([a-z_]+)'"/g)) {
-        achados[m[2]] = m[1];
+      for (const m of xml.matchAll(/<button\s[^>]*>/g)) {
+        const id = m[0].match(/name="(\d+)"/)?.[1];
+        const estado = m[0].match(/x_studio_validacao == '([a-z_]+)'/)?.[1];
+        if (id && m[0].includes('type="action"') && estado) achados[estado] = id;
       }
       return achados;
     };

@@ -8,7 +8,7 @@
       <div class="w-100">
         <div class="d-flex align-items-start justify-content-between mb-1">
           <field name="x_studio_value" class="fw-bold fs-4"/>
-          <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_status.raw_value == 'Confirmado' ? 'success' : record.x_studio_status.raw_value == 'Rejeitado' ? 'danger' : 'warning' }}" t-out="record.x_studio_status.value"/>
+          <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_status.raw_value == 'Confirmado' ? 'success' : record.x_studio_status.raw_value == 'Rejeitado' ? 'danger' : record.x_studio_status.raw_value == 'A devolver' ? 'secondary' : 'warning' }}" t-out="record.x_studio_status.value"/>
         </div>
         <field name="x_studio_dizimista" class="d-block text-truncate" invisible="not x_studio_dizimista"/>
         <field name="x_studio_nome_ofertante" class="d-block text-truncate" invisible="x_studio_dizimista or not x_studio_nome_ofertante"/>
@@ -48,14 +48,17 @@
           </span>
         </div>
         <!-- A validação do coordenador, para varrer com o olho (BL-60). O badge de cima é a leitura do bot; este é o julgamento humano. Cinza enquanto ninguém olhou, verde quando o dinheiro entrou, vermelho quando não entrou. -->
-        <div class="mt-2">
+        <!-- A validação some no "A devolver": mês que ninguém pagou não tem o
+             que validar, e enchê-la de meses futuros arruinaria a fila do
+             coordenador, que é justamente a tela que o BL-60 criou. -->
+        <div class="mt-2" t-if="record.x_studio_status.raw_value != 'A devolver'">
           <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_validacao.raw_value == 'validado' ? 'success' : record.x_studio_validacao.raw_value == 'nao_recebido' ? 'danger' : 'secondary' }}" t-out="record.x_studio_validacao.value"/>
         </div>
         <div class="mt-2 d-flex gap-1">
-          <button name="234" type="action" class="btn btn-sm btn-outline-success" invisible="x_studio_validacao == 'validado'">
+          <button name="234" type="action" class="btn btn-sm btn-outline-success" invisible="x_studio_validacao == 'validado' or x_studio_status == 'A devolver'">
             Validado
           </button>
-          <button name="235" type="action" class="btn btn-sm btn-outline-danger" invisible="x_studio_validacao == 'nao_recebido'">
+          <button name="235" type="action" class="btn btn-sm btn-outline-danger" invisible="x_studio_validacao == 'nao_recebido' or x_studio_status == 'A devolver'">
             Não recebido
           </button>
         </div>

@@ -53,11 +53,16 @@
          continua — "Pendente" segue significando algo num lançamento manual. -->
     <div class="d-flex align-items-center gap-2 mb-2">
       <span class="text-muted small" invisible="not x_studio_comprovante">Leitura automática do comprovante:</span>
-      <span class="text-muted small" invisible="x_studio_comprovante">Situação (lançamento sem comprovante):</span>
+      <span class="text-muted small" invisible="x_studio_comprovante or x_studio_status == 'A devolver'">Situação (lançamento sem comprovante):</span>
+      <span class="text-muted small" invisible="x_studio_status != 'A devolver'">Este mês ainda não foi devolvido:</span>
+      <!-- Os valores gravados continuam Pendente/Confirmado/Rejeitado; o que
+           mudou foram os rótulos, no instalar-status-dizimo.mjs. Por isso as
+           condições aqui citam o valor antigo — é ele que está no banco. -->
       <field name="x_studio_status" widget="badge" readonly="1" nolabel="1"
              decoration-success="x_studio_status == 'Confirmado'"
              decoration-danger="x_studio_status == 'Rejeitado'"
-             decoration-warning="x_studio_status == 'Pendente'"/>
+             decoration-warning="x_studio_status == 'Pendente'"
+             decoration-muted="x_studio_status == 'A devolver'"/>
     </div>
 
     <!-- O alerta da conferência sai do meio do formulário e vira banner no topo.
@@ -110,12 +115,25 @@
     <field name="x_studio_telefone_ofertante" widget="phone" invisible="x_studio_dizimista"/>
     <field name="x_studio_comunidade" options="{&quot;create_name_field&quot;:&quot;x_name&quot;,&quot;no_create&quot;:true}" required="1"/>
     <field name="x_studio_competencia" options="{&quot;numeric&quot;:true}" widget="date" string="Mês Referencia"/>
-    <field name="x_studio_data_da_devolucao" required="1"/>
+    <!-- OBRIGATÓRIO SÓ DEPOIS QUE ALGUÉM DEVOLVEU (BL-62).
+         Um registro "A devolver" não tem data nem valor: ele é o mês que
+         ainda vai ser devolvido. Com `required="1"` fixo, quem abrisse um
+         desses e salvasse seria OBRIGADO a inventar os dois — e nesse
+         instante o registro passaria a contar como devolução paga para a
+         classificação (classificar-dizimistas.py), para o lembrete mensal
+         (jaDevolveueEsteMes) e para o relatório. A pessoa deixaria de ser
+         cobrada e viraria Regular sem ter pago nada, em silêncio.
+
+         Os três leitores acima filtram por data preenchida, então um
+         "A devolver" é invisível para eles — desde que continue sem data. É
+         essa invariante que a condição protege. -->
+    <field name="x_studio_data_da_devolucao" required="x_studio_status != 'A devolver'"/>
   </xpath>
 
-  <!-- Valor obrigatório: dava para salvar uma devolução sem valor nenhum. -->
+  <!-- Valor obrigatório: dava para salvar uma devolução sem valor nenhum.
+       Pela mesma razão da data, a exigência não vale no "A devolver". -->
   <xpath expr="/form//field[@name='x_studio_value']" position="attributes">
-    <attribute name="required">1</attribute>
+    <attribute name="required">x_studio_status != 'A devolver'</attribute>
   </xpath>
 
   <!-- `create_uid` e `write_uid` saem do corpo. Ocupavam lugar nobre entre a
