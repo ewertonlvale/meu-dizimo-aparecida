@@ -203,6 +203,16 @@ const Router = {
       return;
     }
 
+    // ── BL-62: correção do mês de referência ───────────────────────────────
+    // Os ids do registro pago e do mês em aberto viajam DENTRO do id do botão,
+    // não em sessão. Por isso isto funciona mesmo horas depois, e mesmo se a
+    // sessão já tiver expirado — que é o caso comum, já que a devolução foi
+    // encerrada antes de a pergunta sair.
+    if (buttonId && buttonId.indexOf('comp_') === 0) {
+      ComprovanteHandler.corrigirMes(from, buttonId);
+      return;
+    }
+
     // Log de botões relevantes ao cadastro
     const botoesLogaveis = {
       'btn_numero_confirmar':   'Confirmar número',
