@@ -2487,6 +2487,43 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
       }
     }
   }
+
+  // ── Formulário e kanban precisam citar as MESMAS ações ───────────────────
+  // Os dois botões existem em dois arquivos, e cada um carrega o id numérico
+  // de uma ir.actions.server. Números iguais por coincidência hoje podem
+  // divergir amanhã — basta alguém recriar as ações e baixar só uma das views.
+  // Um botão apontando para id que não existe mais não avisa nada: ele
+  // aparece, é clicado, e o Odoo responde com erro na cara de quem usa.
+  {
+    const lerBotoes = (arq) => {
+      const caminho = path.join(dirViews, arq);
+      if (!fs.existsSync(caminho)) return null;
+      const xml = fs.readFileSync(caminho, 'utf8');
+      const achados = {};
+      for (const m of xml.matchAll(/<button\s+name="(\d+)"\s+type="action"[\s\S]*?invisible="x_studio_validacao == '([a-z_]+)'"/g)) {
+        achados[m[2]] = m[1];
+      }
+      return achados;
+    };
+
+    const noKanban = lerBotoes('x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml');
+    const noForm   = lerBotoes('x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml');
+
+    if (!noKanban || !noForm) {
+      falhas++;
+      console.log('❌ não achei uma das views de devolução para comparar os botões');
+    } else if (!Object.keys(noKanban).length) {
+      // Ainda não instalado: o kanban traz o marcador. Nada a comparar.
+      console.log('✅ (botões ainda não instalados — nada a comparar entre form e kanban)');
+    } else {
+      const k = JSON.stringify(noKanban, Object.keys(noKanban).sort());
+      const f = JSON.stringify(noForm, Object.keys(noKanban).sort());
+      const ok = k === f;
+      if (!ok) falhas++;
+      console.log(`${ok ? '✅' : '❌'} formulário e kanban citam as mesmas ações`
+        + (ok ? ` (${Object.values(noKanban).join(' e ')})` : `\n     kanban ${k}\n     form   ${f}`));
+    }
+  }
 }
 
 console.log('\n' + '─'.repeat(64));
