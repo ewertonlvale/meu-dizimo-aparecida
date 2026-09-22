@@ -88,13 +88,14 @@
 | BL-57 | O agrupamento "Mês Referencia" agrupa por um campo que o bot nunca grava | 🟡 | P | 📋 Aberto — `x_studio_competencia` só é lido, nunca escrito; todo registro do WhatsApp cai num balde "Nenhum" |
 | BL-58 | O mapa de dizimista continua vazio: o campo que ele lê não está no formulário | 🟡 | P | 📋 Aberto — precisa antes saber se `x_studio_partner_phone` é relacionado através de `x_studio_partner_id` |
 | BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
-| BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ Código pronto (21/09) — campo `x_studio_validacao` e barra clicável. **Falta instalar** com `--aplicar` |
+| BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ **Instalado (22/09)** — campo, barra clicável, coluna e filtros |
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | 📋 Aberto — o espaço já foi corrigido; falta humanizar os rótulos da seleção no Odoo |
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
-| BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ Código pronto (21/09) — badge versionado + dois botões via instalador. **Falta rodar** `--aplicar` e `--download` |
+| BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card, IDs versionados |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ Código pronto (22/09) — campo de aniversário + ação diária + calendário por comunidade. **Falta instalar** com `--aplicar` |
 | BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
+| BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
 
 ---
 
@@ -537,6 +538,43 @@ contexto da ação (não na view), e vale decidir junto o que conta: só `Valida
 (`pivot_arch_parser.js`), `__count` como medida declarável no XML e o `string` dela sendo
 respeitado (`views/utils.js:87,120`), medida `many2one` virando `count_distinct`
 (`pivot_model.js:1080`), e `stacked`/`type` na raiz do gráfico (`graph_arch_parser.js:20`).
+
+---
+
+### BL-67 — O `--download` apagou trabalho já mesclado 🔴 (P)
+
+**Aconteceu em 22/09, em produção.** Um `--download` passou por cima de duas views
+editadas neste repositório e ainda não levadas ao Odoo com `--update`: o pivô do BL-66 e o
+calendário do BL-65 voltaram à versão antiga. Dois PRs já mesclados, desfeitos — e o
+`git status` mostrou isso como se fosse o resultado normal de baixar.
+
+**A causa:** o download comparava só **dois** lados, disco e Odoo. Vendo-os diferentes,
+escolhia o Odoo. Mas "diferentes" não diz *quem se moveu* — e sem isso a escolha é chute.
+
+O `indice.json` guarda a digital do que o Odoo tinha no download anterior. Com essa terceira
+referência a pergunta tem resposta:
+
+| disco | Odoo | o que fazer |
+|---|---|---|
+| = base | ≠ base | o Odoo mudou → **baixar** |
+| ≠ base | = base | só o disco mudou → **preservar**, e dizer que falta `--update` |
+| ≠ base | ≠ base | os dois mudaram → **preservar**, e avisar que é conflito |
+| — | igual ao disco | mesmo significado → **manter** o texto do disco |
+
+`--forcar` continua descartando a edição local de propósito.
+
+**O `--update` já tinha a trava no sentido contrário** desde o começo — ele não passa por
+cima do que mudou no Studio. Faltava a simétrica. Uma metade de uma trava não é uma trava:
+é uma armadilha com um lado seguro.
+
+**Travado por teste:** a decisão virou uma função pura (`decidirDownload`) e o
+`conta-mensagens.js` exercita os sete casos. Conferi que dois deles ficam vermelhos com a
+lógica que estava em produção.
+
+**O que foi restaurado:** `x_devolucao.pivot.606` e `x_dizimista.calendar.595`, do commit
+anterior ao download. Nada mais se perdeu — o resto do que o download trouxe era o Odoo
+normalizando arch (comentário de várias linhas virando uma, xpath reescrito na forma
+posicional), que é o estado verdadeiro e fica.
 
 ---
 

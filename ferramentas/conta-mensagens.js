@@ -2296,6 +2296,59 @@ for (const r of REGRAS_DE_CONTEUDO) {
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🛡️  baixar-views: o --download não pode apagar edição local\n');
+
+// ──────────────────────────────────────────────────────────────────
+// Aconteceu em produção, em 22/09: um --download passou por cima de duas
+// views editadas AQUI e ainda não levadas ao Odoo com --update. O pivô e o
+// calendário voltaram à versão antiga, e o `git status` mostrou isso como se
+// fosse o resultado normal de baixar. Dois PRs já mesclados, desfeitos.
+//
+// A causa era o download comparar só dois lados — disco e Odoo — e, ao vê-los
+// diferentes, escolher o Odoo. Sem saber POR QUE diferem, essa escolha é
+// chute. O índice guarda a digital do que o Odoo tinha no download anterior,
+// e é ela que diz qual dos dois se moveu.
+//
+// O --update já tinha a trava no sentido contrário. Esta é a simétrica.
+{
+  const fonte = fs.readFileSync(path.join(RAIZ, 'ferramentas/baixar-views.mjs'), 'utf8');
+  const de = fonte.indexOf('const decidirDownload');
+  const ate = fonte.indexOf('};', de) + 2;
+  if (de < 0) {
+    falhas++;
+    console.log('❌ não achei decidirDownload em baixar-views.mjs');
+  } else {
+    const decidir = new Function(fonte.slice(de, ate) + '; return decidirDownload;')();
+
+    const A = 'digital-antiga', B = 'digital-nova', C = 'digital-outra';
+    const CASOS = [
+      // [nome, local, odoo, base, forcar, esperado]
+      ['os dois dizem a mesma coisa → mantém o texto do disco',
+       A, A, A, false, 'manter'],
+      ['só o Odoo mudou → baixa, que é para isso que o download serve',
+       A, B, A, false, 'baixar'],
+      ['SÓ O DISCO MUDOU → preserva (foi este caso que apagou o pivô)',
+       B, A, A, false, 'preservar'],
+      ['os dois mudaram, cada um para um lado → preserva, e avisa',
+       B, C, A, false, 'preservar'],
+      ['sem base no índice (primeiro download) → baixa',
+       B, C, null, false, 'baixar'],
+      ['--forcar descarta a edição local de propósito',
+       B, C, A, true, 'baixar'],
+      ['--forcar não atrapalha quando os dois são iguais',
+       A, A, A, true, 'manter'],
+    ];
+
+    for (const [nome, local, odoo, base, forcar, espera] of CASOS) {
+      const obtido = decidir(local, odoo, base, forcar);
+      const ok = obtido === espera;
+      if (!ok) falhas++;
+      console.log(`${ok ? '✅' : '❌'} ${nome}` + (ok ? '' : `  (esperado ${espera}, veio ${obtido})`));
+    }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n');
 
 // ──────────────────────────────────────────────────────────────────
@@ -2378,14 +2431,19 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
     }
   }
 
-  // ── O marcador dos botões do kanban ──────────────────────────────────────
-  // instalar-botoes-kanban.mjs acha um comentário no arch e o troca pelos dois
-  // botões, com os IDs das ações que ele acabou de criar. Se alguém renomear ou
-  // apagar esse comentário editando a view, o instalador para com um erro — na
-  // máquina de quem usa, longe daqui.
+  // ── Os botões de validação no card do kanban ────────────────────────────
+  // Duas situações são válidas, e a verificação aceita as duas:
   //
-  // Esta verificação roda a substituição de verdade, contra o arquivo de
-  // verdade, e confere que ela ainda pega.
+  //   ANTES DE INSTALAR — o arch traz o comentário MARCADOR-BOTOES-VALIDACAO,
+  //     e instalar-botoes-kanban.mjs o troca pelos botões com os IDs das ações
+  //     que acabou de criar. Se alguém renomear ou apagar esse comentário, o
+  //     instalador para na máquina de quem usa, longe daqui.
+  //
+  //   DEPOIS DE INSTALAR — o marcador não existe mais, e no lugar dele há dois
+  //     <button type="action"> apontando para IDs numéricos. Aqui o que
+  //     importa é que os dois continuem lá e continuem condicionados ao campo:
+  //     um --download que voltasse a view para antes dos botões apagaria o
+  //     trabalho sem nada acusar.
   {
     const ARQ = 'x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml';
     const MARCADOR = 'MARCADOR-BOTOES-VALIDACAO';
@@ -2393,27 +2451,39 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
 
     if (!fs.existsSync(caminho)) {
       falhas++;
-      console.log(`❌ ${ARQ} não existe — o instalador dos botões mira nele`);
+      console.log(`❌ ${ARQ} não existe — é o card que leva os botões`);
     } else {
-      // O baixar-views tira o cabeçalho da ferramenta antes de subir; o arch
-      // que o instalador vê no Odoo é o resto.
       const arch = fs.readFileSync(caminho, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
-      const fingidos = '<div class="mt-2"><button name="1" type="action">x</button></div>';
-      const depois = arch.replace(new RegExp(`<!--\\s*${MARCADOR}[\\s\\S]*?-->`), fingidos);
-
       const erros = [];
-      if (!arch.includes(MARCADOR))   erros.push('o marcador sumiu do arch');
-      if (depois === arch)            erros.push('a troca não pegou');
-      if (depois.includes(MARCADOR))  erros.push('sobrou marcador depois da troca');
-      // O comentário do marcador precisa existir COMO comentário: se virar
-      // texto solto, o Odoo mostra a explicação no card.
-      if (!/<!--\s*MARCADOR-BOTOES-VALIDACAO/.test(arch)) erros.push('o marcador não está dentro de <!-- -->');
+
+      if (arch.includes(MARCADOR)) {
+        // Ainda não instalado: a troca precisa continuar pegando.
+        const fingidos = '<div><button name="1" type="action">x</button></div>';
+        const depois = arch.replace(new RegExp(`<!--\\s*${MARCADOR}[\\s\\S]*?-->`), fingidos);
+        if (!/<!--\s*MARCADOR-BOTOES-VALIDACAO/.test(arch)) erros.push('o marcador não está dentro de <!-- -->');
+        if (depois === arch) erros.push('a troca do marcador não pegou');
+        if (depois.includes(MARCADOR)) erros.push('sobrou marcador depois da troca');
+        if (!erros.length) console.log('✅ o marcador dos botões do kanban ainda é substituível');
+      } else {
+        // Já instalado: os dois botões precisam continuar de pé.
+        const botoes = [...arch.matchAll(/<button\s+name="(\d+)"\s+type="action"[^>]*invisible="x_studio_validacao == '([a-z_]+)'"/g)];
+        const estados = botoes.map((b) => b[2]).sort();
+        if (botoes.length !== 2) {
+          erros.push(`esperava 2 botões de ação no card, achei ${botoes.length}`);
+        } else if (estados.join(',') !== 'nao_recebido,validado') {
+          erros.push(`os botões não cobrem os dois estados: ${estados.join(', ')}`);
+        }
+        if (!arch.includes('<field name="x_studio_validacao"/>')) {
+          erros.push('x_studio_validacao não está declarado — as condições invisible não avaliam');
+        }
+        if (!erros.length) {
+          console.log(`✅ os dois botões de validação estão no card (ações ${botoes.map((b) => b[1]).join(' e ')})`);
+        }
+      }
 
       if (erros.length) {
         falhas += erros.length;
         for (const e of erros) console.log(`❌ botões do kanban: ${e}`);
-      } else {
-        console.log('✅ o marcador dos botões do kanban ainda é substituível');
       }
     }
   }

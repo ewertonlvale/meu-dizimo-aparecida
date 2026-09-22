@@ -303,6 +303,36 @@ const digital = (xml) => createHash('sha256')
     .trim())
   .digest('hex');
 
+/**
+ * O que fazer com um arquivo durante o --download.
+ *
+ * Três digitais entram: a do disco, a do Odoo agora, e a que o índice guardou
+ * no download anterior. É a terceira que diz QUAL LADO mudou — sem ela só se
+ * sabe que os dois diferem, e aí a escolha vira chute. O chute que estava aqui
+ * era "o Odoo manda", e ele apagou duas views editadas neste repositório que
+ * ainda não tinham subido com --update.
+ *
+ * @param {string} hLocal  digital do corpo que está no disco
+ * @param {string} hOdoo   digital do arch que o Odoo tem agora
+ * @param {string|null} hBase digital que o índice guardou no último download
+ * @param {boolean} forcar  --forcar: aceita perder a edição local
+ * @returns {'manter'|'preservar'|'baixar'}
+ *   manter    — os dois querem dizer a mesma coisa; fica o texto do disco,
+ *               com os comentários e a indentação que alguém escreveu
+ *   preservar — só o disco mudou; baixar apagaria a edição. Não escreve.
+ *   baixar    — o Odoo mudou (ou não há base para comparar); sobrescreve
+ */
+const decidirDownload = (hLocal, hOdoo, hBase, forcar = false) => {
+  if (hLocal === hOdoo) return 'manter';
+  if (forcar || !hBase) return 'baixar';
+  // Disco igual à base: quem mudou foi o Odoo. É para isso que o download serve.
+  if (hLocal === hBase) return 'baixar';
+  // Disco diferente da base: há edição local ainda não levada ao Odoo.
+  // Vale tanto quando só o disco mudou quanto quando os dois mudaram — no
+  // segundo caso escolher um lado sozinho seria pior ainda.
+  return 'preservar';
+};
+
 // Tira o comentário de anotação que o download escreve no topo do arquivo.
 // Ele é nosso, não é parte do arch — subir junto poluiria a view no Odoo.
 // Só o PRIMEIRO comentário, e só se vier antes de qualquer tag: um
@@ -418,6 +448,31 @@ async function baixar() {
     tipo: CONFIG.tipo || 'todos',
     modelos: [],
   };
+
+  // O ÍNDICE ANTERIOR, lido ANTES de ser sobrescrito.
+  //
+  // Ele guarda a digital do que o Odoo tinha no último download, e é isso que
+  // permite saber QUAL DOS DOIS LADOS mudou desde então. Sem essa referência o
+  // download só sabe que local e Odoo diferem — e, sem saber por quê,
+  // sobrescrevia o disco. Foi assim que uma edição feita aqui e ainda não
+  // subida com --update foi apagada por um --download: duas views voltaram à
+  // versão antiga, e o `git status` mostrou isso como se fosse resultado
+  // normal do download.
+  //
+  // O --update já tinha essa trava no sentido contrário (não passa por cima do
+  // que mudou no Odoo). Esta é a simétrica, que faltava.
+  const hashAnterior = new Map();
+  try {
+    const anterior = JSON.parse(readFileSync(join(CONFIG.saida, 'indice.json'), 'utf8'));
+    for (const m of anterior.modelos || []) {
+      for (const v of m.views || []) {
+        if (v.arquivo && v.hash) hashAnterior.set(v.arquivo, v.hash);
+      }
+    }
+  } catch { /* primeiro download, ou índice ilegível: sem referência, sem trava */ }
+
+  // Arquivos que o download NÃO sobrescreveu por terem edição local pendente.
+  const preservados = [];
   // Tudo que este download escreveu. O que sobrar na pasta e não estiver aqui
   // é restos de um download anterior — view apagada no Odoo, ou renomeada.
   const escritos = new Set(['.gitignore', 'indice.json']);
@@ -465,14 +520,31 @@ async function baixar() {
     //
     // O cabeçalho é sempre reescrito: ele carrega id, herança e prioridade,
     // que mudam sem o corpo mudar.
-    const escrever = async (arquivo, cabecalho, arch) => {
+    const escrever = async (arquivo, cabecalho, arch, protegivel = false) => {
       const caminho = join(CONFIG.saida, arquivo);
-      let corpo = indentar(arch);
+      const hOdoo = digital(arch);
+
       if (existsSync(caminho)) {
         const noDisco = semCabecalho(readFileSync(caminho, 'utf8'));
-        if (noDisco && digital(noDisco) === digital(arch)) corpo = noDisco;
+        if (noDisco) {
+          const hLocal = digital(noDisco);
+          const hBase = protegivel ? (hashAnterior.get(arquivo) || null) : null;
+
+          switch (decidirDownload(hLocal, hOdoo, hBase, CONFIG.forcar)) {
+            case 'manter':
+              // Mesmo significado dos dois lados: fica o texto do disco. Só o
+              // cabeçalho é reescrito, que é onde id e prioridade moram.
+              await writeFile(caminho, cabecalho + noDisco, 'utf8');
+              return true;
+            case 'preservar':
+              preservados.push({ arquivo, tambemNoOdoo: hOdoo !== hBase });
+              return false;
+          }
+        }
       }
-      await writeFile(caminho, cabecalho + corpo, 'utf8');
+
+      await writeFile(caminho, cabecalho + indentar(arch), 'utf8');
+      return true;
     };
 
     for (const v of views) {
@@ -482,13 +554,15 @@ async function baixar() {
       // os tipos são dezenas de arquivos, e achar "a list de dizimista"
       // precisa ser olhar, não abrir.
       const arquivo = `${seguro(modelo)}.${seguro(v.type)}.${v.id}.${seguro(v.name)}.xml`;
-      await escrever(arquivo,
+      const gravou = await escrever(arquivo,
         `<!-- ${modelo} · view ${v.id} · ${v.name} · ${heranca}`
           + ` · ${v.type} · prioridade ${v.priority}${v.active ? '' : ' · INATIVA'} -->\n`,
-        v.arch_db);
+        v.arch_db, true);
       const modulo = modulos[v.id] || null;
       const doCore = modulo && modulo !== 'studio_customization';
-      console.log(`   ✓ ${arquivo}  (${heranca}${doCore ? `, do módulo ${modulo} — somente leitura` : ''})`);
+      console.log(`   ${gravou ? '✓' : '🛡'} ${arquivo}`
+        + `  (${heranca}${doCore ? `, do módulo ${modulo} — somente leitura` : ''}`
+        + `${gravou ? '' : ', PRESERVADO — edição local não subiu ainda'})`);
       escritos.add(arquivo);
       entrada.views.push({
         id: v.id, name: v.name, tipo: v.type, priority: v.priority, active: v.active,
@@ -572,6 +646,26 @@ async function baixar() {
   const comb  = indice.modelos.reduce((n, m) => n + m.combinadas.length, 0);
   console.log(`\n✅ ${indice.modelos.length} modelo(s), ${total} view(s) + ${comb} combinada(s)`);
   console.log(`   em ${CONFIG.saida}/  (índice em indice.json)\n`);
+
+  if (preservados.length) {
+    const conflito = preservados.filter((p) => p.tambemNoOdoo);
+    console.log(`🛡  ${preservados.length} arquivo(s) NÃO foram sobrescritos:`);
+    console.log('   eles têm edição feita aqui que ainda não subiu para o Odoo.\n');
+    for (const p of preservados) {
+      console.log(`   · ${p.arquivo}${p.tambemNoOdoo ? '   ⚠️ e o Odoo TAMBÉM mudou' : ''}`);
+    }
+    console.log('');
+    console.log('   Para levá-las ao Odoo:  node ferramentas/baixar-views.mjs --update');
+    if (conflito.length) {
+      console.log('');
+      console.log(`   ⚠️  ${conflito.length} delas mudaram DOS DOIS LADOS. Aí o --update também`);
+      console.log('      vai recusar, e com razão: alguém mexeu no Studio no meio do');
+      console.log('      caminho. Olhe as duas versões antes de escolher um lado.');
+    }
+    console.log('');
+    console.log('   Para descartar a edição local e ficar com o que está no Odoo:');
+    console.log('   repita o download com --forcar.\n');
+  }
 }
 
 // ---------------------------------------------------------------------------
