@@ -94,6 +94,7 @@
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
 | BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ Código pronto (21/09) — badge versionado + dois botões via instalador. **Falta rodar** `--aplicar` e `--download` |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ Código pronto (22/09) — campo de aniversário + ação diária + calendário por comunidade. **Falta instalar** com `--aplicar` |
+| BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
 
 ---
 
@@ -495,6 +496,47 @@ a escrita indevida é introduzida.
 **Uma coisa que o instalador conta e vale ler:** quantos dos 508 dizimistas têm data de
 nascimento preenchida. Se forem poucos, o calendário nasce quase vazio — e aí o que falta é
 cadastro, não view. Melhor saber antes de abrir a tela.
+
+---
+
+### BL-66 — Dízimos e ofertas por mês ✅ (P)
+
+**O que existia:** o pivô de `x_devolucao` era literalmente
+`<pivot><field name="x_studio_value" type="measure"/></pivot>` — abria num número só, o
+total de tudo desde sempre, sem linha nem coluna. E o gráfico agrupava por
+`x_studio_competencia`, que o bot nunca grava (BL-57), então virava uma barra chamada
+"Nenhum".
+
+**O que passa a existir:** mês nas linhas, tipo de contribuição nas colunas, e três
+medidas — valor, quantidade de lançamentos, e **pessoas distintas**. Essa última sai de
+graça: o Odoo agrega medida `many2one` como `count_distinct`, então
+`x_studio_dizimista` responde "quantas pessoas diferentes contribuíram", que não é o mesmo
+que quantos lançamentos houve.
+
+**"Informo a comunidade e o mês"** vira isto:
+- a **comunidade** já está no painel da esquerda — a view de busca tem `<searchpanel>` com
+  `x_studio_comunidade`, e um clique isola a sua
+- o **mês** é a primeira linha, e não um campo a preencher: todos aparecem, com setembro ao
+  lado de agosto — que é a pergunta que vem logo depois de "quanto entrou em setembro"
+
+Uma tela de formulário com dois campos e um botão exigiria um modelo transitório e código
+Python, que o Odoo Online com Studio não comporta sem módulo; e entregaria **menos**, porque
+mostraria um mês de cada vez e não exportaria para planilha.
+
+**⚠️ O total é bruto**, de propósito. Entra tudo que foi registrado, inclusive o que o bot
+marcou como `Rejeitado` e o que o coordenador marcou como `Não recebido`. Relatório que
+esconde linha sozinho faz dinheiro sumir sem explicação. Para separar, basta acrescentar
+"Validação" como linha ou coluna pelo menu do próprio pivô — o agrupamento já está na view
+de busca desde o BL-60.
+
+**Se a paróquia quiser o número líquido como padrão**, o caminho é um filtro padrão no
+contexto da ação (não na view), e vale decidir junto o que conta: só `Validado`, ou
+`Validado` mais `A validar`.
+
+**Conferido na fonte da `saas-19.3`, não deduzido:** `interval` em campo de data
+(`pivot_arch_parser.js`), `__count` como medida declarável no XML e o `string` dela sendo
+respeitado (`views/utils.js:87,120`), medida `many2one` virando `count_distinct`
+(`pivot_model.js:1080`), e `stacked`/`type` na raiz do gráfico (`graph_arch_parser.js:20`).
 
 ---
 
