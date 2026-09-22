@@ -92,7 +92,7 @@
 | BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | 📋 Aberto — o espaço já foi corrigido; falta humanizar os rótulos da seleção no Odoo |
 | BL-62 | Dízimo do mês seguinte criado automaticamente, em estado Previsto | 🟠 | G | 📋 Desenho fechado (21/09) — mexe no `registrarDevolucao`, que é o caminho do dinheiro. PR próprio |
 | BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
-| BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card, IDs versionados |
+| BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
 | BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ Código pronto (22/09) — campo de aniversário + ação diária + calendário por comunidade. **Falta instalar** com `--aplicar` |
 | BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
 | BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
@@ -314,11 +314,21 @@ vista, então as duas colunas ficam juntas na lista.
   do bot desceu para uma linha logo abaixo, como badge só-leitura
 - Coluna e filtros na lista e na busca
 
-**Por que barra de status e não o botão "Validar" que foi pedido:** botão de header no
-Odoo Online chama uma `ir.actions.server` por **ID numérico**, e esse ID só nasce no
-`--aplicar`. O arquivo versionado da view não teria como carregá-lo, e cada `--update`
-quebraria o botão. A barra clicável é view pura — e dá os três estados nomeados num
-clique, em vez de um botão com um destino só.
+**Sobre o botão pedido, e como ele acabou existindo:** na primeira volta o formulário ficou
+só com a barra de status, porque botão de header chama uma `ir.actions.server` por **ID
+numérico** e esse ID só nasce no `--aplicar` — não havia como versioná-lo antes de existir.
+Depois que o `instalar-botoes-kanban.mjs` criou as ações **234** e **235**, os números
+passaram a ser conhecidos, e os botões entraram no formulário direto no arquivo, sem
+instalador.
+
+A barra continua clicável ao lado deles de propósito: os botões só andam para a frente, e é
+a barra que permite voltar para `A validar` depois de um clique errado.
+
+**Risco que isso cria, e como está coberto:** os ids vivem em dois arquivos. Se alguém
+recriar as ações, os números mudam e um botão passa a apontar para o nada — sem aviso; ele
+aparece, é clicado, e o Odoo responde com erro na cara de quem usa. O `conta-mensagens.js`
+confere que formulário e kanban citam **os mesmos ids**, então a divergência aparece na
+verificação antes de aparecer na tela.
 
 **Quem validou e quando:** o campo nasce com `tracking` e `x_devolucao` tem chatter, então
 cada mudança vira uma linha no histórico do registro, com autor e horário. Dois campos a

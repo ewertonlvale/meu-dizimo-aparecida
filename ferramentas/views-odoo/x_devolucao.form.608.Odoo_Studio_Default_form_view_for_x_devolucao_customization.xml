@@ -15,6 +15,30 @@
        cada execução. A barra clicável é view pura, e dá três estados nomeados
        num clique em vez de um botão com um destino só. -->
   <xpath expr="/form/header" position="inside">
+    <!-- OS MESMOS DOIS BOTÕES DO CARD DO KANBAN (BL-64).
+         Os números são as ir.actions.server que o
+         ferramentas/instalar-botoes-kanban.mjs criou nesta instância. Aqui eu
+         pude escrevê-los direto no arquivo porque já existiam quando este
+         formulário foi editado — no kanban não dava, e foi por isso que aquele
+         precisou de instalador.
+
+         Se alguém recriar as ações, os números mudam e estes botões passam a
+         apontar para o nada. O conta-mensagens.js confere que formulário e
+         kanban citam os MESMOS ids, então a divergência aparece aqui antes de
+         aparecer na tela de quem usa.
+
+         Cada botão some quando o registro já está no estado que ele aplica:
+         oferecer "Validado" no que já está validado é convidar a um clique que
+         não faz nada. -->
+    <button name="234" type="action" string="Validado" class="btn-success"
+            invisible="x_studio_validacao == 'validado'"/>
+    <button name="235" type="action" string="Não recebido" class="btn-secondary"
+            invisible="x_studio_validacao == 'nao_recebido'"/>
+
+    <!-- A barra continua clicável, e não vira enfeite ao lado dos botões:
+         os botões só andam para a frente, e é ela que permite voltar para
+         "A validar" depois de um clique errado. Sem isso, errar seria
+         definitivo pela tela. -->
     <field name="x_studio_validacao" widget="statusbar" options="{'clickable': '1'}"/>
   </xpath>
 
