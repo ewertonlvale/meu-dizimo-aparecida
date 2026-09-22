@@ -1814,6 +1814,28 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 
 ---
 
+## Publicação de 22/09/2026 ✅
+
+`clasp push` e nova versão do deployment feitos em 22/09. Passou a valer no bot, de uma vez:
+
+| | |
+|---|---|
+| BL-52 | a data do comprovante em qualquer layout |
+| BL-53 | a oferta grava o valor do comprovante, não o digitado |
+| BL-62 | competência, mês em aberto preenchido, mês seguinte aberto, e a pergunta do mês |
+
+Era a primeira publicação desde 20/09 — os três subiram juntos, e nenhum deles tinha rodado
+uma vez em produção. O roteiro de conferência está logo abaixo; o que ele pede em primeiro
+lugar é um dízimo de verdade, porque é o caminho que os três atravessam.
+
+⚠️ **O `registrarDevolucao` passou a fazer mais chamadas RPC por devolução** (procurar o mês
+em aberto, conferir se o mês seguinte já existe, e às vezes um `write` no lugar do `create`).
+Todas são guardadas: se qualquer uma falhar, a devolução é registrada do mesmo jeito e só a
+previsibilidade se perde. Mas isso interage com BL-24 (sem retry) e BL-21 (teto de execuções),
+que seguem abertos — vale olhar o tempo de execução no log depois das primeiras devoluções.
+
+---
+
 ## Checklist de publicação (17/09/2026)
 
 Nada do que foi corrigido vale no bot antes destes passos. Ordem sugerida, tudo em ambiente de teste primeiro:
