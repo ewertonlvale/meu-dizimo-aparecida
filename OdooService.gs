@@ -901,286 +901,70 @@ const OdooService = {
     console.log(`📊 [OdooService] Registrando devolução (tipo: ${tipoComprovante}):`,
       JSON.stringify({...dados, x_studio_comprovante: comprovanteBase64 ? `[${comprovanteBase64.length} chars]` : null}, null, 2));
 
-    // ── BL-62: PREENCHER o mês em aberto, em vez de criar um segundo ────────
-    //
-    // Se já existe um "A devolver" desta pessoa para ESTA competência, ele é a
-    // linha que estava esperando este pagamento. Criar outro deixaria o mês com
-    // dois registros: um previsto que nunca fecha e um pago.
-    //
-    // Só quando a competência BATE. Pagamento que chega em dezembro para um
-    // aberto de setembro é outro caso — precisa perguntar a que mês se refere,
-    // e essa pergunta ainda não existe. Até lá o aberto antigo fica aberto, que
-    // é a verdade: aquele mês continua devendo.
-    const aberto = this._aDevolverDaCompetencia(dizimistaId, competencia, tipo);
-    let id;
-    if (aberto) {
-      this.write('x_devolucao', aberto, dados);
-      id = aberto;
-      console.log(`✅ [Devolução] Preenchi o "A devolver" ${aberto} da competência ${competencia}`);
-    } else {
-      id = this.create('x_devolucao', dados);
-    }
-
-    // ── E abre o mês seguinte ───────────────────────────────────────────────
-    //
-    // Depois do registro, e num try próprio, de propósito: isto é
-    // previsibilidade, e previsibilidade não pode derrubar o registro de um
-    // pagamento que já aconteceu. Se falhar, a devolução está gravada e o pior
-    // que acontece é o mês seguinte não aparecer — o que a próxima devolução
-    // conserta sozinha.
-    try {
-      this._abrirMesSeguinte(dizimistaId, comunidadeId, competencia, tipo);
-    } catch (e) {
-      console.warn(`⚠️ [Devolução] Não consegui abrir o mês seguinte: ${e.message}`);
-    }
-
-    return id;
+    return this.create('x_devolucao', dados);
   },
 
   /**
-   * A quais meses este pagamento PODE se referir? (BL-70)
+   * Este pagamento precisa que a pessoa escolha o mês? (BL-71)
    *
-   * Do mês seguinte à última devolução paga até o mês que acabou de ser
-   * registrado. Um só na lista quer dizer que não há dúvida.
+   * A REGRA DE OURO, em uma frase: se não é a primeira devolução e o mês
+   * ANTERIOR não tem devolução nenhuma, pergunte se é deste mês ou do anterior.
    *
-   * POR QUE O INTERVALO, E NÃO O "MÊS EM ABERTO"
-   *   A versão anterior só perguntava quando existia um registro `A devolver`
-   *   para oferecer. Só que a corrente abre um mês por vez: quem pagou julho e
-   *   voltou em setembro tem agosto sem registro NENHUM — e o bot gravava
-   *   setembro calado, sem nunca mencionar agosto.
+   * Tudo é relativo à COMPETÊNCIA REGISTRADA, que é o mês da data do
+   * comprovante — não ao dia de hoje. É o que faz o caso mais comum funcionar
+   * sozinho: quem paga no dia 1º de outubro pelo dízimo de setembro tem
+   * competência outubro, setembro vazio, e a pergunta aparece.
    *
-   *   E preencher agosto sozinho seria pior: há quem devolva a cada dois ou
-   *   três meses por hábito, e para essa pessoa agosto não é dívida, é o
-   *   ritmo dela. Quem sabe a que mês o dinheiro se refere é ela.
+   * PRIMEIRA DEVOLUÇÃO NÃO PERGUNTA. Não há histórico de onde tirar dúvida, e
+   * perguntar a quem está começando só confunde.
    *
-   * SEM DEVOLUÇÃO ANTERIOR, NÃO HÁ INTERVALO. Primeira devolução da vida não
-   * gera pergunta — não há de onde contar.
+   * Registros `A devolver` não contam como devolução — são previsão, não
+   * pagamento. Restam alguns na base, de antes do BL-71.
    *
-   * @returns {string[]} competências 'aaaa-mm-01', da mais antiga à registrada
+   * @returns {string|null} a competência do mês anterior, ou null se não há dúvida
    */
-  mesesCandidatos(dizimistaId, competenciaRegistrada, tipo = 'dizimo') {
-    if (!dizimistaId || tipo === 'oferta') return [competenciaRegistrada];
-    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return [competenciaRegistrada];
+  mesAnteriorSemDevolucao(dizimistaId, competencia, tipo = 'dizimo') {
+    if (!dizimistaId || tipo === 'oferta') return null;
+    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
 
-    let ultima = null;
+    let [ano, mes] = String(competencia).split('-').map(Number);
+    if (!ano || !mes) return null;
+    if (--mes < 1) { mes = 12; ano--; }
+    const anterior = `${ano}-${String(mes).padStart(2, '0')}-01`;
+
     try {
-      const regs = this.searchRead('x_devolucao', ['x_studio_competencia'], [
+      // Primeira devolução da vida? Então não há dúvida nenhuma a levantar.
+      const anteriores = this.searchRead('x_devolucao', ['id'], [
         ['x_studio_dizimista',   '=',  dizimistaId],
         ['x_studio_status',      '!=', STATUS_A_DEVOLVER],
-        ['x_studio_competencia', '<',  competenciaRegistrada]
-      ], { order: 'x_studio_competencia desc', limit: 1 });
-      ultima = regs && regs[0] && regs[0].x_studio_competencia;
+        ['x_studio_competencia', '<',  competencia]
+      ], { limit: 1 });
+      if (!anteriores || !anteriores.length) return null;
+
+      // Há histórico. O mês imediatamente anterior está coberto?
+      const noAnterior = this.searchRead('x_devolucao', ['id'], [
+        ['x_studio_dizimista',   '=',  dizimistaId],
+        ['x_studio_status',      '!=', STATUS_A_DEVOLVER],
+        ['x_studio_competencia', '=',  anterior]
+      ], { limit: 1 });
+      return (noAnterior && noAnterior.length) ? null : anterior;
     } catch (e) {
-      console.warn(`⚠️ [Competência] Não consegui ver a última devolução: ${e.message}`);
-      return [competenciaRegistrada];
+      console.warn(`⚠️ [Competência] Não consegui olhar o mês anterior: ${e.message}`);
+      return null;
     }
-    if (!ultima) return [competenciaRegistrada];
-
-    const meses = [];
-    let [ano, mes] = String(ultima).split('-').map(Number);
-    for (let i = 0; i < 240; i++) {          // teto físico: 20 anos
-      if (++mes > 12) { mes = 1; ano++; }
-      const c = `${ano}-${String(mes).padStart(2, '0')}-01`;
-      meses.push(c);
-      if (c >= competenciaRegistrada) break;
-    }
-
-    // Quem some por anos geraria uma lista impossível de ler. Os seis mais
-    // recentes cobrem o ritmo mais espaçado que a paróquia descreveu — de dois
-    // em dois, de três em três meses — com folga.
-    return meses.length > 6 ? meses.slice(-6) : meses;
   },
 
   /**
-   * Passa a devolução para a competência escolhida pela pessoa. (BL-70)
+   * Passa a devolução para a competência escolhida pela pessoa. (BL-71)
    *
-   * Se já existe um `A devolver` daquele mês, TROCA as competências entre os
-   * dois: o mês escolhido fica pago e o que estava pago volta a ficar aberto.
-   * Se não existe, só grava — não há nada para reabrir, e inventar um `A
-   * devolver` seria decidir pela pessoa que ela deve aquele mês.
-   *
-   * @returns {boolean}
+   * Só grava. Não cria registro para o mês que sobrou, não reabre nada: o bot
+   * não sabe se aquele mês é dívida ou apenas o ritmo de quem devolve de dois
+   * em dois meses.
    */
-  definirCompetencia(idPago, competencia, dizimistaId) {
-    const abertos = this.searchRead('x_devolucao', ['id'], [
-      ['x_studio_dizimista',   '=', dizimistaId],
-      ['x_studio_status',      '=', STATUS_A_DEVOLVER],
-      ['x_studio_competencia', '=', competencia]
-    ], { limit: 1 });
-
-    if (abertos && abertos.length) return this.trocarCompetencia(idPago, abertos[0].id);
-
+  definirCompetencia(idPago, competencia) {
     this.write('x_devolucao', idPago, { x_studio_competencia: competencia });
     console.log(`📅 [Devolução] ${idPago} passou a valer para ${competencia}`);
     return true;
-  },
-
-  /**
-   * Há um mês em aberto DIFERENTE do que acabou de ser registrado? (BL-62)
-   *
-   * Quando alguém paga em dezembro e tem setembro em aberto, o bot não tem como
-   * saber de qual mês é o pagamento. A resposta honesta é registrar dezembro e
-   * deixar setembro aberto — e então PERGUNTAR, em vez de adivinhar.
-   *
-   * Perguntar ANTES de registrar não cabe: obrigaria a segurar o comprovante em
-   * sessão enquanto se espera a resposta, e comprovante é base64 de 100 KB a
-   * 1 MB, contra 100 KB por chave no CacheService e 9 KB por valor no
-   * PropertiesService. Além de criar um caminho em que a pessoa some no meio e
-   * o pagamento se perde. Registrar primeiro tira o dinheiro do ar.
-   *
-   * @returns {{id: number, competencia: string}|null}
-   */
-  mesEmAbertoDiferente(dizimistaId, competenciaRegistrada, tipo = 'dizimo') {
-    if (!dizimistaId || tipo === 'oferta') return null;
-    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
-    try {
-      // O QUE FAZ UM MÊS EM ABERTO VIRAR PERGUNTA: ele já ter passado.
-      //
-      // Duas versões erradas antes desta, e as duas por não separar "mês em
-      // aberto" de "mês devido":
-      //
-      //   1ª — procurava mês ANTERIOR à competência registrada. A pessoa tinha
-      //        maio em aberto e mandou um comprovante de abril; maio é
-      //        posterior, então a pergunta nem foi considerada e o bot gravou
-      //        abril calado.
-      //
-      //   2ª — passou a procurar qualquer competência DIFERENTE. Só que
-      //        `registrarDevolucao` ABRE O MÊS SEGUINTE antes de isto rodar:
-      //        a busca encontrava o mês que o próprio bot tinha acabado de
-      //        criar, e TODA devolução passaria a perguntar, oferecendo um mês
-      //        futuro como se fosse dívida.
-      //
-      // O critério certo não é a relação com a competência paga, e sim com
-      // HOJE: um mês em aberto que ainda não terminou é compromisso, não
-      // dívida — e é exatamente o que o bot acabou de abrir. Dívida é mês que
-      // já passou e não foi devolvido.
-      //
-      // Quando há mais de uma, oferece a mais antiga.
-      const mesCorrente = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM') + '-01';
-      const regs = this.searchRead('x_devolucao', ['id', 'x_studio_competencia'], [
-        ['x_studio_dizimista',   '=', dizimistaId],
-        ['x_studio_status',      '=', STATUS_A_DEVOLVER],
-        ['x_studio_competencia', '<',  mesCorrente],
-        ['x_studio_competencia', '!=', competenciaRegistrada]
-      ], { order: 'x_studio_competencia asc', limit: 1 });
-      const r = regs && regs[0];
-      return r ? { id: r.id, competencia: r.x_studio_competencia } : null;
-    } catch (e) {
-      console.warn(`⚠️ [Devolução] Não consegui procurar mês em aberto: ${e.message}`);
-      return null;
-    }
-  },
-
-  /**
-   * Troca a competência entre o registro pago e o mês que estava em aberto.
-   * (BL-62)
-   *
-   * TROCA, e não copia: se o pagamento era de setembro, setembro passa a ser o
-   * mês pago e dezembro volta a ficar em aberto. Copiar deixaria dois registros
-   * de setembro — um pago e um em aberto que nunca fecharia.
-   *
-   * @returns {boolean} true se a troca aconteceu
-   */
-  trocarCompetencia(idPago, idAberto) {
-    const regs = this.searchRead('x_devolucao', ['id', 'x_studio_competencia'],
-      [['id', 'in', [idPago, idAberto]]]);
-    const pago   = (regs || []).find((r) => r.id === idPago);
-    const aberto = (regs || []).find((r) => r.id === idAberto);
-    if (!pago || !aberto) {
-      console.warn('⚠️ [Devolução] Troca de competência: um dos registros sumiu');
-      return false;
-    }
-    this.write('x_devolucao', idPago,   { x_studio_competencia: aberto.x_studio_competencia });
-    this.write('x_devolucao', idAberto, { x_studio_competencia: pago.x_studio_competencia });
-    console.log(`🔁 [Devolução] Competências trocadas: ${idPago} ↔ ${idAberto}`);
-    return true;
-  },
-
-  /**
-   * O "A devolver" desta pessoa para ESTA competência, se existir. (BL-62)
-   *
-   * @param {number} dizimistaId
-   * @param {string} competencia - 'aaaa-mm-01'
-   * @param {string} tipo        - só dízimo tem mês em aberto; oferta é avulsa
-   * @returns {number|null} id do registro, ou null
-   * @private
-   */
-  _aDevolverDaCompetencia(dizimistaId, competencia, tipo) {
-    if (!dizimistaId || tipo === 'oferta') return null;
-    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
-    try {
-      const regs = this.searchRead('x_devolucao', ['id'], [
-        ['x_studio_dizimista', '=', dizimistaId],
-        ['x_studio_status',    '=', STATUS_A_DEVOLVER],
-        ['x_studio_competencia', '=', competencia]
-      ], { limit: 1 });
-      return (regs && regs[0] && regs[0].id) || null;
-    } catch (e) {
-      // Um erro aqui não pode impedir o registro do pagamento. Sem o aberto,
-      // cria-se um registro novo — o mês fica com dois, que alguém concilia. É
-      // muito melhor que perder a devolução.
-      console.warn(`⚠️ [Devolução] Não consegui procurar o mês em aberto: ${e.message}`);
-      return null;
-    }
-  },
-
-  /**
-   * Garante que o mês SEGUINTE ao que acabou de ser pago exista como
-   * "A devolver". (BL-62)
-   *
-   * Nasce sem data, sem valor e sem comprovante — ver a nota do
-   * STATUS_A_DEVOLVER em Config.gs: é a ausência de data que o torna invisível
-   * para a classificação e para o lembrete mensal.
-   *
-   * Idempotente: se o mês seguinte já existir em qualquer estado, não faz nada.
-   * Sem essa checagem, uma pessoa que devolve duas vezes no mesmo mês ganharia
-   * dois abertos para o mês que vem.
-   *
-   * @private
-   */
-  _abrirMesSeguinte(dizimistaId, comunidadeId, competenciaPaga, tipo) {
-    if (!dizimistaId || tipo === 'oferta') return null;
-    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
-
-    const [ano, mes] = competenciaPaga.split('-').map(Number);
-    const proximo = mes === 12 ? `${ano + 1}-01-01`
-                               : `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
-
-    const jaExiste = this.searchRead('x_devolucao', ['id'], [
-      ['x_studio_dizimista',   '=', dizimistaId],
-      ['x_studio_competencia', '=', proximo]
-    ], { limit: 1 });
-    if (jaExiste && jaExiste.length) return null;
-
-    const dados = {
-      x_name:                  `Dízimo a devolver - ${proximo.slice(5, 7)}/${ano + (mes === 12 ? 1 : 0)}`,
-      x_studio_dizimista:      dizimistaId,
-      x_studio_status:         STATUS_A_DEVOLVER,
-      x_studio_competencia:    proximo,
-      x_studio_value:          0,
-      // Sem forma de pagamento: ninguém pagou ainda. O campo tem padrão no
-      // Odoo, e sem esta linha a lista mostrava "Dinheiro" num mês que ninguém
-      // devolveu — um dado inventado, na coluna que o coordenador lê.
-      x_studio_forma_de_pagamento: false
-      // Sem x_studio_data_da_devolucao, e isso NÃO é esquecimento: é a
-      // invariante inteira deste item. Ver Config.gs, STATUS_A_DEVOLVER.
-    };
-    if (this.campoGravavel('x_devolucao', 'x_studio_comunidade') && comunidadeId) {
-      dados.x_studio_comunidade = comunidadeId;
-    }
-    if (this.campoExiste('x_devolucao', 'x_studio_tipo_contribuicao')) {
-      dados.x_studio_tipo_contribuicao = 'dizimo';
-    }
-    // Validação VAZIA. O campo tem padrão "A validar" (BL-60), e um mês que
-    // ninguém pagou não tem o que validar: deixá-lo entrar na fila encheria a
-    // tela do coordenador de meses futuros.
-    if (this.campoExiste('x_devolucao', 'x_studio_validacao')) {
-      dados.x_studio_validacao = false;
-    }
-
-    const id = this.create('x_devolucao', dados);
-    console.log(`🗓️ [Devolução] Abri o mês ${proximo} como "${STATUS_A_DEVOLVER}" (id ${id})`);
-    return id;
   },
 
   /**

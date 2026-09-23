@@ -256,92 +256,60 @@ const ComprovanteHandler = {
       const competencia = reg && reg[0] && reg[0].x_studio_competencia;
       if (!competencia) return;
 
-      const meses = OdooService.mesesCandidatos(dizimistaId, competencia) || [];
-      // Um candidato só quer dizer que não há dúvida: o pagamento cobre o mês
-      // seguinte ao último pago. É o caso comum, e nele nada é enviado — a
-      // contagem de mensagens do fluxo normal não muda.
-      if (meses.length < 2) return;
+      const anterior = OdooService.mesAnteriorSemDevolucao(dizimistaId, competencia);
+      if (!anterior) return;   // primeira devolução, ou o mês anterior já coberto
 
-      const titulo = `📅 Registrei como referente a *${Utils.mesPorExtenso(competencia)}*.\n\n`
-        + `Sua última devolução foi antes disso, então este dízimo pode ser de outro mês. `
-        + `A qual deles ele se refere?`;
-
-      // O mês registrado vem PRIMEIRO: é o palpite do bot, e a pessoa que
-      // concorda toca no primeiro item sem ler o resto.
-      const ordenados = [competencia].concat(meses.filter((m) => m !== competencia));
-      const opcoes = ordenados.map((m) => ({
-        id: `compm_${devolucaoId}_${m}`,
-        title: Utils.mesPorExtenso(m).substring(0, 20),
-      }));
-
-      // Até três cabem em botão, que é um toque só. Acima disso vira lista —
-      // quem devolve de três em três meses chega a quatro opções.
-      if (opcoes.length <= 3) {
-        Utils.enviarMenu(from, titulo, opcoes);
-      } else {
-        Utils.enviarLista(from, titulo,
-          [{ title: 'Mês de referência', rows: opcoes.map((o) => ({ id: o.id, title: o.title })) }],
-          { textoBotao: 'Escolher o mês' });
-      }
+      // Duas opções, sempre. O mês registrado vem primeiro: é o palpite do
+      // bot, e quem concorda toca no primeiro botão sem ler o resto.
+      Utils.enviarMenu(from,
+        `📅 Registrei este dízimo como referente a *${Utils.mesPorExtenso(competencia)}*.\n\n`
+        + `Como não vi devolução sua de *${Utils.mesPorExtenso(anterior)}*, quero confirmar: `
+        + 'a qual mês ele se refere?',
+        [
+          { id: `compm_${devolucaoId}_${competencia}`, title: Utils.mesPorExtenso(competencia).substring(0, 20) },
+          { id: `compm_${devolucaoId}_${anterior}`,    title: Utils.mesPorExtenso(anterior).substring(0, 20) },
+        ]);
     } catch (e) {
       // Nunca derruba nada: a devolução já está registrada e confirmada. O pior
-      // que acontece é a pessoa não receber a oferta de escolher o mês.
+      // que acontece é a pessoa não receber a pergunta.
       console.warn(`⚠️ [Competência] Não consegui oferecer a escolha: ${e.message}`);
     }
   },
 
   /**
-   * A pessoa disse que o dízimo era do mês em aberto. (BL-62)
+   * A pessoa escolheu o mês de referência. (BL-71)
    *
-   * @param {string} buttonId - `comp_<idPago>_<idAberto>` ou `comp_ok`
+   * O id do botão carrega o registro e o mês — nada depende de sessão, e por
+   * isso a escolha funciona horas depois, com a sessão já expirada. É o caso
+   * normal: a devolução é encerrada antes de a pergunta sair.
+   *
+   * @param {string} buttonId - `compm_<id>_<aaaa-mm-dd>`
    */
   corrigirMes(from, buttonId) {
-    if (buttonId === 'comp_ok') {
-      Utils.enviarComBotaoMenu(from, '👍 Perfeito, deixo como está. Obrigado!');
-      return;
-    }
-    // BL-70: `compm_<idPago>_<aaaa-mm-dd>` — a pessoa escolheu o mês.
-    const mm = String(buttonId).match(/^compm_(\d+)_(\d{4}-\d{2}-\d{2})$/);
-    if (mm) {
-      try {
-        const id = Number(mm[1]);
-        const atual = OdooService.searchRead('x_devolucao',
-          ['x_studio_competencia', 'x_studio_dizimista'], [['id', '=', id]], { limit: 1 });
-        const reg = atual && atual[0];
-        if (reg && reg.x_studio_competencia === mm[2]) {
-          Utils.enviarComBotaoMenu(from, '👍 Perfeito, deixo como está. Obrigado!');
-          return;
-        }
-        const diz = reg && reg.x_studio_dizimista;
-        OdooService.definirCompetencia(id, mm[2], Array.isArray(diz) ? diz[0] : diz);
-        Utils.enviarComBotaoMenu(from,
-          `✅ Pronto! Seu dízimo passou a valer para *${Utils.mesPorExtenso(mm[2])}*.`);
-      } catch (e) {
-        console.error(`❌ [Competência] Falha ao definir o mês: ${e.message}`);
-        Utils.enviarComBotaoMenu(from,
-          '⚠️ Não consegui mudar o mês agora. Sua devolução *continua registrada* — ' +
-          'apenas o mês de referência não mudou. Fale com a secretaria.');
-      }
-      return;
-    }
-
-    // Formato antigo, de mensagens que já saíram antes do BL-70.
-    const m = String(buttonId).match(/^comp_(\d+)_(\d+)$/);
+    const m = String(buttonId).match(/^compm_(\d+)_(\d{4}-\d{2}-\d{2})$/);
     if (!m) {
-      Utils.enviarComBotaoMenu(from, '⚠️ Não entendi qual mês corrigir. Fale com a secretaria, por favor.');
+      // Inclui o formato antigo `comp_<id>_<id>`, de mensagens que saíram
+      // antes do BL-71 e ainda estão na conversa de alguém.
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ Essa opção não vale mais. Sua devolução *está registrada* — se o mês de '
+        + 'referência estiver errado, a secretaria ajusta.');
       return;
     }
     try {
-      const ok = OdooService.trocarCompetencia(Number(m[1]), Number(m[2]));
-      Utils.enviarComBotaoMenu(from, ok
-        ? '✅ Corrigido! O dízimo passou a valer para o mês que estava em aberto, ' +
-          'e o mês atual voltou a ficar em aberto.'
-        : '⚠️ Não consegui corrigir agora. A devolução *está registrada* — ' +
-          'só o mês de referência ficou como estava. Fale com a secretaria.');
-    } catch (e) {
-      console.error(`❌ [Competência] Falha ao corrigir: ${e.message}`);
+      const id = Number(m[1]);
+      const atual = OdooService.searchRead('x_devolucao', ['x_studio_competencia'],
+        [['id', '=', id]], { limit: 1 });
+      if (atual && atual[0] && atual[0].x_studio_competencia === m[2]) {
+        Utils.enviarComBotaoMenu(from, '👍 Perfeito, deixo como está. Obrigado!');
+        return;
+      }
+      OdooService.definirCompetencia(id, m[2]);
       Utils.enviarComBotaoMenu(from,
-        '⚠️ Não consegui corrigir agora. Sua devolução *continua registrada* — ' +
+        `✅ Pronto! Seu dízimo passou a valer para *${Utils.mesPorExtenso(m[2])}*.`);
+    } catch (e) {
+      console.error(`❌ [Competência] Falha ao definir o mês: ${e.message}`);
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ Não consegui mudar o mês agora. Sua devolução *continua registrada* — ' +
         'apenas o mês de referência não mudou. Fale com a secretaria.');
     }
   },

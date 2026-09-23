@@ -2555,16 +2555,23 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
       d.x_studio_competencia === '2026-09-01', JSON.stringify(d.x_studio_competencia));
   }
 
-  // 2. Com mês em aberto DA MESMA competência: preenche, não cria
+  // 2. Nada mais é preenchido nem pré-criado: registrar é sempre CRIAR.
+  //
+  //    O ciclo automático — abrir o mês seguinte, procurar um "A devolver" da
+  //    mesma competência para preencher — foi removido no BL-71. Ele resolvia
+  //    a previsibilidade e criava três problemas: mês fantasma para quem devolve
+  //    de dois em dois meses, pergunta disparando em toda devolução, e um buraco
+  //    sem rastro quando alguém pulava um mês. A regra de ouro cobre o que
+  //    importava com duas opções e nenhum registro inventado.
   {
     const r = registra({
       devolucoesPorCompetencia: [{ id: 41, x_studio_competencia: '2026-09-01',
                                    x_studio_status: 'A devolver' }],
     }, { valor: 50, data: '20/09/2026' });
-    const pagou = r.escritos.find(([, d]) => d.x_studio_value === 50);
-    confere('mês em aberto da mesma competência é PREENCHIDO, não duplicado',
-      !!pagou && pagou[0] === 41 && r.id === 41,
-      `escritos=${JSON.stringify(r.escritos.map(e => e[0]))} criados=${r.criados.length}`);
+    const abertos = r.criados.filter((d) => d.x_studio_status === 'A devolver');
+    confere('registrar CRIA, e não abre mês nenhum nem preenche registro antigo',
+      r.escritos.length === 0 && r.criados.length === 1 && abertos.length === 0,
+      `escritos=${r.escritos.length} criados=${r.criados.length} abertos=${abertos.length}`);
   }
 
   // 3. Sem mês em aberto: cria normalmente
@@ -2573,63 +2580,6 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
     confere('sem mês em aberto, cria como sempre criou',
       r.escritos.length === 0 && r.criados.length >= 1,
       `escritos=${r.escritos.length} criados=${r.criados.length}`);
-  }
-
-  // 4. O mês SEGUINTE nasce, e nasce sem data
-  {
-    const r = registra({}, { valor: 50, data: '20/09/2026' });
-    const aberto = r.criados.find((d) => d.x_studio_status === 'A devolver');
-    confere('o mês seguinte é aberto como "A devolver"',
-      !!aberto && aberto.x_studio_competencia === '2026-10-01',
-      JSON.stringify(aberto));
-    confere('e nasce SEM data — é isso que o torna invisível para a classificação',
-      !!aberto && !('x_studio_data_da_devolucao' in aberto),
-      JSON.stringify(aberto && Object.keys(aberto)));
-    confere('e SEM validação, para não entupir a fila do coordenador',
-      !!aberto && aberto.x_studio_validacao === false,
-      JSON.stringify(aberto && aberto.x_studio_validacao));
-    confere('e SEM forma de pagamento — ninguém pagou, não há forma',
-      !!aberto && aberto.x_studio_forma_de_pagamento === false,
-      JSON.stringify(aberto && aberto.x_studio_forma_de_pagamento));
-  }
-
-  // 4b. A comunidade no mês aberto segue a MESMA guarda do BL-41: só é gravada
-  //     quando o campo aceita escrita. Enquanto for `related`, o Odoo a espelha
-  //     sozinho e gravá-la faria a escrita INTEIRA ser recusada — a devolução
-  //     se perderia. Os dois estados precisam estar cobertos, porque a base já
-  //     rodou nos dois.
-  {
-    const grava = registra({ comunidadeGravavel: true }, { valor: 50, data: '20/09/2026' });
-    const abertoG = grava.criados.find((d) => d.x_studio_status === 'A devolver');
-    confere('campo gravável: o mês aberto leva a comunidade do dizimista',
-      !!abertoG && abertoG.x_studio_comunidade === 3,
-      JSON.stringify(abertoG && abertoG.x_studio_comunidade));
-
-    const espelha = registra({}, { valor: 50, data: '20/09/2026' });
-    const abertoE = espelha.criados.find((d) => d.x_studio_status === 'A devolver');
-    confere('campo ainda related: NÃO grava comunidade, e o mês abre do mesmo jeito',
-      !!abertoE && !('x_studio_comunidade' in abertoE),
-      JSON.stringify(abertoE && Object.keys(abertoE)));
-  }
-
-  // 5. Dezembro vira janeiro do ano seguinte
-  {
-    const r = registra({}, { valor: 50, data: '15/12/2026' });
-    const aberto = r.criados.find((d) => d.x_studio_status === 'A devolver');
-    confere('dezembro abre janeiro do ano seguinte',
-      !!aberto && aberto.x_studio_competencia === '2027-01-01',
-      JSON.stringify(aberto && aberto.x_studio_competencia));
-  }
-
-  // 6. Se o mês seguinte JÁ existe, não nasce outro
-  {
-    const r = registra({
-      devolucoesPorCompetencia: [{ id: 55, x_studio_competencia: '2026-10-01',
-                                   x_studio_status: 'A devolver' }],
-    }, { valor: 50, data: '20/09/2026' });
-    const abertos = r.criados.filter((d) => d.x_studio_status === 'A devolver');
-    confere('mês seguinte que já existe não é criado de novo',
-      abertos.length === 0, `abertos criados=${abertos.length}`);
   }
 
   // 7. OFERTA não entra nesse ciclo
@@ -2672,122 +2622,107 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
       `criados=${criados.length}`);
   }
 
-  // ── A pergunta do mês: registra primeiro, pergunta depois ───────────────
+  // ── A REGRA DE OURO (BL-71) ─────────────────────────────────────────────
   //
-  // Perguntar ANTES de registrar obrigaria a segurar o comprovante em sessão —
-  // base64 de 100 KB a 1 MB, contra 100 KB por chave no CacheService. Não cabe,
-  // e criaria um caminho em que a pessoa some no meio e o pagamento se perde.
+  // Não é a primeira devolução, e o mês ANTERIOR não tem devolução nenhuma:
+  // pergunta se é deste mês ou do anterior. Duas opções, sempre.
   //
-  // O que estes casos protegem é o custo dessa escolha: a pergunta só pode
-  // aparecer quando há dúvida de verdade, senão todo mundo passa a receber uma
-  // mensagem a mais em todo dízimo.
+  // Substituiu três mecanismos que foram ficando complicados — o mês em aberto
+  // anterior, depois qualquer mês diferente, depois o intervalo inteiro desde
+  // a última paga. Cada um resolvia um caso e criava outro.
   {
-    const MESES = ['x_studio_competencia'];
-    function ofereceu(abertos, competenciaDoPago) {
+    function ofereceu(devolucoes, competenciaDoPago) {
       const enviadas = [];
       const ctx = montarContexto({
-        camposOdoo: MESES,
-        devolucoesPorCompetencia: abertos,
+        camposOdoo: ['x_studio_competencia'],
+        devolucoesPorCompetencia: devolucoes,
         devolucaoPorId: { id: 90, x_studio_competencia: competenciaDoPago },
       });
       ctx.Utils.enviarMenu = (to, texto, botoes) => enviadas.push({ texto, botoes });
-      ctx.Utils.enviarLista = (to, texto, secoes) =>
-        enviadas.push({ texto, botoes: (secoes[0] || {}).rows || [], lista: true });
       ctx.Utils.enviarComBotaoMenu = (to, texto) => enviadas.push({ texto, botoes: [] });
       ctx.ComprovanteHandler._ofereceCorrigirMes('55', 90, 7);
       return enviadas;
     }
+    const paga = (comp) => ({ id: 10, x_studio_competencia: comp, x_studio_status: 'Confirmado' });
 
-    // Tem setembro em aberto e o pagamento foi registrado em dezembro
-    // BL-70: a pergunta passou a ser por INTERVALO, não por "mês em aberto".
-    //
-    // A versão anterior só perguntava quando existia um registro `A devolver`
-    // para oferecer. Mas a corrente abre um mês por vez: quem pagou julho e
-    // voltou em setembro tem agosto sem registro nenhum — e o bot gravava
-    // setembro calado. Foi o que aconteceu no teste de 23/09.
-    //
-    // E preencher agosto sozinho seria pior: há quem devolva de dois em dois
-    // ou de três em três meses, e para essa pessoa agosto é o ritmo, não
-    // dívida. Quem sabe a que mês o dinheiro se refere é ela.
-    const pulouUmMes = ofereceu(
-      [{ id: 10, x_studio_competencia: '2026-07-01', x_studio_status: 'Confirmado' }],
-      '2026-09-01');
-    confere('pagou julho e voltou em setembro: pergunta, mesmo sem agosto existir',
-      pulouUmMes.length === 1 && pulouUmMes[0].botoes.length === 2,
-      JSON.stringify(pulouUmMes));
-    confere('o mês registrado vem PRIMEIRO — é o palpite do bot',
-      pulouUmMes.length === 1
-      && /setembro\/2026/.test(pulouUmMes[0].botoes[0].title)
-      && /agosto\/2026/.test(pulouUmMes[0].botoes[1].title),
-      JSON.stringify(pulouUmMes[0] && pulouUmMes[0].botoes));
-    confere('o id do botão carrega o mês escolhido, sem depender de sessão',
-      pulouUmMes.length === 1 && pulouUmMes[0].botoes[1].id === 'compm_90_2026-08-01',
-      JSON.stringify(pulouUmMes[0] && pulouUmMes[0].botoes));
+    // O caso do teste de 23/09: julho pago, comprovante de setembro
+    const pulou = ofereceu([paga('2026-07-01')], '2026-09-01');
+    confere('pagou julho e voltou em setembro: pergunta',
+      pulou.length === 1 && pulou[0].botoes.length === 2, JSON.stringify(pulou));
+    confere('duas opções: o mês registrado primeiro, o anterior depois',
+      pulou.length === 1
+      && /setembro\/2026/.test(pulou[0].botoes[0].title)
+      && /agosto\/2026/.test(pulou[0].botoes[1].title),
+      JSON.stringify(pulou[0] && pulou[0].botoes));
+    confere('o id do botão carrega registro e mês, sem depender de sessão',
+      pulou.length === 1 && pulou[0].botoes[1].id === 'compm_90_2026-08-01',
+      JSON.stringify(pulou[0] && pulou[0].botoes));
 
-    // Quem devolve todo mês não recebe pergunta nenhuma
-    const mesSeguido = ofereceu(
-      [{ id: 10, x_studio_competencia: '2026-08-01', x_studio_status: 'Confirmado' }],
-      '2026-09-01');
     confere('quem devolve todo mês não é perguntado',
-      mesSeguido.length === 0, JSON.stringify(mesSeguido));
+      ofereceu([paga('2026-08-01')], '2026-09-01').length === 0);
 
-    // Primeira devolução da vida: não há de onde contar intervalo
-    const primeira = ofereceu([], '2026-09-01');
-    confere('primeira devolução da vida não gera pergunta',
-      primeira.length === 0, JSON.stringify(primeira));
+    confere('PRIMEIRA devolução da vida não é perguntada',
+      ofereceu([], '2026-09-01').length === 0);
 
-    // Quatro ou mais opções não cabem em botão: vira lista
-    const tresMeses = ofereceu(
-      [{ id: 10, x_studio_competencia: '2026-05-01', x_studio_status: 'Confirmado' }],
+    // Sumiu por meses: continua sendo UMA pergunta de duas opções, não uma lista
+    const sumiu = ofereceu([paga('2023-01-01')], '2026-09-01');
+    confere('quem sumiu por anos recebe a mesma pergunta simples, de 2 opções',
+      sumiu.length === 1 && sumiu[0].botoes.length === 2, JSON.stringify(sumiu));
+
+    // Pagar no dia 1º pelo mês anterior — o caso que motivou tudo isto
+    const diaPrimeiro = ofereceu([paga('2026-08-01')], '2026-10-01');
+    confere('pagou dia 1º de outubro com agosto pago: pergunta outubro ou setembro',
+      diaPrimeiro.length === 1
+      && /outubro\/2026/.test(diaPrimeiro[0].botoes[0].title)
+      && /setembro\/2026/.test(diaPrimeiro[0].botoes[1].title),
+      JSON.stringify(diaPrimeiro[0] && diaPrimeiro[0].botoes));
+
+    // `A devolver` não conta como devolução: é previsão, não pagamento
+    const soPrevisao = ofereceu(
+      [paga('2026-07-01'), { id: 11, x_studio_competencia: '2026-08-01', x_studio_status: 'A devolver' }],
       '2026-09-01');
-    confere('quatro meses ou mais viram lista, que o WhatsApp comporta',
-      tresMeses.length === 1 && tresMeses[0].lista === true && tresMeses[0].botoes.length === 4,
-      JSON.stringify(tresMeses.map((e) => e.botoes.length)));
+    confere('registro "A devolver" no mês anterior não cobre nada — pergunta igual',
+      soPrevisao.length === 1 && soPrevisao[0].botoes.length === 2, JSON.stringify(soPrevisao));
 
-    // Quem sumiu por anos não recebe uma lista impossível de ler
-    const sumiu = ofereceu(
-      [{ id: 10, x_studio_competencia: '2023-01-01', x_studio_status: 'Confirmado' }],
-      '2026-09-01');
-    confere('quem sumiu por anos recebe no máximo 6 opções',
-      sumiu.length === 1 && sumiu[0].botoes.length === 6,
-      JSON.stringify(sumiu.map((e) => e.botoes.length)));
+    // A escolha: só grava, não cria nem reabre nada
+    {
+      const escritos = [], criados = [];
+      const ctx = montarContexto({
+        camposOdoo: ['x_studio_competencia'],
+        devolucaoPorId: { id: 90, x_studio_competencia: '2026-09-01' },
+        aoEscrever: (m, id, d) => escritos.push([id, d.x_studio_competencia]),
+        aoCriar: (m, d) => criados.push(d),
+      });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.ComprovanteHandler.corrigirMes('55', 'compm_90_2026-08-01');
+      confere('escolher o mês anterior só GRAVA — não cria registro para o que sobrou',
+        escritos.length === 1 && escritos[0][0] === 90 && escritos[0][1] === '2026-08-01'
+        && criados.length === 0,
+        `escritos=${JSON.stringify(escritos)} criados=${criados.length}`);
+    }
 
-    // A correção troca as competências, e não copia
+    // Escolher o mês que já estava não escreve nada
     {
       const escritos = [];
       const ctx = montarContexto({
-        camposOdoo: MESES,
-        devolucaoPorId: [{ id: 90, x_studio_competencia: '2026-12-01' },
-                         { id: 41, x_studio_competencia: '2026-09-01' }],
-        aoEscrever: (m, id, d) => escritos.push([id, d.x_studio_competencia]),
+        camposOdoo: ['x_studio_competencia'],
+        devolucaoPorId: { id: 90, x_studio_competencia: '2026-09-01' },
+        aoEscrever: (m, id) => escritos.push(id),
       });
       ctx.Utils.enviarComBotaoMenu = () => {};
-      ctx.ComprovanteHandler.corrigirMes('55', 'comp_90_41');
-      const pago   = escritos.find(([id]) => id === 90);
-      const aberto = escritos.find(([id]) => id === 41);
-      confere('Corrigir TROCA as competências — não deixa dois do mesmo mês',
-        !!pago && pago[1] === '2026-09-01' && !!aberto && aberto[1] === '2026-12-01',
+      ctx.ComprovanteHandler.corrigirMes('55', 'compm_90_2026-09-01');
+      confere('confirmar o mês que já estava não mexe em nada', escritos.length === 0,
         JSON.stringify(escritos));
     }
 
-    // "Está certo" não escreve nada
-    {
-      const escritos = [];
-      const ctx = montarContexto({ camposOdoo: MESES, aoEscrever: (m, id) => escritos.push(id) });
-      ctx.Utils.enviarComBotaoMenu = () => {};
-      ctx.ComprovanteHandler.corrigirMes('55', 'comp_ok');
-      confere('"Está certo" não mexe em registro nenhum', escritos.length === 0,
-        JSON.stringify(escritos));
-    }
-
-    // Botão malformado não estoura nem mente
+    // Botão antigo, de mensagem que saiu antes do BL-71
     {
       const ditos = [];
-      const ctx = montarContexto({ camposOdoo: MESES });
+      const ctx = montarContexto({ camposOdoo: [] });
       ctx.Utils.enviarComBotaoMenu = (to, t) => ditos.push(t);
-      ctx.ComprovanteHandler.corrigirMes('55', 'comp_lixo');
-      confere('id de botão estragado avisa em vez de estourar',
-        ditos.length === 1 && /não entendi/i.test(ditos[0]), JSON.stringify(ditos));
+      ctx.ComprovanteHandler.corrigirMes('55', 'comp_90_41');
+      confere('botão do formato antigo avisa sem estourar e sem mentir',
+        ditos.length === 1 && /está registrada/i.test(ditos[0]), JSON.stringify(ditos));
     }
   }
 

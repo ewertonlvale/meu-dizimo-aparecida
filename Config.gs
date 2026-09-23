@@ -231,21 +231,18 @@ function statusDaDevolucao(codigo) {
 }
 
 /**
- * O estado de um mês que existe como compromisso e ainda não foi devolvido.
- * (BL-62)
+ * O estado "A devolver", que o bot NÃO cria mais. (BL-71)
  *
- * É o único valor NOVO do ciclo. Os outros três continuam gravados como
- * sempre — 'Pendente', 'Confirmado', 'Rejeitado' — e só mudaram de rótulo no
- * Odoo: Em conferência, Conferido, Não confere. Nada aqui precisou mudar por
- * causa disso, e essa foi a razão de renomear rótulo em vez de valor.
+ * A previsibilidade automática — abrir o mês seguinte a cada devolução — foi
+ * removida. Ela resolvia um problema e criava três: mês fantasma para quem
+ * devolve de dois em dois meses, pergunta disparando em toda devolução, e um
+ * buraco sem rastro quando alguém pulava um mês. A regra de ouro do BL-71
+ * cobre o que importava com duas opções e nenhum registro inventado.
  *
- * ⚠️ Um registro neste estado NÃO PODE TER DATA DE DEVOLUÇÃO.
- *    Três leitores decidem coisas sérias filtrando por data preenchida:
- *    a classificação (classificar-dizimistas.py), o lembrete mensal
- *    (`jaDevolveueEsteMes`) e `devolucoesDoMes`. Um "A devolver" sem data é
- *    invisível para os três, que é o que se quer — ele é uma previsão, não uma
- *    devolução. Com data, a pessoa deixaria de ser cobrada e viraria Regular
- *    sem ter pago nada, sem nada acusar.
+ * A constante fica porque o VALOR continua existindo no Odoo — há registros
+ * criados antes desta mudança, e o coordenador pode criar um à mão. O bot só
+ * precisa saber IGNORÁ-LOS: `A devolver` é previsão, não pagamento, e quem
+ * conta "o mês anterior teve devolução?" não pode confundir os dois.
  */
 const STATUS_A_DEVOLVER = 'A devolver';
 
