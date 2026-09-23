@@ -318,6 +318,15 @@ const ComprovanteHandler = {
     const nomeDif  = this._textoDivergente(rec.nome,  comunidade.x_studio_titular_conta);
     const bancoDif = this._textoDivergente(rec.banco, comunidade.x_studio_banco);
 
+    // BL-69: a IDADE do comprovante, antes do conteúdo dele.
+    //
+    // Vem primeiro porque não depende de nada que a comunidade tenha
+    // cadastrado — um comprovante de três meses é suspeito com chave certa ou
+    // errada. Mas NÃO passa por cima de chave divergente, que é mais grave:
+    // por isso só decide quando a chave conferiu ou não foi lida.
+    const idade = this._conferirIdade(dados.data);
+    if (idade && chave.motivo !== 'divergente') return idade;
+
     if (chave.motivo === 'ok') {
       if (nomeDif)  return { conferido: false, motivo: 'titular_divergente' };
       if (bancoDif) return { conferido: false, motivo: 'banco_divergente' };
@@ -331,6 +340,54 @@ const ComprovanteHandler = {
     if (nomeDif && bancoDif) return { conferido: false, motivo: 'tudo_divergente' };
 
     return chave;
+  },
+
+  /**
+   * O comprovante é velho demais, ou tem data no futuro? (BL-69)
+   *
+   * Compara com HOJE — não há outro relógio confiável. O E2E do PIX carrega a
+   * data, mas é a mesma informação que já foi lida.
+   *
+   * O limite vem de `x_studio_dias_comprovante` em x_parametros, com
+   * DIAS_COMPROVANTE_ANTIGO_PADRAO de fábrica. É parâmetro, e não número no
+   * código, porque quem sabe se dois meses é muito ou pouco é a paróquia.
+   *
+   * Data ILEGÍVEL não acusa nada. O BL-52 fez a leitura funcionar em vários
+   * layouts, mas ela ainda falha — e chamar de "antigo" um comprovante cuja
+   * data não conseguimos ler seria acusar alguém do nosso próprio limite.
+   *
+   * @param {string} dataBR - 'dd/mm/aaaa', como o VisionService entrega
+   * @returns {{conferido: boolean, motivo: string}|null} null quando está em dia
+   * @private
+   */
+  _conferirIdade(dataBR) {
+    const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;   // sem data legível não se acusa nada
+
+    const doComprovante = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    if (isNaN(doComprovante.getTime())) return null;
+
+    const hoje = new Date();
+    // Zera a hora dos dois lados: o que interessa é a diferença de DIAS, e um
+    // comprovante das 23h comparado com 8h da manhã viraria um dia a mais.
+    hoje.setHours(0, 0, 0, 0);
+    doComprovante.setHours(0, 0, 0, 0);
+
+    const dias = Math.round((hoje - doComprovante) / 86400000);
+    if (dias < 0) return { conferido: false, motivo: 'comprovante_futuro' };
+
+    let limite = DIAS_COMPROVANTE_ANTIGO_PADRAO;
+    try {
+      const p = OdooService.buscarParametros() || {};
+      const cfg = Number(p.x_studio_dias_comprovante);
+      // Zero ou negativo reprovaria todo mundo; um número absurdo não reprova
+      // ninguém. O campo é editável por quem não escreveu isto.
+      if (cfg >= 1 && cfg <= 365) limite = cfg;
+    } catch (e) {
+      console.warn(`⚠️ [Idade] Não li o parâmetro de dias, usando ${limite}: ${e.message}`);
+    }
+
+    return dias > limite ? { conferido: false, motivo: 'comprovante_antigo' } : null;
   },
 
   /**

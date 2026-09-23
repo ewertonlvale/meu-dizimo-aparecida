@@ -337,7 +337,8 @@ function montarContexto(cenario) {
       if (cenario.aoEscrever) cenario.aoEscrever(modelo, id, dados);
       return true;
     },
-    buscarParametros:               () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
+    buscarParametros:               () => Object.assign(
+      { x_studio_avatar: cenario.temAvatar ? 'ID' : null }, cenario.parametros || {}),
     listarComunidades:              () => [{ id: 1, x_name: 'Matriz' }],
     buscarDadosPagamentoComunidade: () => ({
       x_studio_chave_pix:     'pix@paroquia.org',
@@ -2417,6 +2418,95 @@ console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
     } else {
       console.log(`✅ ${rotulo}: os ${codigos.length} códigos têm frase, e a rede cobre os ${naRede.length}`);
     }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📆 Idade do comprovante: antigo e futuro caem em "Não confere"\n');
+
+// ──────────────────────────────────────────────────────────────────
+// BL-69. Até aqui um comprovante de 2020 registrava como qualquer outro:
+// não havia checagem de data nenhuma.
+//
+// A regra é mais dura que o resto da tabela de conferência de propósito.
+// Chave que não bate pode ser layout de banco que não entendemos; data é data.
+// Por isso os dois códigos entram como `alertaDoador`, e a pessoa é avisada.
+{
+  const dias = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
+
+  function confereIdade(dataBR, cenario) {
+    const ctx = montarContexto(Object.assign({ camposOdoo: [] }, cenario || {}));
+    return ctx.ComprovanteHandler._conferirIdade(dataBR);
+  }
+
+  const CASOS = [
+    ['comprovante de hoje passa limpo',            dias(0),   null],
+    ['de 30 dias ainda passa — quem pagou e esqueceu de mandar', dias(30), null],
+    ['de 60 dias passa: o limite é "mais de", não "a partir de"', dias(60), null],
+    ['de 61 dias já é antigo',                     dias(61),  'comprovante_antigo'],
+    ['de 6 meses é antigo',                        dias(180), 'comprovante_antigo'],
+    ['data no FUTURO é impossível, e acusa',       dias(-1),  'comprovante_futuro'],
+    ['data ilegível NÃO acusa nada',               '',        null],
+    ['data em formato estranho também não acusa',  '20 de setembro', null],
+  ];
+
+  for (const [nome, data, esperado] of CASOS) {
+    const r = confereIdade(data);
+    const obtido = r && r.motivo;
+    const ok = obtido === esperado || (esperado === null && r === null);
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}` + (ok ? '' : `  (esperado ${esperado}, veio ${obtido})`));
+  }
+
+  // O parâmetro da paróquia manda, dentro de limites
+  {
+    const comLimite = (n) => montarContexto({
+      camposOdoo: ['x_studio_dias_comprovante'], parametros: { x_studio_dias_comprovante: n },
+    }).ComprovanteHandler._conferirIdade(dias(40));
+    const r10 = comLimite(10);
+    const r90 = comLimite(90);
+    let ok = r10 && r10.motivo === 'comprovante_antigo' && r90 === null;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} o parâmetro da paróquia manda: 10 dias reprova, 90 aprova o mesmo comprovante`
+      + (ok ? '' : `  (10→${JSON.stringify(r10)} 90→${JSON.stringify(r90)})`));
+
+    // Zero reprovaria todo mundo; 5000 não reprovaria ninguém.
+    const rZero = montarContexto({
+      camposOdoo: ['x_studio_dias_comprovante'], parametros: { x_studio_dias_comprovante: 0 },
+    }).ComprovanteHandler._conferirIdade(dias(40));
+    ok = rZero === null;   // 0 é inválido → volta ao padrão 60 → 40 dias passa
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} parâmetro absurdo (0) volta ao padrão em vez de reprovar todo mundo`
+      + (ok ? '' : `  (veio ${JSON.stringify(rZero)})`));
+  }
+
+  // E o mais importante: chave divergente é MAIS grave e continua mandando
+  {
+    const ctx = montarContexto({ camposOdoo: [] });
+    const r = ctx.ComprovanteHandler._conferirComprovante(
+      { data: dias(200), chavePix: 'outra@chave.com', recebedor: {} },
+      { x_studio_chave_pix: 'paroquia@pix.org' });
+    const ok = r && r.motivo === 'divergente';
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} comprovante antigo E com chave divergente reporta a CHAVE, que é mais grave`
+      + (ok ? '' : `  (veio ${JSON.stringify(r)})`));
+  }
+
+  // Antigo com a chave certa vira "Não confere" — a decisão de 23/09
+  {
+    const ctx = montarContexto({ camposOdoo: [] });
+    const r = ctx.ComprovanteHandler._conferirComprovante(
+      { data: dias(200), chavePix: 'paroquia@pix.org', recebedor: {} },
+      { x_studio_chave_pix: 'paroquia@pix.org' });
+    const status = r && ctx.statusDaDevolucao(r.motivo);
+    const ok = r && r.motivo === 'comprovante_antigo' && status === 'Rejeitado';
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} antigo com a chave certa vira "Não confere" e avisa a pessoa`
+      + (ok ? '' : `  (motivo ${r && r.motivo}, status ${status})`));
   }
 }
 
