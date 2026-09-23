@@ -127,12 +127,24 @@ if (CONFIG.verificar) {
   console.log('🔎 modo: VERIFICAR — perguntando ao Odoo, operação por operação\n');
   console.log('   Rode isto com a chave do usuário NOVO para valer.\n');
 
+  // `has_access` devolve booleano e não executa nada. Num recordset VAZIO —
+  // que é o que o execute_kw entrega quando não se passam ids — ele responde
+  // pelo acesso ao MODELO, que é justamente a pergunta aqui.
+  //
+  // Eu tinha escrito `check_access_rights`, que é o nome antigo e NÃO EXISTE
+  // MAIS nesta versão: em odoo/orm/models.py da saas-19.3 há `check_access`,
+  // que levanta exceção, e `has_access`, que devolve o booleano. O verificador
+  // teria estourado no primeiro modelo — e este é o script cujo trabalho é
+  // provar que o resto ficou certo.
   const pode = async (model, op) => {
     try {
-      // check_access_rights responde sem executar nada.
-      return await rpc(model, 'check_access_rights', [op], { raise_exception: false });
+      return await rpc(model, 'has_access', [op]);
     } catch (e) {
-      return `erro: ${e.message.split('\n')[0]}`;
+      const msg = e.message.split('\n')[0];
+      // Sem permissão de leitura, o próprio has_access pode ser recusado —
+      // e isso já é a resposta.
+      if (/AccessError|not allowed|permiss/i.test(msg)) return false;
+      return `erro: ${msg}`;
     }
   };
 

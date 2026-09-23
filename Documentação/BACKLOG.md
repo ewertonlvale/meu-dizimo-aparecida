@@ -927,6 +927,15 @@ essas permissões, e tem um modo **`--verificar`** que é o que importa: rodado 
 usuário novo, ele pergunta ao próprio Odoo, operação por operação, e acusa **tanto o que
 falta quanto o que sobra**.
 
+*Corrigido antes do primeiro uso:* eu tinha escrito `check_access_rights`, que **não existe
+mais** nesta versão. Em `odoo/orm/models.py` da `saas-19.3` há `check_access` (levanta
+exceção) e `has_access` (devolve booleano) — é o segundo que serve. O verificador teria
+estourado no primeiro modelo, e ele é justamente o script cujo trabalho é provar que o resto
+ficou certo.
+
+**Custo de usuário: não se aplica.** A paróquia está no plano gratuito do Odoo Online, que
+não limita usuários.
+
 **Ele não cria o usuário nem gera a chave**, de propósito: isso é segredo, e segredo não passa
 por script que alguém possa reexecutar ou logar.
 
@@ -950,12 +959,10 @@ histórico de repositório público não desfaz o que já foi lido — trate a U
 defesa real é a chave e o usuário não-administrador, que é justamente este item.
 `conta-mensagens.js` recusa a reintrodução.
 
-#### ⚠️ Custo
+#### Ganho secundário: trilha de auditoria
 
-No Odoo Online, usuário **interno** é cobrado por assento. Um usuário dedicado soma uma
-licença à fatura da paróquia. É o preço de separar o que o bot pode fazer do que um
-administrador pode — e, em segundo lugar, de ter trilha de auditoria: hoje tudo que o bot faz
-aparece como se o administrador tivesse feito.
+Hoje tudo que o bot faz aparece no Odoo como se o **administrador** tivesse feito. Com usuário
+próprio, o histórico de cada registro passa a dizer quem foi — o bot ou uma pessoa.
 
 ---
 
