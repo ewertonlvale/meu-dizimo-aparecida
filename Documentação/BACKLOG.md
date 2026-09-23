@@ -100,6 +100,7 @@
 | BL-69 | Comprovante de qualquer idade registrava normalmente — não havia checagem de data | 🟠 | P | ✅ Concluído (23/09) — mais de 60 dias, ou data no futuro, vira "Não confere" e avisa a pessoa. **Precisa de `clasp push`** |
 | BL-70 | Quem pula um mês tinha o dízimo gravado calado, sem escolher a competência | 🟠 | M | ✅ Concluído (23/09) — a pergunta passou a ser por intervalo desde a última devolução paga. **Precisa de `clasp push`** |
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
+| BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
 
 ---
 
@@ -817,15 +818,22 @@ competência.
 
 ---
 
-### Decidido em 23/09: a soma do lote NÃO é comparada com o comprovante
+### BL-72 — No lote de um membro, vale o valor do comprovante ✅ (P)
 
-Levantei que um comprovante de R$ 400 gerava registro de R$ 100 sem nada acusar, no fluxo de
-família. **A paróquia decidiu que isso é esperado:** o valor do cadastro é uma inclinação, e
-a pessoa devolve o que quiser.
+**Eu tinha entendido ao contrário.** Quando a paróquia disse *"o valor de cadastro é somente
+uma inclinação, a pessoa devolve o que quiser"*, registrei como "não precisa avisar da
+diferença". O sentido era o oposto: **o valor escolhido é irrelevante — vale o que foi pago**.
 
-⚠️ A consequência a ter em mente: o relatório mensal soma o valor **alocado**, não o que
-entrou na conta. Um comprovante que cobre mais do que foi selecionado deixa a diferença fora
-do total.
+O sintoma, no teste de 23/09: comprovante de **R$ 400**, registro de **R$ 100**. O relatório
+do mês ficava R$ 300 menor que o extrato, e o número no Odoo não correspondia a dinheiro
+nenhum.
+
+**A regra:** no lote com **um membro**, o valor do comprovante manda. É a mesma do BL-53, que
+valia só para oferta — e o caminho do dizimista único já fazia assim; só o lote de família
+não.
+
+**Com vários membros, a alocação da conversa continua mandando.** O comprovante traz um total
+e não há como dividi-lo entre as pessoas; ali a conversa é a única informação que existe.
 
 ---
 

@@ -2746,6 +2746,43 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
         comMes.length === 1 && comMes[0].botoes.length === 2, JSON.stringify(enviadas.map(e => e.texto && e.texto.slice(0, 40))));
     }
 
+    // O VALOR: comprovante manda quando há um membro só (BL-72).
+    //
+    // Escapou em produção, 23/09: comprovante de R$ 400, registro de R$ 100.
+    // O valor escolhido na conversa é uma inclinação — a pessoa devolve o que
+    // quiser —, e gravar o escolhido põe no Odoo um número que não corresponde
+    // a dinheiro nenhum. O relatório do mês ficava R$ 300 menor que o extrato.
+    {
+      function registraLote(membros) {
+        const gravados = [];
+        const ctx = montarContexto({
+          camposOdoo: ['x_studio_competencia'],
+          dizimista: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+          dizimistaNoOdoo: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+          comunidadeGravavel: true,
+          devolucaoPorId: { id: 99, x_studio_competencia: '2026-09-01' },
+          aoCriar: (m, d) => { if (m === 'x_devolucao') gravados.push(d.x_studio_value); },
+        });
+        ctx.Utils.enviarMenu = () => {}; ctx.Utils.enviarComBotaoMenu = () => {};
+        ctx.Utils.enviarSimples = () => {};
+        ctx.ComprovanteHandler._responderDesfecho = () => {};
+        ctx.ComprovanteHandler._tratarResultadoFamilia('55',
+          { dados: { valor: 400, data: '07/09/2026' }, tipo: 'imagem', arquivoOriginalBase64: null },
+          membros, '');
+        return gravados;
+      }
+
+      const um = registraLote([{ id: 7, nome: 'Thalles', valor: 100 }]);
+      confere('um membro só: grava os R$ 400 do comprovante, não os R$ 100 escolhidos',
+        um.length === 1 && um[0] === 400, JSON.stringify(um));
+
+      const varios = registraLote([
+        { id: 7, nome: 'Thalles', valor: 100 },
+        { id: 8, nome: 'Black',   valor: 300 }]);
+      confere('vários membros: mantém a alocação da conversa — o total não se divide sozinho',
+        varios.length === 2 && varios[0] === 100 && varios[1] === 300, JSON.stringify(varios));
+    }
+
     // Botão antigo, de mensagem que saiu antes do BL-71
     {
       const ditos = [];
