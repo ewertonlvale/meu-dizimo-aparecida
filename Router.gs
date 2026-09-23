@@ -208,7 +208,7 @@ const Router = {
     // não em sessão. Por isso isto funciona mesmo horas depois, e mesmo se a
     // sessão já tiver expirado — que é o caso comum, já que a devolução foi
     // encerrada antes de a pergunta sair.
-    if (buttonId && buttonId.indexOf('comp_') === 0) {
+    if (buttonId && (buttonId.indexOf('comp_') === 0 || buttonId.indexOf('compm_') === 0)) {
       ComprovanteHandler.corrigirMes(from, buttonId);
       return;
     }

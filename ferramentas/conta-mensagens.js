@@ -309,10 +309,14 @@ function montarContexto(cenario) {
             : op === '!=' ? v !== alvo
             : v === alvo;
           const condicoes = (dominio || []).filter(d => d[0] === 'x_studio_competencia');
-          const querStatus = (dominio || []).find(d => d[0] === 'x_studio_status');
+          // O operador do STATUS também conta: a busca pela última devolução
+          // PAGA usa `!= 'A devolver'`, e tratar isso como igualdade devolvia
+          // o oposto do pedido. Terceira vez que este fake mente por ignorar
+          // um operador.
+          const qs = (dominio || []).find(d => d[0] === 'x_studio_status');
           return (cenario.devolucoesPorCompetencia || []).filter(r =>
             condicoes.every(([, op, alvo]) => compara(r.x_studio_competencia, op, alvo))
-            && (!querStatus || r.x_studio_status === querStatus[2]));
+            && (!qs || compara(r.x_studio_status, qs[1], qs[2])));
         }
         // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
         // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
@@ -2687,58 +2691,66 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
         devolucaoPorId: { id: 90, x_studio_competencia: competenciaDoPago },
       });
       ctx.Utils.enviarMenu = (to, texto, botoes) => enviadas.push({ texto, botoes });
+      ctx.Utils.enviarLista = (to, texto, secoes) =>
+        enviadas.push({ texto, botoes: (secoes[0] || {}).rows || [], lista: true });
       ctx.Utils.enviarComBotaoMenu = (to, texto) => enviadas.push({ texto, botoes: [] });
       ctx.ComprovanteHandler._ofereceCorrigirMes('55', 90, 7);
       return enviadas;
     }
 
     // Tem setembro em aberto e o pagamento foi registrado em dezembro
-    const comDuvida = ofereceu(
-      [{ id: 41, x_studio_competencia: '2026-09-01', x_studio_status: 'A devolver' }],
-      '2026-12-01');
-    confere('com mês anterior em aberto, oferece corrigir',
-      comDuvida.length === 1 && /setembro\/2026/.test(comDuvida[0].texto),
-      JSON.stringify(comDuvida));
-    confere('o botão carrega os dois ids, sem depender de sessão',
-      comDuvida.length === 1 && comDuvida[0].botoes[0].id === 'comp_90_41',
-      JSON.stringify(comDuvida[0] && comDuvida[0].botoes));
-
-    // O CASO QUE ESCAPOU EM PRODUÇÃO, 23/09.
+    // BL-70: a pergunta passou a ser por INTERVALO, não por "mês em aberto".
     //
-    // A pessoa tinha MAIO em aberto e mandou um comprovante de 5 de abril. O
-    // bot gravou abril calado, porque a primeira versão só procurava mês
-    // ANTERIOR ao registrado — e maio é posterior. A dúvida é a mesma nos dois
-    // sentidos: há um mês em aberto e entrou um pagamento em outro.
-    const abertoDepois = ofereceu(
-      [{ id: 41, x_studio_competencia: '2026-05-01', x_studio_status: 'A devolver' }],
-      '2026-04-01');   // maio já passou (hoje é setembro/2026 ou depois)
-    confere('mês em aberto POSTERIOR ao pago também gera pergunta (escapou em produção)',
-      abertoDepois.length === 1 && /maio\/2026/.test(abertoDepois[0].texto),
-      JSON.stringify(abertoDepois));
-
-    // O DEFEITO QUE A CORREÇÃO ANTERIOR INTRODUZIU.
+    // A versão anterior só perguntava quando existia um registro `A devolver`
+    // para oferecer. Mas a corrente abre um mês por vez: quem pagou julho e
+    // voltou em setembro tem agosto sem registro nenhum — e o bot gravava
+    // setembro calado. Foi o que aconteceu no teste de 23/09.
     //
-    // `registrarDevolucao` abre o mês seguinte ANTES de a oferta rodar. Com a
-    // busca por "competência diferente", ela encontrava esse mês recém-criado
-    // e TODA devolução passava a perguntar, oferecendo um mês futuro como se
-    // fosse dívida. Mês que ainda não terminou é compromisso, não dívida.
-    const mesQueOBotAcabouDeAbrir = ofereceu(
-      [{ id: 42, x_studio_competencia: '2026-10-01', x_studio_status: 'A devolver' }],
+    // E preencher agosto sozinho seria pior: há quem devolva de dois em dois
+    // ou de três em três meses, e para essa pessoa agosto é o ritmo, não
+    // dívida. Quem sabe a que mês o dinheiro se refere é ela.
+    const pulouUmMes = ofereceu(
+      [{ id: 10, x_studio_competencia: '2026-07-01', x_studio_status: 'Confirmado' }],
       '2026-09-01');
-    confere('o mês que o próprio bot acabou de abrir NÃO vira pergunta',
-      mesQueOBotAcabouDeAbrir.length === 0, JSON.stringify(mesQueOBotAcabouDeAbrir));
+    confere('pagou julho e voltou em setembro: pergunta, mesmo sem agosto existir',
+      pulouUmMes.length === 1 && pulouUmMes[0].botoes.length === 2,
+      JSON.stringify(pulouUmMes));
+    confere('o mês registrado vem PRIMEIRO — é o palpite do bot',
+      pulouUmMes.length === 1
+      && /setembro\/2026/.test(pulouUmMes[0].botoes[0].title)
+      && /agosto\/2026/.test(pulouUmMes[0].botoes[1].title),
+      JSON.stringify(pulouUmMes[0] && pulouUmMes[0].botoes));
+    confere('o id do botão carrega o mês escolhido, sem depender de sessão',
+      pulouUmMes.length === 1 && pulouUmMes[0].botoes[1].id === 'compm_90_2026-08-01',
+      JSON.stringify(pulouUmMes[0] && pulouUmMes[0].botoes));
 
-    // Sem mês em aberto: NADA é enviado
-    const semDuvida = ofereceu([], '2026-12-01');
-    confere('sem mês em aberto, não manda mensagem nenhuma',
-      semDuvida.length === 0, JSON.stringify(semDuvida));
+    // Quem devolve todo mês não recebe pergunta nenhuma
+    const mesSeguido = ofereceu(
+      [{ id: 10, x_studio_competencia: '2026-08-01', x_studio_status: 'Confirmado' }],
+      '2026-09-01');
+    confere('quem devolve todo mês não é perguntado',
+      mesSeguido.length === 0, JSON.stringify(mesSeguido));
 
-    // Mês em aberto é o MESMO que foi pago: também não pergunta
-    const mesmoMes = ofereceu(
-      [{ id: 41, x_studio_competencia: '2026-12-01', x_studio_status: 'A devolver' }],
-      '2026-12-01');
-    confere('mês em aberto igual ao pago não gera pergunta',
-      mesmoMes.length === 0, JSON.stringify(mesmoMes));
+    // Primeira devolução da vida: não há de onde contar intervalo
+    const primeira = ofereceu([], '2026-09-01');
+    confere('primeira devolução da vida não gera pergunta',
+      primeira.length === 0, JSON.stringify(primeira));
+
+    // Quatro ou mais opções não cabem em botão: vira lista
+    const tresMeses = ofereceu(
+      [{ id: 10, x_studio_competencia: '2026-05-01', x_studio_status: 'Confirmado' }],
+      '2026-09-01');
+    confere('quatro meses ou mais viram lista, que o WhatsApp comporta',
+      tresMeses.length === 1 && tresMeses[0].lista === true && tresMeses[0].botoes.length === 4,
+      JSON.stringify(tresMeses.map((e) => e.botoes.length)));
+
+    // Quem sumiu por anos não recebe uma lista impossível de ler
+    const sumiu = ofereceu(
+      [{ id: 10, x_studio_competencia: '2023-01-01', x_studio_status: 'Confirmado' }],
+      '2026-09-01');
+    confere('quem sumiu por anos recebe no máximo 6 opções',
+      sumiu.length === 1 && sumiu[0].botoes.length === 6,
+      JSON.stringify(sumiu.map((e) => e.botoes.length)));
 
     // A correção troca as competências, e não copia
     {

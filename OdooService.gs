@@ -938,6 +938,84 @@ const OdooService = {
   },
 
   /**
+   * A quais meses este pagamento PODE se referir? (BL-70)
+   *
+   * Do mês seguinte à última devolução paga até o mês que acabou de ser
+   * registrado. Um só na lista quer dizer que não há dúvida.
+   *
+   * POR QUE O INTERVALO, E NÃO O "MÊS EM ABERTO"
+   *   A versão anterior só perguntava quando existia um registro `A devolver`
+   *   para oferecer. Só que a corrente abre um mês por vez: quem pagou julho e
+   *   voltou em setembro tem agosto sem registro NENHUM — e o bot gravava
+   *   setembro calado, sem nunca mencionar agosto.
+   *
+   *   E preencher agosto sozinho seria pior: há quem devolva a cada dois ou
+   *   três meses por hábito, e para essa pessoa agosto não é dívida, é o
+   *   ritmo dela. Quem sabe a que mês o dinheiro se refere é ela.
+   *
+   * SEM DEVOLUÇÃO ANTERIOR, NÃO HÁ INTERVALO. Primeira devolução da vida não
+   * gera pergunta — não há de onde contar.
+   *
+   * @returns {string[]} competências 'aaaa-mm-01', da mais antiga à registrada
+   */
+  mesesCandidatos(dizimistaId, competenciaRegistrada, tipo = 'dizimo') {
+    if (!dizimistaId || tipo === 'oferta') return [competenciaRegistrada];
+    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return [competenciaRegistrada];
+
+    let ultima = null;
+    try {
+      const regs = this.searchRead('x_devolucao', ['x_studio_competencia'], [
+        ['x_studio_dizimista',   '=',  dizimistaId],
+        ['x_studio_status',      '!=', STATUS_A_DEVOLVER],
+        ['x_studio_competencia', '<',  competenciaRegistrada]
+      ], { order: 'x_studio_competencia desc', limit: 1 });
+      ultima = regs && regs[0] && regs[0].x_studio_competencia;
+    } catch (e) {
+      console.warn(`⚠️ [Competência] Não consegui ver a última devolução: ${e.message}`);
+      return [competenciaRegistrada];
+    }
+    if (!ultima) return [competenciaRegistrada];
+
+    const meses = [];
+    let [ano, mes] = String(ultima).split('-').map(Number);
+    for (let i = 0; i < 240; i++) {          // teto físico: 20 anos
+      if (++mes > 12) { mes = 1; ano++; }
+      const c = `${ano}-${String(mes).padStart(2, '0')}-01`;
+      meses.push(c);
+      if (c >= competenciaRegistrada) break;
+    }
+
+    // Quem some por anos geraria uma lista impossível de ler. Os seis mais
+    // recentes cobrem o ritmo mais espaçado que a paróquia descreveu — de dois
+    // em dois, de três em três meses — com folga.
+    return meses.length > 6 ? meses.slice(-6) : meses;
+  },
+
+  /**
+   * Passa a devolução para a competência escolhida pela pessoa. (BL-70)
+   *
+   * Se já existe um `A devolver` daquele mês, TROCA as competências entre os
+   * dois: o mês escolhido fica pago e o que estava pago volta a ficar aberto.
+   * Se não existe, só grava — não há nada para reabrir, e inventar um `A
+   * devolver` seria decidir pela pessoa que ela deve aquele mês.
+   *
+   * @returns {boolean}
+   */
+  definirCompetencia(idPago, competencia, dizimistaId) {
+    const abertos = this.searchRead('x_devolucao', ['id'], [
+      ['x_studio_dizimista',   '=', dizimistaId],
+      ['x_studio_status',      '=', STATUS_A_DEVOLVER],
+      ['x_studio_competencia', '=', competencia]
+    ], { limit: 1 });
+
+    if (abertos && abertos.length) return this.trocarCompetencia(idPago, abertos[0].id);
+
+    this.write('x_devolucao', idPago, { x_studio_competencia: competencia });
+    console.log(`📅 [Devolução] ${idPago} passou a valer para ${competencia}`);
+    return true;
+  },
+
+  /**
    * Há um mês em aberto DIFERENTE do que acabou de ser registrado? (BL-62)
    *
    * Quando alguém paga em dezembro e tem setembro em aberto, o bot não tem como
