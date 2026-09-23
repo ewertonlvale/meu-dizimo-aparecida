@@ -101,6 +101,7 @@
 | BL-70 | Quem pula um mês tinha o dízimo gravado calado, sem escolher a competência | 🟠 | M | ✅ Concluído (23/09) — a pergunta passou a ser por intervalo desde a última devolução paga. **Precisa de `clasp push`** |
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
+| BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Ferramenta pronta (23/09)** — grupo, matriz de permissões e modo `--verificar`. Falta criar o usuário e trocar as Properties |
 
 ---
@@ -974,7 +975,7 @@ próprio, o histórico de cada registro passa a dizer quem foi — o bot ou uma 
 **Correção:** reescrever as chamadas usando `searchRead`/`create`; para `search_count`, adicionar um método `count(model, domain)` em `OdooService`. Corrigir o nome do campo de data. Remover ou corrigir `processarRespostaNotificacao`.
 **Aceite:** `executarNotificacoesDiarias()` roda sem erro; um dizimista elegível recebe o template; log gravado em `x_notificacao_log`; quem já devolveu no mês não é notificado.
 
-**⚠️ Nota de sequenciamento (auditoria 17/09/2026):** o Sprint 3 abaixo determina fazer **BL-21 e BL-24 antes** de reativar o BL-01 — mas o BL-01 está concluído e **já em produção** (trigger de hora em hora, `NotificacaoHandler.gs:356-358`), enquanto BL-21 e BL-24 seguem abertos. O envio em si é seguro: é sequencial com `Utilities.sleep(2000)` entre mensagens (`:179`), então não há rajada de *saída*. A exposição é a **onda de respostas** que chega nos minutos seguintes — o cenário 6 da análise de carga — batendo num webhook sem retry/backoff (BL-24) e sob o teto de ~30 execuções simultâneas (BL-21). **Recomendação:** priorizar BL-24 antes do próximo ciclo mensal de notificações, ou reduzir o alcance do disparo (lotes menores por hora) até que BL-21/BL-24 estejam fechados.
+**⚠️ Nota de sequenciamento (auditoria 17/09/2026):** o Sprint 3 abaixo determina fazer **BL-21 e BL-24 antes** de reativar o BL-01 — mas o BL-01 está concluído e **já em produção** (trigger de hora em hora, `NotificacaoHandler.gs:356-358`), enquanto BL-21 e BL-24 seguem abertos. O envio em si é seguro: é sequencial com `Utilities.sleep(2000)` entre mensagens (`:179`), então não há rajada de *saída*. A exposição é a **onda de respostas** que chega nos minutos seguintes — o cenário 6 da análise de carga — batendo num webhook sem retry/backoff (BL-24) e sob o teto de ~30 execuções simultâneas (BL-21). **Recomendação:** priorizar BL-24 antes do próximo ciclo mensal de notificações, ou reduzir o alcance do disparo (lotes menores por hora) até que BL-21/BL-24 estejam fechados. **Situação em 23/09:** as duas metades foram feitas — o BL-24 está concluído (`Utils.fetchComRetry`) e o **BL-73** escalonou o disparo em lotes configuráveis (padrão: 20 a cada 2h, das 9h às 17h). O teto do BL-21 continua de pé para o tráfego normal, mas o disparo de lembretes deixou de ser um gatilho previsível para encostar nele.
 
 ### BL-02 — Confirmação falsa de devolução 🔴 (P)
 **Arquivo:** `ComprovanteHandler.gs:225-262`
@@ -2114,3 +2115,97 @@ Nada do que foi corrigido vale no bot antes destes passos. Ordem sugerida, tudo 
 5. `WEBHOOK_SECRET` já está configurado nesta instalação, então o fail-closed do BL-17 não muda nada na Meta. Para conferir a URL de callback: `configurarSegredoWebhook()` reimprime sem trocar o segredo.
 6. Testar pelo WhatsApp, com atenção ao **fluxo de comprovante**, que concentra BL-24, BL-26 e BL-27: imagem legível, imagem com chave divergente (deve cair em conferência e aparecer com ⚠️ na lista do coordenador) e um PDF ilegível (deve pedir reenvio e **não** registrar R$ 0,00).
 7. Opcional, quando quiser fechar o BL-17: seguir o roteiro do uid dedicado e repetir o passo 6 com as novas credenciais.
+
+### BL-73 — O disparo de lembretes é escalonado ✅ (M)
+
+**Pedido (usuário, 23/09):** *"Nao vai ocorrer 500 notificações de uma vez. Exceto se tiver 500
+dizimistas com data de devolução no mesmo dia. Mas uma forma de mitigar é escalonar. A rotina
+pode executar a cada 2h e pega 20 dizimistas para notificar. Os alertas devem ser entre 9h e 17h.
+Todos esses parâmetros devem ser configuráveis."*
+
+**O diagnóstico estava certo, e já estava escrito aqui.** A nota de sequenciamento do BL-01
+(auditoria 17/09) recomendava exatamente isto: *"reduzir o alcance do disparo (lotes menores por
+hora) até que BL-21/BL-24 estejam fechados"*. Ficou registrada e não foi feita.
+
+**O que era o risco, e o que NÃO era.** O envio nunca foi o gargalo: ele já é sequencial, com
+`Utilities.sleep(2000)` entre mensagens, então não havia rajada de *saída*. O problema é a **onda
+de volta** — quem recebe o lembrete responde nos minutos seguintes, cada resposta é uma execução
+do webhook, e o teto de ~30 execuções simultâneas do Apps Script (BL-21) é compartilhado por
+todos os usuários. Notificar 500 pessoas de uma vez não trava o envio; trava a conversa de todo
+mundo depois dele. Havia ainda um segundo problema, mais silencioso: a seleção fazia **duas
+consultas ao Odoo por candidato**, então 500 dizimistas eram ~1000 RPCs numa execução com teto de
+6 minutos.
+
+**O que passou a valer.** Quatro números em `x_parametros`, todos inteiros, todos com padrão de
+fábrica em `NOTIFICACAO_PADRAO` (Config.gs) e faixa em `NOTIFICACAO_LIMITES`:
+
+| Campo | Padrão | Faixa | O que é |
+|---|---|---|---|
+| `x_studio_notif_hora_inicio` | 9 | 0..23 | a partir de que hora se pode tocar o telefone |
+| `x_studio_notif_hora_fim` | 17 | 1..24 | até que hora — **exclusivo** |
+| `x_studio_notif_intervalo` | 2 | 1..12 | de quantas em quantas horas sai um lote |
+| `x_studio_notif_lote` | 20 | 1..200 | quantos lembretes por lote |
+
+Com os padrões: disparos às **9h, 11h, 13h e 15h**, 20 cada — 80 por dia.
+
+**`horaFim` é exclusivo**, como sempre foi nesta rotina. `17` quer dizer que o último disparo
+acontece **antes** das 17h — com intervalo 2 e início 9, o último é o das 15h. Para incluir a hora
+das 17h, o valor é `18`. Está escrito na descrição do campo, que é onde a paróquia lê antes de
+digitar.
+
+**O acionador continua de hora em hora, de propósito.** Trocar para `everyHours(2)` seria o
+caminho óbvio e estaria errado: o intervalo passaria a morar no Apps Script, e mudá-lo exigiria
+alguém abrir o editor e reinstalar o acionador — o pedido era que **todos** os parâmetros fossem
+configuráveis, e isso só se sustenta se a decisão for tomada a cada execução, com o número que
+está no Odoo agora. O preço são as ~20 execuções diárias que acordam, leem `x_parametros` e
+terminam. É barato, e é o que paga a configurabilidade. O harness reprova quem "otimizar" isso.
+
+**O teto é uma PARADA, não um corte.** `buscarDizimistasElegiveis(limite)` para de examinar
+candidatos assim que enche o lote. A diferença não é cosmética: cortar no fim gastaria as ~1000
+RPCs mesmo assim, com o log dizendo "20 enviados" — exatamente o que se esperava ver. Há um caso
+no harness que conta as consultas de histórico e reprova se passarem de `2 × lote`.
+
+**A fila anda, e ninguém é perdido.** Quem fica de fora de um lote continua elegível no disparo
+seguinte, porque a repescagem notifica **a partir** do dia de notificação, não só nele, e
+`jaFoiNotificadoEsteMes` tira da conta quem já recebeu. A ordem é `dia_preferido asc, id asc`:
+quem venceu primeiro é notificado primeiro, e o desempate por id é estável, de modo que a fila não
+embaralha entre disparos.
+
+**O que se recusou a fazer, e por quê.** Três decisões onde o lado "seguro" seria calar:
+
+1. **`x_parametros` ilegível não suprime o disparo** — sai com o padrão de fábrica, que é
+   conservador por construção. O oposto seria uma instabilidade de rede às 9h suprimindo o
+   lembrete do dia inteiro.
+2. **Número fora da faixa volta ao padrão e avisa no log** — `lote: 0` calaria a rotina para
+   sempre, `lote: 9999` traria de volta a rajada que isto existe para evitar.
+3. **Janela invertida (`fim <= início`) volta ao padrão** — é a única combinação rejeitada como
+   *conjunto*: cada número sozinho está na faixa, mas juntos fecham a janela e o lembrete nunca
+   mais sai, em silêncio.
+
+**O modo de falha deste desenho é silencioso**, e por isso ganhou uma ferramenta própria:
+`previsaoEscalonamento()`, no editor do Apps Script, imprime a janela, os degraus do dia, o teto
+diário e quantos dias levaria para percorrer a fila de hoje — avisando quando passa de 3. Um lote
+pequeno demais não dá erro nenhum; só faz o lembrete de alguém chegar dias depois.
+
+**Cobertura:** 23 casos novos no `conta-mensagens.js`, rodando `executarNotificacoesDiarias`
+inteira contra stubs com o relógio e a resposta do Odoo fixados. **12 deles reprovam contra o
+código anterior** — conferido revertendo os dois arquivos e rodando o harness. Mais duas
+verificações estruturais: os padrões e faixas de `Config.gs` têm de bater com os do instalador (a
+descrição do campo é o único lugar onde a paróquia lê a faixa), e o acionador tem de continuar
+`everyHours(1)`.
+
+**Instalação:**
+
+```
+node ferramentas/instalar-escalonamento-notificacao.mjs            # simula
+node ferramentas/instalar-escalonamento-notificacao.mjs --aplicar  # grava
+```
+
+Depois, arrastar os quatro campos para o formulário de Parâmetros no Studio — criar o campo não o
+põe na tela. **O escalonamento já vale sem isso**, com o padrão de fábrica; o instalador serve
+para poder ajustar.
+
+**Fica aberto:** o BL-73 mitiga o BL-21, não o fecha. O teto de execuções simultâneas continua de
+pé para o tráfego normal de conversas; o que mudou é que o disparo de lembretes deixou de ser um
+gatilho previsível para encostar nele.
+

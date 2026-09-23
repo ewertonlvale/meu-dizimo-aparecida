@@ -263,6 +263,58 @@ const STATUS_A_DEVOLVER = 'A devolver';
 const DIAS_COMPROVANTE_ANTIGO_PADRAO = 60;
 
 /**
+ * O escalonamento do disparo de lembretes. (BL-73)
+ *
+ * O PROBLEMA QUE ISTO RESOLVE não é a saída — o envio já é sequencial, com
+ * 2 s entre mensagens. É a ONDA DE VOLTA: quem recebe o lembrete responde
+ * nos minutos seguintes, e cada resposta é uma execução do webhook, sob o
+ * teto de ~30 simultâneas do Apps Script (BL-21). Notificar 500 pessoas de
+ * uma vez não trava o envio; trava a conversa de todo mundo depois dele.
+ *
+ * A saída é a que a própria auditoria do BL-01 já recomendava: lotes menores,
+ * espalhados no dia. Quatro números, e todos vêm de `x_parametros` — quem
+ * sabe se 20 por vez é muito ou pouco é a paróquia, não quem escreveu isto.
+ *
+ *   horaInicio / horaFim   a janela em que se pode tocar o telefone de alguém.
+ *                          `horaFim` é EXCLUSIVO, como sempre foi aqui: 17
+ *                          quer dizer que o último disparo acontece ANTES das
+ *                          17h. Para incluir a hora das 17h, ponha 18.
+ *   intervaloHoras         de quantas em quantas horas um lote sai.
+ *   lote                   quantos lembretes por disparo.
+ *
+ * COM OS PADRÕES: disparos às 9h, 11h, 13h e 15h, 20 pessoas cada — 80 por
+ * dia. Uma paróquia com 500 dizimistas no mesmo dia de vencimento leva ~6
+ * dias para percorrer todos, e a repescagem de `buscarDizimistasElegiveis`
+ * (que notifica a PARTIR do dia, não só nele) é justamente o que faz esse
+ * arrasto funcionar em vez de perder gente.
+ *
+ * O ACIONADOR CONTINUA DE HORA EM HORA. O intervalo é decidido aqui, a cada
+ * execução, e não na instalação do acionador — senão mudar o número no Odoo
+ * não valeria nada sem alguém abrir o editor do Apps Script e reinstalar.
+ */
+const NOTIFICACAO_PADRAO = {
+  horaInicio:     9,
+  horaFim:        17,   // exclusivo
+  intervaloHoras: 2,
+  lote:           20
+};
+
+/**
+ * Os limites de cada parâmetro de notificação, e o que fazer fora deles.
+ *
+ * Todo campo aqui é editável por quem não escreveu o código, e cada um tem um
+ * jeito de virar desastre: lote 0 nunca notifica ninguém, lote 500 traz de
+ * volta exatamente a rajada que isto existe para evitar, hora 25 não existe.
+ * Fora da faixa, vale o padrão de fábrica — a mesma decisão do BL-69.
+ */
+const NOTIFICACAO_LIMITES = {
+  horaInicio:     { min: 0, max: 23 },
+  horaFim:        { min: 1, max: 24 },
+  intervaloHoras: { min: 1, max: 12 },
+  lote:           { min: 1, max: 200 }
+};
+
+/**
  * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
  *
  * Bem mais restrito que `exigeConferencia`. Ali o custo de errar é um olhar
