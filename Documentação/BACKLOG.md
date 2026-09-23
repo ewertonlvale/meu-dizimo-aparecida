@@ -98,6 +98,7 @@
 | BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
 | BL-68 | "Leitura automática do comprovante" aparecia em lançamento sem comprovante | 🟡 | P | ✅ Concluído (22/09) — o rótulo muda quando não há comprovante |
 | BL-69 | Comprovante de qualquer idade registrava normalmente — não havia checagem de data | 🟠 | P | ✅ Concluído (23/09) — mais de 60 dias, ou data no futuro, vira "Não confere" e avisa a pessoa. **Precisa de `clasp push`** |
+| BL-70 | Quem pula um mês tinha o dízimo gravado calado, sem escolher a competência | 🟠 | M | ✅ Concluído (23/09) — a pergunta passou a ser por intervalo desde a última devolução paga. **Precisa de `clasp push`** |
 
 ---
 
@@ -768,6 +769,62 @@ Pagar em 01/10 o dízimo de setembro dá competência *outubro*, que está errad
 de código novo: setembro está em aberto e é anterior ao mês corrente, então o mecanismo do
 BL-62 pergunta *"vi que você tem setembro/2026 em aberto…"* e a troca de competências
 resolve. Só não funciona para quem nunca devolveu antes — e aí não há o que adivinhar.
+
+---
+
+### BL-70 — A pergunta do mês, por intervalo ✅ (M)
+
+**O sintoma, no teste de 23/09:** o dizimista tinha julho pago, mandou um comprovante de
+setembro, e o bot gravou setembro **calado**. Agosto nunca foi mencionado.
+
+**A causa:** a pergunta do BL-62 só existia quando havia um registro `A devolver` para
+oferecer. Mas a corrente abre **um mês por vez** — pagou julho, abre agosto; pagou setembro,
+abre outubro. Quem pula um mês tem esse mês **sem registro nenhum**, e não havia o que
+oferecer.
+
+**Por que não bastava preencher os meses que faltam**, que foi a minha primeira proposta:
+há quem devolva de dois em dois ou de três em três meses por hábito. Para essa pessoa agosto
+não é dívida — é o ritmo dela. Criar o registro seria decidir por ela que ela deve.
+
+**A regra nova:** os candidatos vão do mês seguinte à **última devolução paga** até o mês
+que acabou de ser registrado. Mais de um candidato, pergunta; um só, silêncio.
+
+| situação | candidatos | pergunta? |
+|---|---|---|
+| pagou agosto, registra setembro | setembro | não |
+| pagou julho, registra setembro | agosto, setembro | **sim**, 2 botões |
+| pagou maio, registra setembro | jun…set | **sim**, vira lista |
+| primeira devolução da vida | — | não, não há de onde contar |
+
+O mês registrado vem **primeiro** na lista: é o palpite do bot, e quem concorda toca no
+primeiro item sem ler o resto. Até três opções viram botão (um toque); acima disso, lista —
+quem devolve de três em três meses chega a quatro.
+
+**Teto de 6 opções.** Quem some por anos geraria uma lista impossível de ler; seis cobrem com
+folga o ritmo mais espaçado que a paróquia descreveu.
+
+**Ao escolher um mês:** se existe um `A devolver` daquele mês, as competências **trocam**. Se
+não existe, só grava — inventar um `A devolver` para o mês que sobrou seria, de novo, decidir
+pela pessoa que ela o deve.
+
+**O formato antigo do botão (`comp_<id>_<id>`) continua roteado**, para as mensagens que
+saíram antes desta mudança e ainda estão na conversa de alguém.
+
+*Terceira vez que o fake do harness mentiu por ignorar um operador* — desta vez `!=` no
+status, na busca pela última devolução **paga**. Agora compara operador em status e em
+competência.
+
+---
+
+### Decidido em 23/09: a soma do lote NÃO é comparada com o comprovante
+
+Levantei que um comprovante de R$ 400 gerava registro de R$ 100 sem nada acusar, no fluxo de
+família. **A paróquia decidiu que isso é esperado:** o valor do cadastro é uma inclinação, e
+a pessoa devolve o que quiser.
+
+⚠️ A consequência a ter em mente: o relatório mensal soma o valor **alocado**, não o que
+entrou na conta. Um comprovante que cobre mais do que foi selecionado deixa a diferença fora
+do total.
 
 ---
 
