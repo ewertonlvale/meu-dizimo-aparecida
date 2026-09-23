@@ -471,6 +471,17 @@ e o pagamento se perde.
 > que eu acerto.
 > `[ setembro/2026 ]` `[ Está certo ]`
 
+**Corrigido em 23/09, depois do primeiro teste real:** a pergunta procurava só mês em aberto
+**anterior** ao registrado. A pessoa tinha *maio* em aberto, mandou um comprovante de 5 de
+abril, e o bot gravou abril **calado** — maio é posterior, então a pergunta nem foi
+considerada. A dúvida é a mesma nos dois sentidos: há um mês em aberto e entrou um pagamento
+em outro. Agora procura qualquer competência **diferente**, e oferece a mais antiga.
+Conferido que o teste novo fica vermelho com a versão que foi a produção.
+
+*No mesmo teste:* o `A devolver` aparecia na lista com forma de pagamento **"Dinheiro"** — o
+padrão do campo no Odoo, num mês que ninguém devolveu. Dado inventado na coluna que o
+coordenador lê. Passa a nascer vazio.
+
 **Os dois ids viajam dentro do id do botão**, não em sessão. É o que faz a correção funcionar
 horas depois, com a sessão já expirada — que é o caso normal, já que a devolução é encerrada
 antes de a pergunta sair.

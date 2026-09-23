@@ -938,7 +938,7 @@ const OdooService = {
   },
 
   /**
-   * Há um mês em aberto ANTERIOR ao que acabou de ser registrado? (BL-62)
+   * Há um mês em aberto DIFERENTE do que acabou de ser registrado? (BL-62)
    *
    * Quando alguém paga em dezembro e tem setembro em aberto, o bot não tem como
    * saber de qual mês é o pagamento. A resposta honesta é registrar dezembro e
@@ -952,19 +952,31 @@ const OdooService = {
    *
    * @returns {{id: number, competencia: string}|null}
    */
-  mesEmAbertoAnterior(dizimistaId, competenciaRegistrada, tipo = 'dizimo') {
+  mesEmAbertoDiferente(dizimistaId, competenciaRegistrada, tipo = 'dizimo') {
     if (!dizimistaId || tipo === 'oferta') return null;
     if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
     try {
+      // DIFERENTE, e não "anterior".
+      //
+      // A primeira versão procurava só mês anterior, e o primeiro teste de
+      // verdade mostrou o furo: a pessoa tinha MAIO em aberto, mandou um
+      // comprovante de 5 de abril, e o bot gravou abril calado. Maio é
+      // posterior, então a pergunta nem foi considerada — mas a dúvida é
+      // exatamente a mesma: há um mês em aberto e acabou de entrar um
+      // pagamento em outro. Qual dos dois a pessoa quis pagar é pergunta para
+      // ela, nos dois sentidos.
+      //
+      // Quando há mais de um em aberto, oferece o mais antigo: é a dívida mais
+      // velha, e a que a paróquia quer ver fechar primeiro.
       const regs = this.searchRead('x_devolucao', ['id', 'x_studio_competencia'], [
         ['x_studio_dizimista',   '=', dizimistaId],
         ['x_studio_status',      '=', STATUS_A_DEVOLVER],
-        ['x_studio_competencia', '<', competenciaRegistrada]
+        ['x_studio_competencia', '!=', competenciaRegistrada]
       ], { order: 'x_studio_competencia asc', limit: 1 });
       const r = regs && regs[0];
       return r ? { id: r.id, competencia: r.x_studio_competencia } : null;
     } catch (e) {
-      console.warn(`⚠️ [Devolução] Não consegui procurar mês anterior em aberto: ${e.message}`);
+      console.warn(`⚠️ [Devolução] Não consegui procurar mês em aberto: ${e.message}`);
       return null;
     }
   },
@@ -1055,7 +1067,11 @@ const OdooService = {
       x_studio_dizimista:      dizimistaId,
       x_studio_status:         STATUS_A_DEVOLVER,
       x_studio_competencia:    proximo,
-      x_studio_value:          0
+      x_studio_value:          0,
+      // Sem forma de pagamento: ninguém pagou ainda. O campo tem padrão no
+      // Odoo, e sem esta linha a lista mostrava "Dinheiro" num mês que ninguém
+      // devolveu — um dado inventado, na coluna que o coordenador lê.
+      x_studio_forma_de_pagamento: false
       // Sem x_studio_data_da_devolucao, e isso NÃO é esquecimento: é a
       // invariante inteira deste item. Ver Config.gs, STATUS_A_DEVOLVER.
     };
