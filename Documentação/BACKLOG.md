@@ -866,7 +866,16 @@ pagamento. Restam alguns registros na base, de antes desta mudança; podem ser a
 O botão do formato antigo (`comp_<id>_<id>`) responde com um aviso honesto em vez de estourar
 — há mensagens dele em conversas de ontem.
 
-**16 cenários**, incluindo o caso do teste real (julho pago, comprovante de setembro), o
+**Corrigido em 23/09, no teste seguinte:** a pergunta não aparecia para quem usa o fluxo de
+**família**. Quem toca em "De quem é a devolução?" e escolhe uma pessoa passa por
+`_tratarResultadoFamilia`, e eu só tinha ligado a pergunta no caminho do dizimista único.
+
+O motivo estava escrito por mim no BL-62 — *"uma pergunta por membro viraria uma rajada de
+mensagens"* — e continua valendo para família de verdade. Mas **lote de um não é lote**:
+agora o lote com exatamente um membro recebe a pergunta, e com vários segue sem. Com vários,
+uma pergunta só não teria resposta possível — cada pessoa pode estar num mês diferente.
+
+**17 cenários**, incluindo o caso do teste real (julho pago, comprovante de setembro), o
 pagamento no dia 1º, quem sumiu por anos (continua sendo *uma* pergunta de duas opções), e o
 `A devolver` no mês anterior não cobrindo nada.
 

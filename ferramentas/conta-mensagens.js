@@ -2715,6 +2715,37 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
         JSON.stringify(escritos));
     }
 
+    // O LOTE DE FAMÍLIA COM UM MEMBRO SÓ.
+    //
+    // Escapou em produção, 23/09: quem abre "De quem é a devolução?" e escolhe
+    // uma pessoa passa pelo caminho de FAMÍLIA, que nunca chamava a pergunta.
+    // Eu tinha documentado o porquê no BL-62 — "uma pergunta por membro viraria
+    // uma rajada" — e o raciocínio vale para família de verdade. Lote de um
+    // não é lote.
+    {
+      const enviadas = [];
+      const ctx = montarContexto({
+        camposOdoo: ['x_studio_competencia'],
+        // `buscarDizimistaPorWhatsapp` procura por telefone; o cenário precisa
+        // dos dois caminhos, porque o lote também lê o dizimista por id.
+        dizimista: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+        dizimistaNoOdoo: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+        comunidadeGravavel: true,
+        devolucoesPorCompetencia: [paga('2026-07-01')],
+        devolucaoPorId: { id: 99, x_studio_competencia: '2026-09-01' },
+      });
+      ctx.Utils.enviarMenu = (to, texto, botoes) => enviadas.push({ texto, botoes });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.Utils.enviarSimples = () => {};
+      ctx.ComprovanteHandler._responderDesfecho = () => {};
+      ctx.ComprovanteHandler._tratarResultadoFamilia('55',
+        { dados: { valor: 400, data: '07/09/2026' }, tipo: 'imagem', arquivoOriginalBase64: null },
+        [{ id: 7, nome: 'Thalles', valor: 100 }], '');
+      const comMes = enviadas.filter((e) => /a qual mês/i.test(e.texto || ''));
+      confere('lote de família com UM membro também recebe a pergunta do mês',
+        comMes.length === 1 && comMes[0].botoes.length === 2, JSON.stringify(enviadas.map(e => e.texto && e.texto.slice(0, 40))));
+    }
+
     // Botão antigo, de mensagem que saiu antes do BL-71
     {
       const ditos = [];
