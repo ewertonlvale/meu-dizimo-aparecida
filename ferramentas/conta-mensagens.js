@@ -302,6 +302,7 @@ function montarContexto(cenario) {
                             : op === '<=' ? v <= alvo
                             : op === '>'  ? v >  alvo
                             : op === '>=' ? v >= alvo
+                            : op === '!=' ? v !== alvo
                             : v === alvo;
           const querStatus = (dominio || []).find(d => d[0] === 'x_studio_status');
           return (cenario.devolucoesPorCompetencia || []).filter(r =>
@@ -2488,6 +2489,9 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
     confere('e SEM validação, para não entupir a fila do coordenador',
       !!aberto && aberto.x_studio_validacao === false,
       JSON.stringify(aberto && aberto.x_studio_validacao));
+    confere('e SEM forma de pagamento — ninguém pagou, não há forma',
+      !!aberto && aberto.x_studio_forma_de_pagamento === false,
+      JSON.stringify(aberto && aberto.x_studio_forma_de_pagamento));
   }
 
   // 4b. A comunidade no mês aberto segue a MESMA guarda do BL-41: só é gravada
@@ -2604,9 +2608,22 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
       comDuvida.length === 1 && comDuvida[0].botoes[0].id === 'comp_90_41',
       JSON.stringify(comDuvida[0] && comDuvida[0].botoes));
 
-    // Sem mês anterior em aberto: NADA é enviado
+    // O CASO QUE ESCAPOU EM PRODUÇÃO, 23/09.
+    //
+    // A pessoa tinha MAIO em aberto e mandou um comprovante de 5 de abril. O
+    // bot gravou abril calado, porque a primeira versão só procurava mês
+    // ANTERIOR ao registrado — e maio é posterior. A dúvida é a mesma nos dois
+    // sentidos: há um mês em aberto e entrou um pagamento em outro.
+    const abertoDepois = ofereceu(
+      [{ id: 41, x_studio_competencia: '2026-05-01', x_studio_status: 'A devolver' }],
+      '2026-04-01');
+    confere('mês em aberto POSTERIOR ao pago também gera pergunta (escapou em produção)',
+      abertoDepois.length === 1 && /maio\/2026/.test(abertoDepois[0].texto),
+      JSON.stringify(abertoDepois));
+
+    // Sem mês em aberto: NADA é enviado
     const semDuvida = ofereceu([], '2026-12-01');
-    confere('sem mês anterior em aberto, não manda mensagem nenhuma',
+    confere('sem mês em aberto, não manda mensagem nenhuma',
       semDuvida.length === 0, JSON.stringify(semDuvida));
 
     // Mês em aberto é o MESMO que foi pago: também não pergunta

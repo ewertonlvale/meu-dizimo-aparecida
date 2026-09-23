@@ -256,7 +256,7 @@ const ComprovanteHandler = {
         [['id', '=', devolucaoId]], { limit: 1 });
       const competencia = reg && reg[0] && reg[0].x_studio_competencia;
       if (!competencia) return;
-      aberto = OdooService.mesEmAbertoAnterior(dizimistaId, competencia);
+      aberto = OdooService.mesEmAbertoDiferente(dizimistaId, competencia);
       if (!aberto) return;
 
       Utils.enviarMenu(from,
