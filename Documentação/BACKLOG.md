@@ -101,6 +101,7 @@
 | BL-70 | Quem pula um mês tinha o dízimo gravado calado, sem escolher a competência | 🟠 | M | ✅ Concluído (23/09) — a pergunta passou a ser por intervalo desde a última devolução paga. **Precisa de `clasp push`** |
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
+| BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Ferramenta pronta (23/09)** — grupo, matriz de permissões e modo `--verificar`. Falta criar o usuário e trocar as Properties |
 
 ---
 
@@ -886,6 +887,75 @@ uma pergunta só não teria resposta possível — cada pessoa pode estar num m�
 **17 cenários**, incluindo o caso do teste real (julho pago, comprovante de setembro), o
 pagamento no dia 1º, quem sumiu por anos (continua sendo *uma* pergunta de duas opções), e o
 `A devolver` no mês anterior não cobrindo nada.
+
+---
+
+### BL-17 (segunda metade) — o usuário dedicado do bot 🔴 (M)
+
+**O bot falava com o Odoo como Administrador** (`ODOO_UID = 2`) desde o começo. Quem obtiver
+a chave de API — script exposto, conta Google comprometida, acesso ao editor do Apps Script
+— podia apagar ou exportar a base inteira: não só devoluções, mas usuários e configurações.
+
+O bot escreve em **três** modelos. Tinha permissão sobre todos.
+
+#### A matriz, levantada das chamadas reais
+
+| modelo | read | write | create | unlink |
+|---|:--:|:--:|:--:|:--:|
+| `x_devolucao` | ✓ | ✓ | ✓ | |
+| `x_dizimista` | ✓ | ✓ | ✓ | |
+| `x_contato_bot` | ✓ | ✓ | ✓ | |
+| `x_notificacao_log` | ✓ | | ✓ | |
+| `x_comunidade` | ✓ | | | |
+| `x_parametros`, `x_parametros_line_c498a` | ✓ | | | |
+| `ir.model.fields` | ✓ | | | |
+| `res.users` | ✓ | | | |
+
+**Nenhum `unlink`, em nada.** O único do projeto está em `reviverPrimeiroContato`
+(`Setup.gs:814`), função manual de depuração — não em runtime. Quem precisar dela roda com
+credencial de administrador, e isso é uma troca deliberada: uma conveniência de depuração não
+justifica dar direito de apagar à integração de produção.
+
+**Nenhuma escrita de schema.** `SetupCamposFamilia` e `SetupCamposOferta` criam campos em
+`ir.model.fields`, e são setups manuais executados uma vez. Em runtime o bot só **lê** o
+schema (`campoExiste` / `campoGravavel`).
+
+#### O que está no repositório
+
+`ferramentas/instalar-usuario-bot.mjs` cria o grupo **"Meu Dízimo · Bot"** com exatamente
+essas permissões, e tem um modo **`--verificar`** que é o que importa: rodado com a chave do
+usuário novo, ele pergunta ao próprio Odoo, operação por operação, e acusa **tanto o que
+falta quanto o que sobra**.
+
+**Ele não cria o usuário nem gera a chave**, de propósito: isso é segredo, e segredo não passa
+por script que alguém possa reexecutar ou logar.
+
+**Ele também não tira ninguém de Administração.** Avisa em vermelho se o usuário ainda estiver
+lá — porque o Odoo **soma** permissões e nunca subtrai, então o grupo novo não limita nada
+enquanto isso —, mas tirar acesso por script tranca gente para fora quando o login está errado.
+
+#### Duas armadilhas fechadas junto
+
+**O `|| 2` do `getOdooConfig`.** Propriedade ausente ou com lixo caía silenciosamente no
+administrador — um padrão que desfazia este item inteiro sem avisar. Agora não há padrão
+nenhum: falta a propriedade, estoura.
+
+**A URL da instância e o nome do banco estavam escritos em `Config.gs` e `Setup.gs`** — e este
+repositório é **público**. Só percebi ao responder "é seguro usar essa solução?", olhando o
+arquivo em vez da memória. A URL não é credencial, mas diz onde apontar uma tentativa e
+confirma o nome do banco.
+
+Passaram a vir só das Script Properties. **Continuam no histórico do git**, e reescrever
+histórico de repositório público não desfaz o que já foi lido — trate a URL como conhecida. A
+defesa real é a chave e o usuário não-administrador, que é justamente este item.
+`conta-mensagens.js` recusa a reintrodução.
+
+#### ⚠️ Custo
+
+No Odoo Online, usuário **interno** é cobrado por assento. Um usuário dedicado soma uma
+licença à fatura da paróquia. É o preço de separar o que o bot pode fazer do que um
+administrador pode — e, em segundo lugar, de ter trilha de auditoria: hoje tudo que o bot faz
+aparece como se o administrador tivesse feito.
 
 ---
 
