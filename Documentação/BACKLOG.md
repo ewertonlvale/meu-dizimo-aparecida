@@ -97,6 +97,7 @@
 | BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
 | BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
 | BL-68 | "Leitura automática do comprovante" aparecia em lançamento sem comprovante | 🟡 | P | ✅ Concluído (22/09) — o rótulo muda quando não há comprovante |
+| BL-69 | Comprovante de qualquer idade registrava normalmente — não havia checagem de data | 🟠 | P | ✅ Concluído (23/09) — mais de 60 dias, ou data no futuro, vira "Não confere" e avisa a pessoa. **Precisa de `clasp push`** |
 
 ---
 
@@ -719,6 +720,54 @@ lógica que estava em produção.
 anterior ao download. Nada mais se perdeu — o resto do que o download trouxe era o Odoo
 normalizando arch (comentário de várias linhas virando uma, xpath reescrito na forma
 posicional), que é o estado verdadeiro e fica.
+
+---
+
+### BL-69 — A idade do comprovante ✅ (P)
+
+**Não havia checagem nenhuma.** Um comprovante de 2020 registrava como qualquer outro.
+
+**A regra:** comprovante com mais de **60 dias**, ou com data **no futuro**, cai em
+`Não confere` e a pessoa é avisada. É mais duro que o resto da tabela de conferência, de
+propósito: chave que não bate pode ser layout de banco que não entendemos; data é data.
+
+| prazo considerado | por que não |
+|---|---|
+| 5 dias | pegaria quem paga no dia 1º pelo mês anterior. Falso positivo todo mês |
+| 30 dias | apertado para quem pagou e esqueceu de mandar por três semanas |
+| **60 dias** | dois meses é onde deixa de ser plausível como "dízimo deste mês" |
+| 90 dias | passa da janela de 3 meses da classificação; já não diz nada sobre o mês corrente |
+
+**É parâmetro, não número no código:** `x_studio_dias_comprovante` em x_parametros, criado
+por `ferramentas/instalar-dias-comprovante.mjs`. Quem sabe se dois meses é muito ou pouco é
+a paróquia. Em branco, ou fora de 1..365, vale o padrão de fábrica — a regra funciona antes
+de o campo existir.
+
+**Precedência:** chave divergente é mais grave e continua mandando. A idade só decide quando
+a chave conferiu ou não foi lida.
+
+**Data ilegível não acusa nada.** O BL-52 fez a leitura funcionar em vários layouts, mas ela
+ainda falha — e chamar de "antigo" um comprovante cuja data não conseguimos ler seria acusar
+alguém do nosso próprio limite.
+
+**Data no futuro vem de graça na mesma checagem**, com código próprio: é impossível, e
+denuncia adulteração ou erro de leitura. Ações diferentes, códigos diferentes.
+
+*Achado ao escrever:* o `textoCoordenador` que eu tinha posto trazia `{dias}`, e nada no
+projeto substitui essa chave — a pessoa leria "o comprovante tem mais de {dias} dias" no
+WhatsApp. A barreira do BL-61 obrigou a escrever a frase nas views, e foi ali que apareceu.
+
+**12 cenários**, incluindo o limite exato (60 passa, 61 não), parâmetro absurdo voltando ao
+padrão, e o caso que importa: antigo **com a chave certa** vira `Não confere` e avisa.
+
+---
+
+### O pagamento no dia 1º pelo mês anterior — já resolvido
+
+Pagar em 01/10 o dízimo de setembro dá competência *outubro*, que está errado. Não precisou
+de código novo: setembro está em aberto e é anterior ao mês corrente, então o mecanismo do
+BL-62 pergunta *"vi que você tem setembro/2026 em aberto…"* e a troca de competências
+resolve. Só não funciona para quem nunca devolveu antes — e aí não há o que adivinhar.
 
 ---
 

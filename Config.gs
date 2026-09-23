@@ -168,6 +168,30 @@ const CONFERENCIA = {
     avisoRegistro:    '⚠️ CONFERIR: banco de destino diverge do cadastrado',
     textoCoordenador: 'o banco de destino *diverge* do cadastrado na comunidade'
   },
+  // BL-69: a IDADE do comprovante, e não o conteúdo dele.
+  //
+  // Os dois entram como `alertaDoador`, então `statusDaDevolucao` os leva a
+  // "Não confere". É mais duro que o resto da tabela de propósito: chave que
+  // não bate pode ser layout de banco que não entendemos, mas data é data.
+  //
+  // ⚠️ Por isso mesmo, estes dois SÓ valem quando a chave conferiu ou não foi
+  //    lida. Divergência de chave é mais grave e continua mandando — ver
+  //    `_conferirComprovante`.
+  comprovante_antigo: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    avisoRegistro:    '⚠️ CONFERIR: comprovante antigo',
+    textoCoordenador: 'a data do comprovante é bem anterior ao pagamento de hoje'
+  },
+  comprovante_futuro: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    // Data posterior a hoje é impossível. Ou o comprovante foi adulterado, ou
+    // a leitura errou — e nos dois casos alguém precisa olhar.
+    avisoRegistro:    '🚨 CONFERIR: comprovante com data no futuro',
+    textoCoordenador: 'a data do comprovante está no futuro'
+  },
+
   tudo_divergente: {
     exigeConferencia: true,
     alertaDoador:     true,
@@ -224,6 +248,22 @@ function statusDaDevolucao(codigo) {
  *    sem ter pago nada, sem nada acusar.
  */
 const STATUS_A_DEVOLVER = 'A devolver';
+
+/**
+ * A partir de quantos dias um comprovante é velho demais. (BL-69)
+ *
+ * Vem de `x_studio_dias_comprovante` em x_parametros; este é o padrão de
+ * fábrica, usado enquanto o campo não existir ou vier vazio.
+ *
+ * POR QUE 60, E NÃO 30 NEM 90
+ *   5 dias pegaria quem paga no dia 1º pelo mês anterior — falso positivo
+ *   garantido, todo mês. 30 dias é apertado para quem pagou e esqueceu de
+ *   mandar. 90 já passou da janela de 3 meses que a classificação usa: um
+ *   comprovante assim não diz mais nada sobre o mês corrente.
+ *
+ *   Dois meses é onde deixa de ser plausível como "dízimo deste mês".
+ */
+const DIAS_COMPROVANTE_ANTIGO_PADRAO = 60;
 
 /**
  * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)

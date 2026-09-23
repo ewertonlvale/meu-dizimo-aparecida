@@ -42,7 +42,9 @@
           <span invisible="x_studio_conferencia_pix != 'titular_divergente'">⚠ titular diverge do cadastrado</span>
           <span invisible="x_studio_conferencia_pix != 'banco_divergente'">⚠ banco de destino diverge</span>
           <span invisible="x_studio_conferencia_pix != 'tudo_divergente'">🚨 titular E banco divergem</span>
-          <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente']">
+          <span invisible="x_studio_conferencia_pix != 'comprovante_antigo'">⚠ comprovante com data antiga</span>
+          <span invisible="x_studio_conferencia_pix != 'comprovante_futuro'">🚨 comprovante com data no futuro</span>
+          <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente', 'comprovante_antigo', 'comprovante_futuro']">
             ⚠ conferência:
             <field name="x_studio_conferencia_pix"/>
           </span>

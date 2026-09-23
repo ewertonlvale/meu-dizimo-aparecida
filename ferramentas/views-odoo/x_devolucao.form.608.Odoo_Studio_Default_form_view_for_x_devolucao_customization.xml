@@ -94,12 +94,14 @@
       <span invisible="x_studio_conferencia_pix != 'titular_divergente'">o nome de quem recebeu diverge do titular da comunidade</span>
       <span invisible="x_studio_conferencia_pix != 'banco_divergente'">o banco de destino diverge do cadastrado na comunidade</span>
       <span invisible="x_studio_conferencia_pix != 'tudo_divergente'">nome e banco de quem recebeu divergem dos da comunidade</span>
+      <span invisible="x_studio_conferencia_pix != 'comprovante_antigo'">a data do comprovante é bem anterior a hoje — confira se já não foi registrado antes</span>
+      <span invisible="x_studio_conferencia_pix != 'comprovante_futuro'">a data do comprovante está no futuro, o que é impossível</span>
       <!-- Rede de segurança: se o Config.gs ganhar um código novo e ninguém
            traduzir aqui, o banner apareceria VAZIO — pior que mostrar o código.
            Com isto ele volta a mostrar o código cru, que ao menos é pesquisável.
            O conta-mensagens.js recusa esse estado, então isto é a segunda
            barreira, não a primeira. -->
-      <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente']">
+      <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente', 'comprovante_antigo', 'comprovante_futuro']">
         <field name="x_studio_conferencia_pix" readonly="1" nolabel="1" class="d-inline"/>
       </span>
     </div>

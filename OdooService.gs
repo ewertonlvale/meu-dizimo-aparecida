@@ -1352,7 +1352,12 @@ const OdooService = {
       'x_parametros',
       ['id', 'x_name', 'x_studio_avatar', 'x_studio_paroquia',
        'x_studio_horario_de', 'x_studio_secretaria_email',
-       'x_studio_secretaria_whatsapp'],
+       'x_studio_secretaria_whatsapp',
+       // BL-69: o limite de idade do comprovante. Se o campo ainda não
+       // existir no Odoo, o searchRead INTEIRO falha — por isso ele só entra
+       // quando o schema confirma que está lá.
+       ].concat(this.campoExiste('x_parametros', 'x_studio_dias_comprovante')
+                ? ['x_studio_dias_comprovante'] : []),
       [['x_active', '=', true]],
       { limit: 1 }
     );
