@@ -490,6 +490,7 @@ const ComprovanteHandler = {
     // Cria uma devolução por membro (valor = valor do membro).
     const tipoComprovante = resultado.tipo === 'pdf' ? 'pdf' : 'imagem';
     const registrados = [];
+    const criados = [];
     if (responsavel) {
       for (const m of lote) {
         try {
@@ -501,7 +502,10 @@ const ComprovanteHandler = {
           const devId = OdooService.registrarDevolucao(
             m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, conferencia
           );
-          if (devId) registrados.push(m.nome);
+          if (devId) {
+            registrados.push(m.nome);
+            criados.push({ id: devId, dizimistaId: m.id });
+          }
         } catch (e) {
           erroOdoo = true;
           console.error(`❌ [Família] Falha ao registrar membro id=${m.id} (${m.nome}): ${e.message}`);
@@ -517,6 +521,17 @@ const ComprovanteHandler = {
       const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
       this._responderDesfecho(from,
         `${base}\n\n${this._fraseDesfecho(conferencia, 'Ela')}${fecho}`, conferencia);
+
+      // BL-71: a pergunta do mês também aqui, mas SÓ quando o lote tem um
+      // membro — que é o caso de quem abre o fluxo de família e escolhe uma
+      // pessoa só. Lote de um não é lote.
+      //
+      // Com vários, uma pergunta por membro viraria uma rajada de mensagens, e
+      // uma pergunta única não teria resposta: cada pessoa pode estar num mês
+      // diferente. Família de verdade corrige pela tela do Odoo.
+      if (criados.length === 1) {
+        this._ofereceCorrigirMes(from, criados[0].id, criados[0].dizimistaId);
+      }
       return;
     }
 
