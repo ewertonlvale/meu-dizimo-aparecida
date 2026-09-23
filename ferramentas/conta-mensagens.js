@@ -297,16 +297,21 @@ function montarContexto(cenario) {
           // pelo mês anterior usa '<' e não achava nada, enquanto o mês igual
           // ao pago era devolvido como se fosse anterior. Um fake que trata
           // todo domínio como igualdade não testa a consulta — testa a si mesmo.
-          const [, op, alvo] = porCompetencia;
-          const bate = (v) => op === '<'  ? v <  alvo
-                            : op === '<=' ? v <= alvo
-                            : op === '>'  ? v >  alvo
-                            : op === '>=' ? v >= alvo
-                            : op === '!=' ? v !== alvo
-                            : v === alvo;
+          // TODAS as condições de competência, não a primeira. A busca pelo
+          // mês devido usa duas — "< mês corrente" E "!= o que foi pago" — e
+          // um fake que honra só a primeira aprovaria de olhos fechados a
+          // versão que perguntava em toda devolução.
+          const compara = (v, op, alvo) =>
+              op === '<'  ? v <  alvo
+            : op === '<=' ? v <= alvo
+            : op === '>'  ? v >  alvo
+            : op === '>=' ? v >= alvo
+            : op === '!=' ? v !== alvo
+            : v === alvo;
+          const condicoes = (dominio || []).filter(d => d[0] === 'x_studio_competencia');
           const querStatus = (dominio || []).find(d => d[0] === 'x_studio_status');
           return (cenario.devolucoesPorCompetencia || []).filter(r =>
-            bate(r.x_studio_competencia)
+            condicoes.every(([, op, alvo]) => compara(r.x_studio_competencia, op, alvo))
             && (!querStatus || r.x_studio_status === querStatus[2]));
         }
         // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
@@ -2616,10 +2621,22 @@ console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês
     // sentidos: há um mês em aberto e entrou um pagamento em outro.
     const abertoDepois = ofereceu(
       [{ id: 41, x_studio_competencia: '2026-05-01', x_studio_status: 'A devolver' }],
-      '2026-04-01');
+      '2026-04-01');   // maio já passou (hoje é setembro/2026 ou depois)
     confere('mês em aberto POSTERIOR ao pago também gera pergunta (escapou em produção)',
       abertoDepois.length === 1 && /maio\/2026/.test(abertoDepois[0].texto),
       JSON.stringify(abertoDepois));
+
+    // O DEFEITO QUE A CORREÇÃO ANTERIOR INTRODUZIU.
+    //
+    // `registrarDevolucao` abre o mês seguinte ANTES de a oferta rodar. Com a
+    // busca por "competência diferente", ela encontrava esse mês recém-criado
+    // e TODA devolução passava a perguntar, oferecendo um mês futuro como se
+    // fosse dívida. Mês que ainda não terminou é compromisso, não dívida.
+    const mesQueOBotAcabouDeAbrir = ofereceu(
+      [{ id: 42, x_studio_competencia: '2026-10-01', x_studio_status: 'A devolver' }],
+      '2026-09-01');
+    confere('o mês que o próprio bot acabou de abrir NÃO vira pergunta',
+      mesQueOBotAcabouDeAbrir.length === 0, JSON.stringify(mesQueOBotAcabouDeAbrir));
 
     // Sem mês em aberto: NADA é enviado
     const semDuvida = ofereceu([], '2026-12-01');

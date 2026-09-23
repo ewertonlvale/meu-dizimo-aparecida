@@ -956,21 +956,33 @@ const OdooService = {
     if (!dizimistaId || tipo === 'oferta') return null;
     if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
     try {
-      // DIFERENTE, e não "anterior".
+      // O QUE FAZ UM MÊS EM ABERTO VIRAR PERGUNTA: ele já ter passado.
       //
-      // A primeira versão procurava só mês anterior, e o primeiro teste de
-      // verdade mostrou o furo: a pessoa tinha MAIO em aberto, mandou um
-      // comprovante de 5 de abril, e o bot gravou abril calado. Maio é
-      // posterior, então a pergunta nem foi considerada — mas a dúvida é
-      // exatamente a mesma: há um mês em aberto e acabou de entrar um
-      // pagamento em outro. Qual dos dois a pessoa quis pagar é pergunta para
-      // ela, nos dois sentidos.
+      // Duas versões erradas antes desta, e as duas por não separar "mês em
+      // aberto" de "mês devido":
       //
-      // Quando há mais de um em aberto, oferece o mais antigo: é a dívida mais
-      // velha, e a que a paróquia quer ver fechar primeiro.
+      //   1ª — procurava mês ANTERIOR à competência registrada. A pessoa tinha
+      //        maio em aberto e mandou um comprovante de abril; maio é
+      //        posterior, então a pergunta nem foi considerada e o bot gravou
+      //        abril calado.
+      //
+      //   2ª — passou a procurar qualquer competência DIFERENTE. Só que
+      //        `registrarDevolucao` ABRE O MÊS SEGUINTE antes de isto rodar:
+      //        a busca encontrava o mês que o próprio bot tinha acabado de
+      //        criar, e TODA devolução passaria a perguntar, oferecendo um mês
+      //        futuro como se fosse dívida.
+      //
+      // O critério certo não é a relação com a competência paga, e sim com
+      // HOJE: um mês em aberto que ainda não terminou é compromisso, não
+      // dívida — e é exatamente o que o bot acabou de abrir. Dívida é mês que
+      // já passou e não foi devolvido.
+      //
+      // Quando há mais de uma, oferece a mais antiga.
+      const mesCorrente = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM') + '-01';
       const regs = this.searchRead('x_devolucao', ['id', 'x_studio_competencia'], [
         ['x_studio_dizimista',   '=', dizimistaId],
         ['x_studio_status',      '=', STATUS_A_DEVOLVER],
+        ['x_studio_competencia', '<',  mesCorrente],
         ['x_studio_competencia', '!=', competenciaRegistrada]
       ], { order: 'x_studio_competencia asc', limit: 1 });
       const r = regs && regs[0];

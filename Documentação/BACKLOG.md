@@ -471,16 +471,28 @@ e o pagamento se perde.
 > que eu acerto.
 > `[ setembro/2026 ]` `[ Está certo ]`
 
-**Corrigido em 23/09, depois do primeiro teste real:** a pergunta procurava só mês em aberto
-**anterior** ao registrado. A pessoa tinha *maio* em aberto, mandou um comprovante de 5 de
-abril, e o bot gravou abril **calado** — maio é posterior, então a pergunta nem foi
-considerada. A dúvida é a mesma nos dois sentidos: há um mês em aberto e entrou um pagamento
-em outro. Agora procura qualquer competência **diferente**, e oferece a mais antiga.
-Conferido que o teste novo fica vermelho com a versão que foi a produção.
+**Duas correções em 23/09, e a segunda consertou a primeira.**
+
+A condição da pergunta errou duas vezes, sempre por não separar *mês em aberto* de *mês
+devido*:
+
+| versão | o que procurava | o que acontecia |
+|---|---|---|
+| 1ª | competência **anterior** à registrada | pessoa com *maio* em aberto mandou comprovante de abril; maio é posterior, então o bot gravou abril **calado** |
+| 2ª | competência **diferente** da registrada | `registrarDevolucao` **abre o mês seguinte antes** de a oferta rodar; a busca achava esse mês recém-criado e **toda devolução passava a perguntar**, oferecendo um mês futuro como se fosse dívida |
+| 3ª | competência **anterior ao mês corrente** e diferente da registrada | mês que ainda não terminou é compromisso, não dívida |
+
+O critério certo não é a relação com a competência paga — é a relação com **hoje**. Dívida é
+mês que já passou e não foi devolvido; o mês que o bot acaba de abrir é, por definição, o
+próximo compromisso.
 
 *No mesmo teste:* o `A devolver` aparecia na lista com forma de pagamento **"Dinheiro"** — o
 padrão do campo no Odoo, num mês que ninguém devolveu. Dado inventado na coluna que o
 coordenador lê. Passa a nascer vazio.
+
+**O fake do harness também errava duas vezes:** não honrava `!=`, e depois honrava só a
+**primeira** condição de competência do domínio — o que teria aprovado de olhos fechados a
+versão que perguntava sempre. Agora aplica todas.
 
 **Os dois ids viajam dentro do id do botão**, não em sessão. É o que faz a correção funcionar
 horas depois, com a sessão já expirada — que é o caso normal, já que a devolução é encerrada
