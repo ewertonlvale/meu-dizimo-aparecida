@@ -407,18 +407,36 @@ function getWebhookSecret() {
 function getOdooConfig() {
   const props = PropertiesService.getScriptProperties();
 
+  // SEM PADRÃO PARA NENHUM DELES. (BL-17)
+  //
+  // 1. O `|| 2` do uid era uma armadilha: propriedade ausente ou com lixo caía
+  //    silenciosamente no ADMINISTRADOR. O item inteiro deste backlog é tirar o
+  //    bot de administrador, e um padrão que o devolve para lá apaga o trabalho
+  //    sem avisar. Falta a propriedade? Estoura, e alguém conserta.
+  //
+  // 2. A URL e o banco estavam escritos aqui, e este repositório é PÚBLICO.
+  //    A URL não é credencial, mas diz a quem quiser onde apontar uma tentativa
+  //    de força bruta, e confirma o nome do banco. Passa a vir só das Script
+  //    Properties, que não vão para o git.
   const config = {
-    url:      props.getProperty('ODOO_URL')      || 'https://meu-dizimo.odoo.com/',
-    database: props.getProperty('ODOO_DATABASE') || 'meu-dizimo',
-    uid:      parseInt(props.getProperty('ODOO_UID')) || 2,
+    url:      props.getProperty('ODOO_URL'),
+    database: props.getProperty('ODOO_DATABASE'),
+    uid:      parseInt(props.getProperty('ODOO_UID'), 10),
     apiKey:   props.getProperty('ODOO_API_KEY')
   };
 
-  if (!config.apiKey) {
+  const faltando = ['url', 'database', 'uid', 'apiKey']
+    .filter((k) => !config[k] || (k === 'uid' && isNaN(config.uid)));
+  if (faltando.length) {
+    const nomes = { url: 'ODOO_URL', database: 'ODOO_DATABASE', uid: 'ODOO_UID', apiKey: 'ODOO_API_KEY' };
     throw new Error(
-      '❌ ERRO: ODOO_API_KEY não configurada!\n\nExecute setupProperties() no arquivo Setup.gs'
+      `❌ Faltam Script Properties do Odoo: ${faltando.map((k) => nomes[k]).join(', ')}\n\n`
+      + 'Rode verificarProperties() (Setup.gs) para ver o que está configurado.\n'
+      + 'Nenhuma delas tem valor padrão, de propósito — ver a nota acima.'
     );
   }
+
+
 
   return config;
 }

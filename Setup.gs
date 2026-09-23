@@ -47,9 +47,13 @@ function setupProperties() {
     // Odoo ERP
     // ==========================================
     // Configure seu servidor Odoo
-    'ODOO_URL': 'https://meu-dizimo.odoo.com/',
-    'ODOO_DATABASE': 'meu-dizimo',
-    'ODOO_UID': '2',
+    // A URL e o banco NÃO ficam escritos aqui: este repositório é público, e
+    // eles dizem a quem quiser onde apontar uma tentativa. Cole os seus.
+    'ODOO_URL': 'https://SUA-INSTANCIA.odoo.com/',
+    'ODOO_DATABASE': 'COLE_O_NOME_DO_BANCO',
+    // NÃO use 2. O 2 é o administrador; o bot precisa de um usuário dedicado.
+    // Ver ferramentas/instalar-usuario-bot.mjs e o BL-17.
+    'ODOO_UID': 'COLE_O_UID_DO_USUARIO_DO_BOT',
     'ODOO_API_KEY': 'COLE_SUA_ODOO_KEY_AQUI',
     
     // ==========================================

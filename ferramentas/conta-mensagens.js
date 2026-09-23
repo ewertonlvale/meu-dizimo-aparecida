@@ -2353,6 +2353,51 @@ for (const r of REGRAS_DE_CONTEUDO) {
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🔐 Nada que identifique a instância no repositório público\n');
+
+// ──────────────────────────────────────────────────────────────────
+// Este repositório é PÚBLICO. A URL da instância e o nome do banco estavam
+// escritos em Config.gs e Setup.gs desde o começo — eu só percebi ao responder
+// "é seguro usar essa solução?", olhando o arquivo em vez da memória.
+//
+// A URL não é credencial. Mas ela diz a quem quiser ONDE apontar uma tentativa
+// de força bruta, e confirma o nome do banco — que é a outra metade do que se
+// precisa, tendo a chave. Custa nada tirar, e custa caro deixar.
+//
+// Já está no histórico do git, e reescrever histórico de repositório público
+// não desfaz o que foi lido. O que esta barreira impede é a REINTRODUÇÃO.
+{
+  const ARQUIVOS = fs.readdirSync(RAIZ)
+    .filter((f) => /\.(gs|js|mjs|json|md)$/.test(f))
+    .concat(['ferramentas/odoo-env.mjs', 'ferramentas/.odoo-env.exemplo']
+      .filter((f) => fs.existsSync(path.join(RAIZ, f))));
+
+  // Um host concreto — letras e números antes de .odoo.com. Placeholders em
+  // MAIÚSCULAS, como SUA-INSTANCIA, não contam: eles existem justamente para
+  // dizer onde colar o seu.
+  const CONCRETO = /https?:\/\/(?!SUA[-_])[a-z0-9][a-z0-9-]*\.odoo\.com/;
+
+  const achados = [];
+  for (const f of ARQUIVOS) {
+    const caminho = path.join(RAIZ, f);
+    if (!fs.existsSync(caminho) || fs.statSync(caminho).isDirectory()) continue;
+    const txt = fs.readFileSync(caminho, 'utf8');
+    for (const linha of txt.split('\n')) {
+      const m = linha.match(CONCRETO);
+      if (m) achados.push(`${f}: ${m[0]}`);
+    }
+  }
+
+  if (achados.length) {
+    falhas += achados.length;
+    for (const a of achados) console.log(`❌ URL da instância versionada → ${a}`);
+    console.log('   Ela vem das Script Properties, que não vão para o git.');
+  } else {
+    console.log(`✅ nenhuma URL de instância concreta em ${ARQUIVOS.length} arquivos versionados`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
 
 // ──────────────────────────────────────────────────────────────────
