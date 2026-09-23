@@ -494,8 +494,24 @@ const ComprovanteHandler = {
     if (responsavel) {
       for (const m of lote) {
         try {
+          // O VALOR DO COMPROVANTE MANDA, quando há um membro só. (BL-72)
+          //
+          // O valor que a pessoa escolhe na conversa é uma INCLINAÇÃO: ela
+          // devolve o que quiser. Registrar os R$ 100 escolhidos quando o
+          // comprovante mostra R$ 400 põe no Odoo um número que não
+          // corresponde a dinheiro nenhum — e o relatório do mês fica R$ 300
+          // menor que o extrato.
+          //
+          // É a mesma regra do BL-53, que valia só para oferta. O caminho do
+          // dizimista único já fazia assim; o lote de família não.
+          //
+          // ⚠️ SÓ COM UM MEMBRO. Com vários, o comprovante traz um total e não
+          //    há como dividi-lo entre as pessoas — ali a alocação da conversa
+          //    é a única informação que existe.
+          const lido = resultado.dados && resultado.dados.valor;
+          const valorMembro = (lote.length === 1 && lido > 0) ? lido : (m.valor || 0);
           const dadosMembro = {
-            valor: m.valor || 0,
+            valor: valorMembro,
             data:  resultado.dados && resultado.dados.data,
             tipo:  resultado.dados && resultado.dados.tipo
           };
