@@ -3091,6 +3091,280 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O que este bloco protege é um modo de falha SILENCIOSO. Errar aqui não
+// gera exceção nenhuma: gera lembrete que não sai, ou rajada que sai toda de
+// uma vez. Nos dois casos o log diz "terminou sem enviar" ou "enviou 500", e
+// nenhum dos dois parece errado sozinho.
+//
+// Por isso cada caso abaixo fixa o RELÓGIO e a RESPOSTA DO ODOO e afirma o
+// número exato de mensagens. Nada vai para a rede.
+{
+  const fonteConfig = fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8');
+  const fonteNotif  = fs.readFileSync(path.join(RAIZ, 'NotificacaoHandler.gs'), 'utf8');
+
+  // Um dizimista sintético. `dia` 1 garante que o dia de notificação (dia+2,
+  // teto 28) já passou na data fixada abaixo.
+  const gente = (n) => Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    x_name: `Dizimista ${i + 1}`,
+    x_studio_partner_phone: `55869000000${(i % 10)}`,
+    x_studio_value: 50,
+    x_studio_dia_preferido: 1
+  }));
+
+  /**
+   * Roda executarNotificacoesDiarias() inteira contra stubs.
+   * @returns {{enviados, contagens, ordem}}
+   */
+  const rodar = ({ hora, parametros = {}, dizimistas = gente(5), erroParametros = false }) => {
+    const enviados = [];
+    const contagens = [];   // toda chamada a OdooService.count
+    const criados = [];     // x_notificacao_log gravados
+    const buscas = [];      // toda chamada a searchRead
+
+    const respostaOk = {
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({ messages: [{ id: 'wamid.T' }] })
+    };
+
+    const ctx = {
+      console: { log() {}, warn() {}, error() {} },
+      TIMEZONE: 'America/Fortaleza',
+      Utilities: {
+        // A rotina pede 'H' para saber a hora e 'yyyy-MM-dd' para a data do
+        // log. Um formatDate que ignora o formato faria o teste de janela
+        // passar por acidente.
+        formatDate: (_d, _tz, fmt) => (fmt === 'H' ? String(hora) : '2026-09-23'),
+        sleep() {}
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty: (k) => ({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111' }[k] || null),
+          setProperty() {}, getProperties: () => ({})
+        })
+      },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      UrlFetchApp: { fetch: () => respostaOk },
+      Utils: {
+        _post(payload) { enviados.push(payload); return respostaOk; },
+        registrarConsumoExterno() {}
+      },
+      getConfig: () => ({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111' }),
+      OdooService: {
+        buscarParametros() {
+          if (erroParametros) throw new Error('Odoo fora do ar');
+          return Object.assign({ x_name: 'Padrão' }, parametros);
+        },
+        searchRead(modelo, _campos, _dominio, opcoes) {
+          buscas.push({ modelo, opcoes });
+          return modelo === 'x_dizimista' ? dizimistas.slice() : [];
+        },
+        // Ninguém foi notificado nem devolveu — todo candidato é elegível.
+        count(modelo, dominio) { contagens.push({ modelo, dominio }); return 0; },
+        create(modelo, dados) { criados.push({ modelo, dados }); return criados.length; }
+      }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(
+      fonteConfig + '\n;\n' + fonteNotif + '\n;\nexecutarNotificacoesDiarias();',
+      ctx, { filename: 'NotificacaoHandler.gs' }
+    );
+
+    return {
+      enviados,
+      contagens,
+      criados,
+      buscas,
+      ordem: enviados.map((p) => p.template.components[0].parameters[0].text)
+    };
+  };
+
+  const casos = [
+    // ── A janela ──────────────────────────────────────────────────────────
+    { nome: '8h (antes da janela padrão) não envia nada',
+      entrada: { hora: 8 }, envios: 0 },
+    { nome: '9h (primeiro degrau) envia',
+      entrada: { hora: 9 }, envios: 5 },
+    { nome: '17h é EXCLUSIVO — a hora do fim não dispara',
+      entrada: { hora: 17, parametros: { x_studio_notif_intervalo: 1 } }, envios: 0 },
+    { nome: '3h da madrugada não envia nada',
+      entrada: { hora: 3 }, envios: 0 },
+
+    // ── O degrau: o que o BL-73 acrescentou ───────────────────────────────
+    // 10h está DENTRO da janela 9–17 e mesmo assim não dispara, porque o
+    // intervalo é 2h. Sem esta regra o acionador horário mandaria 24 lotes.
+    { nome: '10h está na janela mas não é degrau (intervalo 2h)',
+      entrada: { hora: 10 }, envios: 0 },
+    { nome: '11h, 13h e 15h são degraus',
+      entrada: { hora: 13 }, envios: 5 },
+    { nome: 'intervalo 1h faz toda hora da janela ser degrau',
+      entrada: { hora: 10, parametros: { x_studio_notif_intervalo: 1 } }, envios: 5 },
+    { nome: 'início 10h desloca os degraus (10h dispara, 11h não)',
+      entrada: { hora: 11, parametros: { x_studio_notif_hora_inicio: 10 } }, envios: 0 },
+
+    // ── O lote ────────────────────────────────────────────────────────────
+    { nome: '50 elegíveis, lote padrão 20 → sai 20',
+      entrada: { hora: 9, dizimistas: gente(50) }, envios: 20 },
+    { nome: 'lote configurado em 3 → saem 3',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 3 } },
+      envios: 3 },
+    // O teto tem que PARAR a seleção, não cortar o resultado: cada candidato
+    // custa DUAS consultas ao Odoo. Filtrar 500 para enviar 20 gastaria ~1000
+    // RPCs e estouraria o tempo de execução do Apps Script — com o log
+    // dizendo "20 enviados", que é exatamente o que se esperava ver.
+    { nome: 'o teto interrompe a seleção (não consulta os 50 no Odoo)',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 3 } },
+      envios: 3,
+      confere: ({ contagens }) => (contagens.length <= 3 * 2
+        ? null
+        : `fez ${contagens.length} consultas de histórico para um lote de 3 — ` +
+          `o teto virou corte no fim em vez de parada`) },
+    { nome: 'menos gente que o lote envia todo mundo',
+      entrada: { hora: 9, dizimistas: gente(4) }, envios: 4 },
+
+    // ── Os parâmetros fora da faixa ───────────────────────────────────────
+    { nome: 'lote 0 cairia no silêncio — volta ao padrão de 20',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 0 } },
+      envios: 20 },
+    { nome: 'lote 9999 traria a rajada de volta — volta ao padrão de 20',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 9999 } },
+      envios: 20 },
+    { nome: 'hora inicial 99 não existe — volta ao padrão',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 99 } }, envios: 5 },
+    { nome: 'campo em branco (false, como o Odoo devolve) usa o padrão',
+      entrada: { hora: 9, parametros: { x_studio_notif_lote: false, x_studio_notif_hora_inicio: false } },
+      envios: 5 },
+    { nome: 'texto no campo inteiro não derruba o disparo',
+      entrada: { hora: 9, parametros: { x_studio_notif_lote: 'vinte' } }, envios: 5 },
+    // Cada número sozinho é válido; juntos fecham a janela e o lembrete nunca
+    // mais sai — em silêncio, que é o jeito ruim de quebrar.
+    { nome: 'janela invertida (18h–10h) volta ao padrão em vez de calar',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 18, x_studio_notif_hora_fim: 10 } },
+      envios: 5 },
+    { nome: 'janela de largura zero (9h–9h) volta ao padrão',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 9, x_studio_notif_hora_fim: 9 } },
+      envios: 5 },
+
+    // ── O Odoo fora do ar ─────────────────────────────────────────────────
+    // Instabilidade de rede às 9h não pode suprimir o lembrete do dia.
+    { nome: 'x_parametros ilegível não impede o disparo (usa o padrão)',
+      entrada: { hora: 9, erroParametros: true }, envios: 5 },
+    { nome: 'x_parametros ilegível ainda respeita a janela (3h não envia)',
+      entrada: { hora: 3, erroParametros: true }, envios: 0 },
+
+    // ── A fila anda ───────────────────────────────────────────────────────
+    // A ordem por dia_preferido é o que garante que quem venceu primeiro é
+    // notificado primeiro. Sem ela o lote seria arbitrário e a mesma gente
+    // poderia ficar sempre no fim.
+    { nome: 'a busca pede ordem por dia preferido',
+      entrada: { hora: 9 }, envios: 5,
+      confere: ({ buscas }) => {
+        const b = buscas.find((x) => x.modelo === 'x_dizimista');
+        const ordem = b && b.opcoes && b.opcoes.order;
+        return /x_studio_dia_preferido/.test(ordem || '')
+          ? null
+          : `searchRead de x_dizimista sem ordem por dia preferido (order=${ordem})`;
+      } },
+    { nome: 'cada envio grava um log de notificação',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 3 } },
+      envios: 3,
+      confere: ({ criados }) => (criados.length === 3
+        ? null
+        : `gravou ${criados.length} logs para 3 envios — a deduplicação depende disso`) },
+  ];
+
+  for (const caso of casos) {
+    let erro = null;
+    let saida = null;
+    try {
+      saida = rodar(caso.entrada);
+      if (saida.enviados.length !== caso.envios) {
+        erro = `enviou ${saida.enviados.length}, esperava ${caso.envios}`;
+      } else if (caso.confere) {
+        erro = caso.confere(saida);
+      }
+    } catch (e) {
+      erro = `estourou: ${e.message}`;
+    }
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} ${caso.nome}${erro ? ' — ' + erro : ''}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// A mesma decisão escrita duas vezes: os padrões e as faixas vivem em
+// Config.gs (que o bot usa) e no instalador .mjs (cuja descrição é o ÚNICO
+// lugar onde a paróquia lê a faixa antes de digitar um número). Divergir é
+// pior que não documentar: alguém digitaria 300 porque o instalador disse que
+// podia, e o bot voltaria calado para 20.
+{
+  const cfg = fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8');
+  const mjs = fs.readFileSync(
+    path.join(RAIZ, 'ferramentas', 'instalar-escalonamento-notificacao.mjs'), 'utf8');
+
+  const doCampo = {
+    horaInicio:     'x_studio_notif_hora_inicio',
+    horaFim:        'x_studio_notif_hora_fim',
+    intervaloHoras: 'x_studio_notif_intervalo',
+    lote:           'x_studio_notif_lote'
+  };
+
+  // `const` no topo de um script não vira propriedade do contexto — por isso
+  // o trecho termina devolvendo os dois objetos explicitamente.
+  const ctx = {};
+  vm.createContext(ctx);
+  const doCodigo = vm.runInContext(
+    cfg.match(/const NOTIFICACAO_PADRAO = \{[\s\S]*?\};/)[0] + '\n' +
+    cfg.match(/const NOTIFICACAO_LIMITES = \{[\s\S]*?\};/)[0] + '\n' +
+    '({ padrao: NOTIFICACAO_PADRAO, limites: NOTIFICACAO_LIMITES });',
+    ctx);
+
+  let divergencias = 0;
+  for (const [chave, campo] of Object.entries(doCampo)) {
+    const bloco = mjs.match(
+      new RegExp(`\\{\\s*nome: '${campo}'[\\s\\S]*?\\},\\n`))?.[0];
+    if (!bloco) {
+      divergencias++;
+      console.log(`❌ ${campo} não aparece no instalador`);
+      continue;
+    }
+    const num = (k) => Number(bloco.match(new RegExp(`${k}:\\s*(-?\\d+)`))?.[1]);
+    const esperado = {
+      padrao: doCodigo.padrao[chave],
+      min: doCodigo.limites[chave].min,
+      max: doCodigo.limites[chave].max
+    };
+    for (const k of ['padrao', 'min', 'max']) {
+      if (num(k) !== esperado[k]) {
+        divergencias++;
+        console.log(`❌ ${campo}: instalador diz ${k}=${num(k)}, Config.gs diz ${esperado[k]}`);
+      }
+    }
+  }
+  falhas += divergencias;
+  if (!divergencias) {
+    console.log('✅ padrões e faixas batem entre Config.gs e o instalador');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// O acionador TEM QUE continuar de hora em hora. Se alguém "otimizar" para
+// everyHours(2), o intervalo volta a morar no Apps Script e mudá-lo no Odoo
+// deixa de ter efeito — sem erro nenhum, só com a configuração virando enfeite.
+{
+  const fonte = fs.readFileSync(path.join(RAIZ, 'NotificacaoHandler.gs'), 'utf8');
+  const m = fonte.match(/\.everyHours\((\d+)\)/);
+  const ok = m && m[1] === '1';
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} o acionador acorda de hora em hora`
+    + (ok ? ' (o intervalo real vem de x_parametros)'
+          : ` — everyHours(${m ? m[1] : '?'}) tira o intervalo do Odoo`));
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');

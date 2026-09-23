@@ -685,6 +685,73 @@ const OdooService = {
    * @param {string} nome  - Ex.: 'x_studio_conferencia_pix'
    * @returns {boolean}
    */
+  /**
+   * Quais destes campos existem no modelo? (BL-73)
+   *
+   * Uma RPC para o conjunto, em vez de uma por campo. Vale o mesmo cache do
+   * `campoExiste` — as chaves são as mesmas —, então quem perguntar depois,
+   * de um jeito ou do outro, já encontra a resposta pronta.
+   *
+   * O DETALHE QUE IMPORTA: se a consulta falhar, devolve lista VAZIA. É o
+   * lado seguro aqui — um campo tido como ausente faz o chamador usar o
+   * padrão de fábrica; um campo tido como presente por engano derruba o
+   * `search_read` inteiro de quem montou a lista de campos com ele.
+   *
+   * @param {string} model
+   * @param {string[]} nomes
+   * @returns {string[]} os que existem, na ordem em que foram pedidos
+   */
+  camposExistentes(model, nomes) {
+    this._camposConhecidos = this._camposConhecidos || {};
+    const cache = CacheService.getScriptCache();
+
+    const chaveDe   = (n) => `campo_${model}_${n}`;
+    const resolvido = {};
+    const faltando  = [];
+
+    nomes.forEach((n) => {
+      const chave = chaveDe(n);
+      if (chave in this._camposConhecidos) {
+        resolvido[n] = this._camposConhecidos[chave];
+        return;
+      }
+      const cacheado = cache.get(chave);
+      if (cacheado !== null && cacheado !== undefined) {
+        this._camposConhecidos[chave] = cacheado === '1';
+        resolvido[n] = this._camposConhecidos[chave];
+        return;
+      }
+      faltando.push(n);
+    });
+
+    if (faltando.length) {
+      let achados = null;
+      try {
+        const campos = this.searchRead(
+          'ir.model.fields', ['name'],
+          [['model', '=', model], ['name', 'in', faltando]],
+          { limit: false }
+        );
+        achados = new Set((campos || []).map((c) => c.name));
+      } catch (e) {
+        console.warn(`⚠️ [OdooService] Não consegui verificar campos de ${model}: ${e.message}`);
+      }
+
+      faltando.forEach((n) => {
+        // Consulta falhou: responde "não existe" SEM gravar no cache. Gravar
+        // congelaria um erro de rede por 5 minutos em cima de um campo que
+        // está lá — e o chamador ficaria no padrão de fábrica sem motivo.
+        if (achados === null) { resolvido[n] = false; return; }
+        const existe = achados.has(n);
+        cache.put(chaveDe(n), existe ? '1' : '0', existe ? 21600 : 300);
+        this._camposConhecidos[chaveDe(n)] = existe;
+        resolvido[n] = existe;
+      });
+    }
+
+    return nomes.filter((n) => resolvido[n]);
+  },
+
   campoExiste(model, nome) {
     const chave = `campo_${model}_${nome}`;
 
@@ -1215,11 +1282,18 @@ const OdooService = {
       ['id', 'x_name', 'x_studio_avatar', 'x_studio_paroquia',
        'x_studio_horario_de', 'x_studio_secretaria_email',
        'x_studio_secretaria_whatsapp',
-       // BL-69: o limite de idade do comprovante. Se o campo ainda não
-       // existir no Odoo, o searchRead INTEIRO falha — por isso ele só entra
-       // quando o schema confirma que está lá.
-       ].concat(this.campoExiste('x_parametros', 'x_studio_dias_comprovante')
-                ? ['x_studio_dias_comprovante'] : []),
+       // BL-69/BL-73: campos opcionais. Se um deles ainda não existir no
+       // Odoo, o searchRead INTEIRO falha — por isso só entram os que o
+       // schema confirma que estão lá. Uma consulta só para todos (BL-73):
+       // eram quatro campos novos, e quatro `campoExiste` de cache frio
+       // custariam quatro RPCs a cada hora, num caminho que roda 24x por dia.
+       ].concat(this.camposExistentes('x_parametros', [
+         'x_studio_dias_comprovante',
+         'x_studio_notif_hora_inicio',
+         'x_studio_notif_hora_fim',
+         'x_studio_notif_intervalo',
+         'x_studio_notif_lote'
+       ])),
       [['x_active', '=', true]],
       { limit: 1 }
     );
