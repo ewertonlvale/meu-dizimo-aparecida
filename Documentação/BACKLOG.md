@@ -99,6 +99,7 @@
 | BL-68 | "Leitura automática do comprovante" aparecia em lançamento sem comprovante | 🟡 | P | ✅ Concluído (22/09) — o rótulo muda quando não há comprovante |
 | BL-69 | Comprovante de qualquer idade registrava normalmente — não havia checagem de data | 🟠 | P | ✅ Concluído (23/09) — mais de 60 dias, ou data no futuro, vira "Não confere" e avisa a pessoa. **Precisa de `clasp push`** |
 | BL-70 | Quem pula um mês tinha o dízimo gravado calado, sem escolher a competência | 🟠 | M | ✅ Concluído (23/09) — a pergunta passou a ser por intervalo desde a última devolução paga. **Precisa de `clasp push`** |
+| BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 
 ---
 
@@ -825,6 +826,49 @@ a pessoa devolve o que quiser.
 ⚠️ A consequência a ter em mente: o relatório mensal soma o valor **alocado**, não o que
 entrou na conta. Um comprovante que cobre mais do que foi selecionado deixa a diferença fora
 do total.
+
+---
+
+### BL-71 — A regra de ouro, e a remoção do ciclo automático ✅ (M)
+
+**Decisão da paróquia em 23/09, depois de três tentativas minhas de consertar a pergunta do
+mês.** Cada uma resolvia um caso e criava outro:
+
+| tentativa | o que fazia | o que quebrava |
+|---|---|---|
+| BL-62 | perguntava quando havia um `A devolver` **anterior** | quem tinha maio aberto e pagou abril passava calado |
+| #120 | qualquer `A devolver` **diferente** | achava o mês que o próprio bot acabara de abrir → perguntava **sempre** |
+| BL-70 | o **intervalo** desde a última devolução paga | funcionava, mas com lista de até 6 opções e um modelo mental caro |
+
+A causa comum era a **pré-criação do mês seguinte**. Ela existia para dar previsibilidade e
+produzia: mês fantasma para quem devolve de dois em dois meses, registros que ninguém pediu,
+e um buraco sem rastro quando alguém pulava um mês.
+
+**Removida.** `registrarDevolucao` voltou a só criar a devolução, com a competência.
+
+#### A regra de ouro
+
+- **Primeira devolução da vida** → registra na competência devida, não pergunta nada.
+- **Não é a primeira, e o mês anterior não tem devolução** → pergunta: *este mês ou o
+  anterior?* Duas opções, sempre.
+- **Mês anterior coberto** → silêncio.
+
+Tudo relativo à **competência registrada** (o mês da data do comprovante), não ao dia de
+hoje. É o que faz o caso mais comum funcionar sozinho: quem paga no dia 1º de outubro pelo
+dízimo de setembro tem competência outubro, setembro vazio, e a pergunta aparece.
+
+**Ao escolher, só grava.** Não cria registro para o mês que sobrou, não reabre nada — o bot
+não sabe se aquele mês é dívida ou o ritmo de quem devolve de dois em dois meses.
+
+`A devolver` **não conta como devolução** na verificação do mês anterior: é previsão, não
+pagamento. Restam alguns registros na base, de antes desta mudança; podem ser apagados à mão.
+
+O botão do formato antigo (`comp_<id>_<id>`) responde com um aviso honesto em vez de estourar
+— há mensagens dele em conversas de ontem.
+
+**16 cenários**, incluindo o caso do teste real (julho pago, comprovante de setembro), o
+pagamento no dia 1º, quem sumiu por anos (continua sendo *uma* pergunta de duas opções), e o
+`A devolver` no mês anterior não cobrindo nada.
 
 ---
 
