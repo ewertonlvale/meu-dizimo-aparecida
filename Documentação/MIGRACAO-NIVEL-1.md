@@ -1,5 +1,8 @@
 # Migração Nível 1 — sair do Apps Script sem reescrever o bot
 
+> O **porquê** — a comparação dos três níveis de robustez, com custos — está em
+> `EVOLUCAO-ARQUITETURA.md`. Este documento é o **como** do Nível 1.
+
 **Objetivo:** tirar o runtime do Google Apps Script e pôr num container, com fila na frente
 do webhook, estado num Redis, deploy por CI e monitoramento. Nada mais.
 
@@ -128,7 +131,7 @@ Produção segue no Apps Script durante toda a fase. Risco perto de zero.
 
 ```
 servidor/
-  index.js          Fastify: /webhook (POST), /processar, /cron/*, /saude
+  index.js          Fastify. O papel vem de env: PAPEL=webhook | worker
   carregador.js     lê os .gs na ordem e roda num vm context
   plataforma/
     cache.js        Redis
@@ -139,6 +142,50 @@ servidor/
   worker.js         worker thread onde a mensagem é processada
 Dockerfile
 ```
+
+#### DOIS serviços, não um
+
+A primeira versão deste plano desenhou um servidor só, com `/webhook`, `/processar` e `/cron/*`
+juntos. **Está errado:** no Cloud Run o `--allow-unauthenticated` é **por serviço, não por rota**.
+Um serviço só significaria expor o worker à internet e proteger por verificação de token dentro
+da aplicação — defesa em software para um problema que a plataforma resolve melhor.
+
+Mesma imagem, dois serviços, papel por variável de ambiente:
+
+| Serviço | Rotas | Acesso | Quem chama |
+|---|---|---|---|
+| `webhook` | `POST /webhook`, `GET /webhook`, `/saude` | público | a Meta (autenticação é o HMAC) |
+| `worker` | `POST /processar`, `POST /cron/*` | **privado** | Cloud Tasks e Cloud Scheduler, via OIDC |
+
+O worker fica literalmente inalcançável de fora. É propriedade de infraestrutura, não de código.
+
+#### O que precisa existir na Google antes desta fase
+
+Nada disto é necessário nas Fases 0 e 1 — **não configure antes**, ou terá esquecido as escolhas
+quando for usar. É uma sessão de cerca de uma hora, de uma vez, por esta lista.
+
+Já existe, porque o Vision já roda com chave de API: **projeto GCP e billing ativo.**
+
+1. **APIs:** Cloud Run, Cloud Build, Artifact Registry, Cloud Tasks, Cloud Scheduler,
+   Secret Manager.
+2. **Região.** `southamerica-east1` (São Paulo) pela latência e por responder "os dados estão no
+   Brasil" numa pergunta de LGPD. ⚠️ Mas veja a ressalva de Tier 1/Tier 2 em *Limites gratuitos*,
+   abaixo: pode custar franquia.
+3. **Conta de serviço dedicada** para os dois serviços. **É a mesma lição do BL-17.** A conta
+   padrão do Compute vem com papel de Editor no projeto inteiro; não faz sentido tirar o bot de
+   Administrador no Odoo e pô-lo de Editor na Google.
+4. **Secret Manager** para quatro segredos: `WHATSAPP_TOKEN`, `ODOO_API_KEY`,
+   `GOOGLE_VISION_API_KEY` e o **App Secret da Meta** (novo — é o que valida o HMAC na Fase 5).
+5. **Artifact Registry**, com **política de limpeza desde o primeiro dia**. Cada deploy gera uma
+   imagem de 200–300 MB e elas se acumulam; configurar depois é mexer em algo esquecido.
+6. **Workload Identity Federation** para o GitHub Actions publicar sem chave. O caminho comum é
+   gerar uma chave de conta de serviço e colar no GitHub Secrets — **este repositório é público**,
+   e uma credencial de longa duração perto dele é uma categoria de risco que não precisa existir.
+   O WIF dá um token efêmero e nada baixável.
+
+Fora da Google, e independente: a conta no **Upstash** para o Redis. De graça, dois minutos.
+**Não use Memorystore** — é o Redis gerenciado do Google e custa ~US$ 35/mês mínimo, o que
+sozinho estouraria o orçamento inteiro do Nível 1.
 
 Cuidado registrado: `Utilities.formatDate` usa os padrões do Java (`'yyyy-MM-dd'`, `'H'`), que
 não são os do `Intl`. Precisa de um tradutor pequeno e com teste próprio — a janela de disparo do
@@ -177,6 +224,19 @@ Cuidado registrado: `TIMEZONE = 'America/Sao_Paulo'` e o Scheduler tem fuso pró
 BL-73 tem de continuar lendo a hora em São Paulo, não em UTC — senão o disparo das 9h vira 6h e
 ninguém percebe, porque não dá erro. Merece caso no harness.
 
+#### ⚠️ Os jobs nascem PAUSADOS
+
+Se os jobs do Scheduler forem criados já ativos enquanto o acionador do Apps Script ainda roda de
+hora em hora, **os dois sistemas notificam**. A deduplicação (`jaFoiNotificadoEsteMes`, que lê o
+`x_notificacao_log` no Odoo) segura a maior parte, mas os dois podem checar "não notificado" no
+mesmo segundo e os dois enviarem.
+
+Com 500 dizimistas isso é mensagem duplicada para muita gente, e não dá para desfazer.
+
+**Regra:** criar pausados. Despausar é passo da **Fase 5**, no mesmo momento em que se removem os
+acionadores do Apps Script (`removerTriggerNotificacoes` e o equivalente do `TriggerSessoes`).
+Nunca os dois ligados ao mesmo tempo.
+
 ### Fase 5 — Corte (1 dia + uma semana de observação)
 
 - **Assinatura HMAC de verdade.** Hoje o webhook autentica por segredo na query string
@@ -200,26 +260,119 @@ completo.
 
 ---
 
-## Onde o dinheiro vai
+## Continuidade de serviço — o bot para em alguma fase?
 
-| Item | Estimativa |
-|---|---|
-| Cloud Run (scale-to-zero) | R$ 0–30 — a camada gratuita cobre ~2M requisições/mês |
-| Cloud Tasks | R$ 0 — 1M operações/mês grátis |
-| Cloud Scheduler | R$ 0 — 3 jobs grátis, usamos 2 |
-| Redis (Upstash) | R$ 0 no início ⚠️ |
-| Cloud Vision | R$ 0 — 1.000 imagens/mês grátis |
-| WhatsApp (Meta) | R$ 25–45 — **já se paga hoje** |
-| GitHub Actions | R$ 0 — repositório público |
+**Nenhuma fase desliga o bot de propósito.** Não há janela de manutenção em lugar nenhum deste
+plano; isso foi condição de desenho. Mas há dois momentos de risco, e eles não são do tipo que se
+espera.
 
-⚠️ **O único teto real é o Redis.** A camada gratuita do Upstash é de 10.000 comandos/dia, e cada
-mensagem consome 8–10 operações (estado, dados, idempotência, rate limit). Dá ~1.000 mensagens por
-dia, o que sobra para o uso normal e **pode apertar em dia de disparo de notificação**. O
-escalonamento do BL-73 ajuda justamente aí. Passando disso, o Upstash cobra por requisição e
-continua barato; a alternativa é Firestore, cuja camada gratuita é mais generosa mas cuja
-semântica de trava dá mais trabalho.
+| Fase | O bot | Rollback |
+|---|---|---|
+| 0 — CI | intacto, nem toca no deploy | apagar o arquivo |
+| 1 — `Plataforma` | intacto até o `clasp push`; depois, **risco de regressão** | reapontar a implantação para a versão anterior |
+| 2 — runtime Node | intacto, o Cloud Run não recebe tráfego | nada a desfazer |
+| 3 — fila e Redis | intacto, idem | nada a desfazer |
+| 4 — Scheduler | intacto **se** os jobs nascerem pausados | pausar os jobs |
+| 5 — corte | **único momento visível ao usuário** | trocar a URL de volta na Meta |
+| 6 — limpeza | intacto | ⚠️ aqui acaba o rollback fácil |
 
-Valores são ordem de grandeza e mudam. Conferir na hora de contratar.
+**Fase 0 tem risco zero, e não é força de expressão.** O workflow é um `.yml` em
+`.github/workflows/`, e o `clasp` só envia `.gs`, `.js`, `.html` e o `appsscript.json` — YAML ele
+nem reconhece como arquivo de projeto. O arquivo entra no Git e nunca chega perto do Apps Script.
+
+**O risco da Fase 1 não é queda, é regressão.** Ela termina num `clasp push` + republicar, e aí
+código novo passa a atender. Se o refactor tiver bug, o bot não *cai* — responde errado, que é
+pior, porque não avisa. Duas defesas, e é por isso que a Fase 0 vem antes: (a) o harness roda em
+todo PR e reprova mudança de comportamento antes do push; (b) o Apps Script guarda as versões —
+em *Implantações → Gerenciar implantações → editar* troca-se a versão servida, em segundos, sem
+`clasp push`. **Vale testar esse rollback antes de precisar dele.**
+
+**A Fase 5 tem a única perda visível, e é pequena.** Mensagem não se perde: a URL nova já está de
+pé e validada desde a Fase 2, então trocar o callback é uma troca entre dois endpoints vivos —
+diferente de rotacionar o `WEBHOOK_SECRET`, onde o endpoint antigo passa a *recusar*. O que se
+perde é **quem estiver no meio de uma conversa**: o estado (`estado_*`, `dados_*`) vive no
+`CacheService` do Apps Script, e o runtime novo procura no Redis e não acha. Essa pessoa volta ao
+menu.
+
+Mitigação: **cortar de madrugada**. O TTL da sessão é 1 hora, então às 3h praticamente não há
+ninguém no meio de nada. Antes das 9h também, para não pegar a janela de notificação do BL-73.
+Não se perde nada que já esteja no Odoo — cadastro, devolução, `x_contato_bot`.
+
+**A Fase 6 é o ponto sem volta.** Enquanto o código do Apps Script existir, voltar é trocar uma
+URL. Quando a Fase 6 apagar a implementação GAS da `Plataforma`, voltar vira `git revert` +
+`clasp push` + republicar. Por isso ela é a última e vem depois de uma semana de observação com
+pelo menos um ciclo de notificação completo. Não custa nada deixar o Apps Script parado de pé por
+um mês.
+
+---
+
+## Limites gratuitos, verificados na fonte
+
+Conferidos em 24/09/2026 nas páginas oficiais (links ao fim do documento). **Preços e franquias
+mudam — reconferir na hora de contratar.**
+
+### Confirmado
+
+| Serviço | Gratuito por mês | Observação |
+|---|---|---|
+| **Cloud Run** | 180.000 vCPU-s · 360.000 GiB-s · 2.000.000 requisições | agregado **por conta de faturamento**, não por projeto |
+| **Cloud Scheduler** | **3 jobs** | também por conta de faturamento — usamos 2 |
+| **Cloud Build** | 2.500 build-minutes | ~800 deploys |
+| **Cloud Vision** | primeiras 1.000 unidades | já consumidas hoje |
+| **Cloud Logging** | primeiros 50 GiB por projeto | |
+
+### NÃO confirmado
+
+As páginas de preço da Google são tabelas renderizadas por JavaScript e não abriram. **Estes
+números não foram apurados e não devem ser presumidos:**
+
+- **Cloud Tasks** — confirmou-se só o modelo: uma operação cobrável é uma chamada de API **ou uma
+  tentativa de entrega**, e tarefas são fatiadas de 32 KB em 32 KB. A franquia, não.
+- **Secret Manager** — cobra por versão ativa/mês e por acesso a cada 10.000. Os limites, não.
+- **Artifact Registry** — existe armazenamento gratuito; quanto, não.
+
+Os três são de baixo impacto neste volume. Conferir no console na Fase 2.
+
+### O que realmente aperta
+
+Estimativa com premissas à vista: 500 dizimistas, ~2.400 mensagens recebidas/mês, e **~6.000
+callbacks de status** — a Meta faz um POST para cada mensagem *enviada* (sent, delivered, read),
+que é o item que quase sempre falta na conta.
+
+| Recurso | Consumo estimado | Do gratuito |
+|---|---|---|
+| Requisições | ~11.000 | **0,5%** |
+| GiB-segundos | ~15.000 | ~4% |
+| **vCPU-segundos** | **~25.000–36.000** | **14–20%** |
+
+**O gargalo é vCPU-segundo, não requisição** — o contrário do que a intuição diz. O número vem do
+próprio backlog: as execuções medidas no teste de carga levaram **10 a 24 segundos**, dominadas
+por ida e volta ao Odoo e ao Vision, que não ficam mais rápidas no Node.
+
+**Consequência direta da decisão da worker thread síncrona:** ela bloqueia esperando o Odoo, e o
+Cloud Run cobra **CPU alocada, não CPU ocupada**. A escolha que preserva 17.450 linhas custa mais
+vCPU-segundo do que um desenho assíncrono custaria. Com 14–20% da franquia, cabe folgado — mas é
+um custo real da decisão, não almoço grátis.
+
+### Três ressalvas práticas
+
+1. ⚠️ **Região Tier 2 queima a franquia mais rápido.** A franquia do Cloud Run é concedida como
+   desconto **a preço de Tier 1**, e o consumo é descontado conforme o tier da região onde se
+   roda. Se `southamerica-east1` for Tier 2 — a busca sugere que sim, **mas não foi confirmado** —
+   aqueles 14–20% viram algo como 28–40%. Continua dentro, mas a margem deixa de ser confortável e
+   passa a ser só suficiente. **Conferir o tier da região antes de fixá-la.**
+2. **Os 3 jobs do Scheduler são da conta inteira.** Usamos 2. Um ambiente de staging com os mesmos
+   gatilhos dá 4 e sai do gratuito. São centavos, mas convém saber antes.
+3. **O teto mais baixo de todos não é da Google.** É o Upstash: 10.000 comandos/dia contra ~8–10
+   comandos por mensagem, ou seja ~1.000 mensagens/dia. É o primeiro limite que se encosta, e é
+   justamente em dia de disparo — onde o escalonamento do BL-73 ajuda. Passando disso o Upstash
+   cobra por requisição e segue barato; a alternativa é Firestore, com franquia mais generosa e
+   semântica de trava mais trabalhosa.
+
+### Custo esperado
+
+**R$ 30–100/mês**, e quase tudo já é o WhatsApp que se paga hoje. Cloud Run, Tasks, Scheduler,
+Build, Vision e Logging cabem nas franquias neste volume.
 
 ---
 
@@ -260,3 +413,19 @@ Só então 3, 4 e 5, que é quando a produção começa a se mover.
 
 Se o plano precisar parar no meio, os pontos seguros de parada são o fim da Fase 0 e o fim da
 Fase 2. Parar entre a 3 e a 5 deixa duas arquiteturas de pé ao mesmo tempo.
+
+---
+
+## Fontes dos limites gratuitos
+
+Consultadas em 24/09/2026:
+
+- <https://cloud.google.com/run/pricing>
+- <https://cloud.google.com/scheduler/pricing>
+- <https://cloud.google.com/tasks/pricing>
+- <https://cloud.google.com/build/pricing>
+- <https://cloud.google.com/vision/pricing>
+- <https://cloud.google.com/products/observability/pricing>
+- <https://cloud.google.com/secret-manager/pricing>
+- <https://cloud.google.com/artifact-registry/pricing>
+- <https://cloud.google.com/free>
