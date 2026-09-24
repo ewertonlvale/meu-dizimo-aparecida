@@ -1,0 +1,69 @@
+# ============================================================================
+# verificacao.yml — o harness roda em todo PR (BL-74, Fase 0)
+# ============================================================================
+#
+# POR QUE ISTO É A PRIMEIRA FASE DA MIGRAÇÃO
+#   As fases seguintes mexem em 17.450 linhas que atendem uma paróquia de
+#   verdade. O critério de "não quebrou nada" precisa ser mecânico ANTES de a
+#   primeira linha mudar — senão o critério vira a memória de quem revisa.
+#
+#   Daqui em diante, o harness é o CONTRATO da migração.
+#
+# E VALE SOZINHA. Mesmo que o resto do plano nunca aconteça, isto fecha o
+# BL-43 e tira o "rodei os testes?" do campo da disciplina pessoal.
+#
+# NADA AQUI TOCA EM PRODUÇÃO. Nenhuma suíte fala com o Odoo, o WhatsApp ou o
+# Apps Script, e o workflow não recebe segredo nenhum — nem precisa. Um PR de
+# fora do repositório roda com as mesmas permissões mínimas.
+#
+# ⚠️ FALTA UM PASSO NA MÃO: exigir este check em Settings → Branches → Add
+#    rule para `staging`, marcando "Require status checks to pass".
+#    Sem isso ele avisa, mas não impede. Ver Documentação/MIGRACAO-NIVEL-1.md.
+
+name: Verificação
+
+on:
+  pull_request:
+  push:
+    branches: [staging, main]
+
+# Só leitura. O workflow não comenta, não publica, não faz push.
+permissions:
+  contents: read
+
+# Um push novo cancela a verificação anterior do mesmo PR: o resultado que
+# interessa é o do último commit, e deixar as antigas terminando só gasta fila.
+concurrency:
+  group: verificacao-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    name: Harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # A MESMA versão que se usa na máquina de desenvolvimento. Um CI
+          # verde noutra versão promete menos do que parece — e a promessa
+          # que se quer aqui é "passa igual nos dois lugares".
+          node-version: '24'
+
+      # O py_js do Odoo é baixado uma vez e reaproveitado. Sem cache, toda
+      # execução vai ao raw.githubusercontent.com — mais lento e mais sujeito
+      # a um vermelho que não é do código.
+      - name: Cache do py_js
+        uses: actions/cache@v4
+        with:
+          path: ferramentas/.cache-pyjs
+          key: pyjs-${{ hashFiles('ferramentas/provar-dominio-filtro.mjs') }}
+
+      # Um comando só, o mesmo que se roda na máquina. Se este workflow
+      # listasse as suítes por conta própria, os dois divergiriam no primeiro
+      # dia em que alguém acrescentasse uma.
+      - name: Verificar
+        run: node ferramentas/verificar-tudo.mjs
