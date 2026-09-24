@@ -17,6 +17,11 @@
  *        porque o mock lia `args[0]` como a operação: repetia o engano de quem
  *        chamava e portanto o abençoava. Corrigido: o mock agora reproduz o
  *        despacho `_call_kw_multi` e recusa a forma errada.
+ *     6. `res.users.groups_id`, que na saas-19.3 virou `group_ids` (e
+ *        `all_group_ids` para os implicados). Quebrava `--explicar` e
+ *        `--aplicar --login=` — dois modos que esta prova NEM EXERCITAVA.
+ *        Agora o mock valida nomes de campo contra os do Odoo real e há
+ *        cenário para cada modo.
  *
  *   Um verificador que aprova quando não sabe é pior que verificador nenhum:
  *   ele encerra a investigação. Ler o código não pegou nenhuma das quatro —
@@ -58,6 +63,22 @@ const PERMISSOES = {
 
 const SO_ADMIN = ['ir.ui.view', 'ir.cron', 'res.groups'];
 
+// Os campos que EXISTEM de verdade, conferidos no código-fonte da saas-19.3
+// (odoo/addons/base/models/*.py). O Odoo recusa campo inexistente com
+// `ValueError: Invalid field 'x' on 'y'`, e o mock passou a fazer o mesmo.
+//
+// Sem isto, escrever `groups_id` (que virou `group_ids` nesta versão) passava
+// batido aqui e só quebrava em produção. É a sexta falha desta família —
+// nome de API escrito de memória — e a primeira com defesa automática.
+const CAMPOS = {
+  'res.users': ['id', 'name', 'login', 'group_ids', 'all_group_ids', 'active'],
+  'res.groups': ['id', 'name', 'users', 'implied_ids', 'all_implied_ids'],
+  'ir.model': ['id', 'model', 'name'],
+  'ir.model.data': ['id', 'name', 'module', 'model', 'res_id'],
+  'ir.model.access': ['id', 'name', 'model_id', 'group_id',
+                      'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
+};
+
 function subir(cenario, porta) {
   return new Promise((pronto) => {
     const s = http.createServer((req, res) => {
@@ -78,6 +99,25 @@ function subir(cenario, porta) {
               ? []
               : [{ id: uid, login: 'bot@exemplo.org', name: 'Bot de Mentira' }],
           }));
+        }
+
+        // Campo inexistente: o Odoo devolve ValueError, não silêncio.
+        const pedidos = method === 'read' ? (args[1] || [])
+                      : (params.args[6] || {}).fields || [];
+        const validos = CAMPOS[model];
+        if (validos) {
+          const mau = pedidos.find((f) => !validos.includes(f));
+          if (mau) return erro('builtins.ValueError', `Invalid field '${mau}' on '${model}'`);
+        }
+
+        if (method === 'search_read') {
+          if (model === 'ir.model.access')  return res.end(JSON.stringify({ result: ACLS[cenario] || [] }));
+          if (model === 'ir.model')         return res.end(JSON.stringify({ result: [{ id: 9, model: 'x_comunidade' }] }));
+          if (model === 'ir.model.data')    return res.end(JSON.stringify({ result: [] }));
+          if (model === 'res.users')        return res.end(JSON.stringify({
+            result: [{ id: 13, name: 'Bot de Mentira', login: 'bot@exemplo.org',
+                       group_ids: [1, 7], all_group_ids: [1, 7, 12] }] }));
+          return res.end(JSON.stringify({ result: [] }));
         }
 
         if (method === 'has_access') {
@@ -125,6 +165,27 @@ function subir(cenario, porta) {
   });
 }
 
+// As regras de ir.model.access que cada cenário de --explicar enxerga.
+// `model_id` volta como [id, RÓTULO amigável] — e é justamente por isso que o
+// script tem de resolver o nome técnico via ir.model em vez de casar pelo
+// rótulo. Aqui o rótulo é propositalmente diferente do nome técnico.
+const ACLS = {
+  'explicar-limpo': [
+    { id: 1, name: 'meu_dizimo_bot_x_comunidade', model_id: [9, 'Comunidade'],
+      group_id: [7, 'Meu Dízimo · Bot'],
+      perm_read: true, perm_write: false, perm_create: false, perm_unlink: false },
+  ],
+  'explicar-culpado': [
+    { id: 1, name: 'meu_dizimo_bot_x_comunidade', model_id: [9, 'Comunidade'],
+      group_id: [7, 'Meu Dízimo · Bot'],
+      perm_read: true, perm_write: false, perm_create: false, perm_unlink: false },
+    // A regra que o Studio cria: sem grupo, vale para todo mundo.
+    { id: 2, name: 'x_comunidade_studio_access', model_id: [9, 'Comunidade'],
+      group_id: false,
+      perm_read: true, perm_write: true, perm_create: true, perm_unlink: false },
+  ],
+};
+
 const CENARIOS = [
   { nome: 'uid-inexistente', saida: 1, espera: /NÃO EXISTE/,
     porque: 'uid digitado errado não pode receber atestado de boa conduta' },
@@ -138,6 +199,12 @@ const CENARIOS = [
     porque: 'sobra por ACL aditiva não é admin — dizer que é manda procurar no lugar errado' },
   { nome: 'feliz', saida: 0, espera: /✅/,
     porque: 'e o caminho certo tem de passar, senão o resto não prova nada' },
+  // Os dois modos abaixo NÃO eram exercitados, e foi neles que o `groups_id`
+  // quebrou. Cobrir só um terço do script é cobrir um terço do script.
+  { nome: 'explicar-limpo', modo: 'explicar', saida: 0, espera: /Nenhuma regra concede/,
+    porque: '--explicar precisa ao menos rodar: era ele que estourava no campo morto' },
+  { nome: 'explicar-culpado', modo: 'explicar', saida: 1, espera: /SEM GRUPO/,
+    porque: 'a regra do Studio, sem grupo, é a que concede a mais — tem de ser nomeada' },
 ];
 
 let porta = 8900;
@@ -149,7 +216,9 @@ for (const c of CENARIOS) {
   const servidor = await subir(c.nome, ++porta);
 
   const r = await new Promise((ok) =>
-    execFile('node', ['ferramentas/instalar-usuario-bot.mjs', '--verificar'], {
+    execFile('node', c.modo === 'explicar'
+      ? ['ferramentas/instalar-usuario-bot.mjs', '--explicar', '--login=bot@exemplo.org']
+      : ['ferramentas/instalar-usuario-bot.mjs', '--verificar'], {
       cwd: RAIZ,
       env: { ...process.env,
         ODOO_URL: `http://127.0.0.1:${porta}`, ODOO_DB: 'mentira',
