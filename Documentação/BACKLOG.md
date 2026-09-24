@@ -102,6 +102,7 @@
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
+| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 📋 **Plano fechado (24/09)** — ver `Documentação/MIGRACAO-NIVEL-1.md`. 6 fases, fecha BL-20/21/43 e parte do BL-29 |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Ferramenta pronta (23/09)** — grupo, matriz de permissões e modo `--verificar`. Falta criar o usuário e trocar as Properties |
 
 ---
