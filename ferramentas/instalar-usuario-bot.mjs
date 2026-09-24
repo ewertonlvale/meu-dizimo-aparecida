@@ -256,14 +256,38 @@ if (!CONFIG.login) {
 
     // O ponto inteiro do item: se ele for administrador, o grupo novo não
     // limita nada. Odoo soma permissões; não subtrai.
-    const [admin] = await buscar('res.groups',
-      [['id', 'in', u.groups_id], ['name', 'ilike', 'Settings']], ['id', 'name'], { limit: 1 });
-    if (admin) {
-      console.log(`   🚨 ESTE USUÁRIO É ADMINISTRADOR (grupo "${admin.name}").`);
+    //
+    // POR XML ID, NÃO POR NOME. Estava `['name', 'ilike', 'Settings']`, e
+    // `res.groups.name` É TRADUZIDO: num Odoo em português o grupo se chama
+    // "Configurações"/"Administração" e o filtro não casaria com nada. O
+    // script então SILENCIARIA sobre um usuário que ainda é administrador —
+    // um falso "está tudo certo" no único aviso que justifica este item.
+    // Mesma classe do `check_access_rights` que já quebrou aqui.
+    //
+    // Os dois grupos que dão poder de administrador:
+    //   base.group_system        Administração → Configurações
+    //   base.group_erp_manager   Administração → Direitos de acesso
+    const dados = await buscar('ir.model.data',
+      [['model', '=', 'res.groups'], ['module', '=', 'base'],
+       ['name', 'in', ['group_system', 'group_erp_manager']]],
+      ['name', 'res_id']);
+
+    const idsAdmin = dados.map((d) => d.res_id).filter((id) => u.groups_id.includes(id));
+
+    if (!dados.length) {
+      // Não achar os XML IDs é anormal e não pode passar como "sem problema".
+      console.log('   ⚠️  não consegui resolver base.group_system / base.group_erp_manager.');
+      console.log('      NÃO dá para afirmar que este usuário não é administrador —');
+      console.log('      confira à mão em Definições → Usuários.');
+    } else if (idsAdmin.length) {
+      const nomes = await buscar('res.groups', [['id', 'in', idsAdmin]], ['name']);
+      console.log(`   🚨 ESTE USUÁRIO É ADMINISTRADOR (${nomes.map((g) => `"${g.name}"`).join(', ')}).`);
       console.log('      Enquanto for, o grupo novo não limita NADA: o Odoo SOMA');
       console.log('      permissões, nunca subtrai. Tire-o de Administração na tela');
       console.log('      do Odoo — eu não faço isso por script, porque tirar acesso');
       console.log('      de um usuário errado tranca alguém para fora.');
+    } else {
+      console.log('   · não está em nenhum grupo de administrador');
     }
 
     if (grupoId && u.groups_id.includes(grupoId)) {
