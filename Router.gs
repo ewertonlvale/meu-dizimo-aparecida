@@ -29,10 +29,34 @@ const Router = {
       case 'image':       this._rotearImagem(from, message);     break;
       case 'document':    this._rotearDocumento(from, message);  break;
       case 'button':      this._rotearBotaoTemplate(from, message); break;
-      default:
-        console.log(`⚠️ Tipo de mensagem não tratado: ${tipo}`);
-        MenuHandler.menuPrincipal(from);
+      default:            this._tipoNaoTratado(from, tipo);
     }
+  },
+
+  /**
+   * BL-79: tipos que o bot não entende NÃO mexem na conversa.
+   *
+   * Antes caíam em `menuPrincipal`, que grava o estado MENU. Um 👍 numa
+   * mensagem do bot, no meio do cadastro ou logo antes de mandar o
+   * comprovante, desfazia o passo em andamento — e a foto seguinte ouvia
+   * "Não estou esperando uma imagem".
+   *
+   * - `reaction`: é um gesto, não um pedido. Silêncio, e nenhuma mensagem
+   *   cobrada.
+   * - `system` e `ephemeral`: avisos do próprio WhatsApp, não da pessoa.
+   * - o resto (figurinha, áudio, vídeo, localização, contato, `unsupported`):
+   *   um aviso curto, e o estado continua onde estava.
+   * @private
+   */
+  _tipoNaoTratado(from, tipo) {
+    console.log(`⚠️ Tipo de mensagem não tratado: ${tipo} — estado mantido`);
+    if (tipo === 'reaction' || tipo === 'system' || tipo === 'ephemeral') return;
+
+    Utils.enviarSimples(from,
+      '🤔 Ainda não consigo entender esse tipo de mensagem.\n\n' +
+      'Pode me escrever, ou enviar o comprovante como *foto* ou *PDF*. ' +
+      'Para ver as opções, digite *menu*.'
+    );
   },
 
   // ==========================================================================
@@ -164,7 +188,11 @@ const Router = {
       // clicável. Mandar para o menu apagaria um cadastro em andamento sem
       // uma palavra. Se há cadastro, avisamos e repetimos a pergunta.
       this._interativoForaDeContexto(from, `lista "${itemId}"`);
+      return;
     }
+
+    // BL-79: subtipo que o bot não conhece era descartado sem resposta.
+    this._tipoNaoTratado(from, `interactive/${subTipo}`);
   },
 
   /**

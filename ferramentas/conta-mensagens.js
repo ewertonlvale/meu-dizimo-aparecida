@@ -4037,6 +4037,41 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
       || `ttl=${ttls['msg_wamid.REENTREGA']} processada ${passou}x`;
   });
 
+  // ── BL-79 ──────────────────────────────────────────────────────────────
+  // O Router real, com o que ele chama registrando em vez de agir.
+  const roteador = (estado) => {
+    const r = { enviadas: [], estados: [], menus: 0 };
+    r.Router = carregar(['Router.gs'], {
+      StateManager: { getEstado: () => estado, setEstado: (f, e) => r.estados.push(e),
+                      getCampo: () => undefined },
+      Utils: { enviarSimples: (f, t) => r.enviadas.push(t) },
+      MenuHandler: { menuPrincipal: () => { r.menus++; r.estados.push('MENU'); } }
+    }, 'Router');
+    return r;
+  };
+  caso('BL-79: reação no meio da devolução é ignorada — sem mensagem, estado intacto', () => {
+    const r = roteador('AGUARDANDO_COMPROVANTE');
+    r.Router.rotear('55', { type: 'reaction', reaction: { emoji: '👍', message_id: 'wamid.X' } });
+    return (!r.enviadas.length && !r.estados.length && !r.menus)
+      || `enviou ${r.enviadas.length}, estados ${r.estados.join()}`;
+  });
+  caso('BL-79: figurinha ou áudio no cadastro recebem aviso, e o cadastro continua', () => {
+    const erros = [];
+    for (const tipo of ['sticker', 'audio', 'video', 'location', 'contacts', 'unsupported']) {
+      const r = roteador('AGUARDANDO_NOME');
+      r.Router.rotear('55', { type: tipo });
+      if (r.enviadas.length !== 1 || r.estados.length || r.menus) {
+        erros.push(`${tipo}: ${r.enviadas.length} msg, estados [${r.estados.join()}]`);
+      }
+    }
+    return !erros.length || erros.join('; ');
+  });
+  caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
+    const r = roteador('MENU');
+    r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });
+    return (r.enviadas.length === 1 && !r.estados.length) || `enviou ${r.enviadas.length}`;
+  });
+
   for (const c of casos) {
     if (!c.ok) falhas++;
     console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.ok ? '' : '\n     ' + c.detalhe}`);
