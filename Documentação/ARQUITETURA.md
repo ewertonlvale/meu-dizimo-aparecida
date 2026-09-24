@@ -69,7 +69,7 @@ BL-22 era "usar chaves por usuário e varrer por prefixo na trigger", o que é
 | `sessao_inicio_${from}` | 1 h | Timestamp de início da sessão |
 | `aviso_sessao_${from}` | 10 min | Marca que o aviso de expiração já foi enviado |
 | `contato_${from}` | 6 h | Número já conhecido (evita ida ao Odoo por mensagem) |
-| `msg_${messageId}` | 10 min | Idempotência do webhook |
+| `msg_${messageId}` | 6 h | Idempotência do webhook (BL-78: eram 10 min, e a Meta reentrega por horas) |
 | `taxa_min_${from}_${balde}` · `taxa_hora_${from}_${balde}` | 2 min / 2 h | Freio de gasto por pessoa. O **balde de tempo na chave** é essencial: `cache.put` renova o TTL, então chave fixa nunca expiraria |
 | `taxa_aviso_${from}` | 1 h | Garante um aviso por hora — o aviso também é mensagem cobrada |
 | `tentativas_relatorio_${from}` · `bloqueio_relatorio_${from}` | — | Controle de acesso ao relatório |

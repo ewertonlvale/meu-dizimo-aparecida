@@ -3993,6 +3993,57 @@ console.log('🧱 A fachada da Plataforma não vaza (BL-74, Fase 1)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
+
+// Cada caso carrega o ARQUIVO REAL com stubs mínimos e prova o conserto. O
+// critério para entrar aqui: o caso tem de reprovar no código anterior à
+// correção — foi conferido um a um, com o código antigo, ao escrever.
+{
+  const carregar = (arquivos, globais, devolve) => {
+    const ctx = Object.assign({
+      console: { log() {}, warn() {}, error() {} }, Logger: { log() {} }
+    }, globais);
+    vm.createContext(ctx);
+    return vm.runInContext(
+      [PLATAFORMA, lerTexto(path.join(RAIZ, 'Config.gs'))]
+        .concat(arquivos.map((a) => lerTexto(path.join(RAIZ, a)))).join('\n;\n') +
+      `\n;(${devolve});`, ctx, { filename: 'revisao-24-09.gs' });
+  };
+
+  const casos = [];
+  const caso = (nome, fn) => {
+    let ok = false, detalhe = '';
+    try { const r = fn(); ok = r === true; if (!ok) detalhe = String(r); }
+    catch (e) { detalhe = 'lançou: ' + e.message; }
+    casos.push({ nome, ok, detalhe });
+  };
+
+  // ── BL-78 ──────────────────────────────────────────────────────────────
+  caso('BL-78: a marca de mensagem já vista dura 6 h, e a reentrega é ignorada', () => {
+    const cache = {}, ttls = {};
+    let passou = 0;
+    const W = carregar(['Webhook.gs'], {
+      CacheService: { getScriptCache: () => ({
+        get: (k) => cache[k] || null,
+        put: (k, v, t) => { cache[k] = v; ttls[k] = t; } }) },
+      // Bloqueado: a mensagem para logo depois da deduplicação — é só ela
+      // que interessa aqui, sem arrastar Router, Odoo e WhatsApp.
+      Utils: { estaBloqueado: () => { passou++; return true; } }
+    }, '_processarMensagemWebhook');
+    const msg = { from: '5511999990000', id: 'wamid.REENTREGA', type: 'text', text: { body: 'oi' } };
+    W(msg);
+    W(msg);
+    return (ttls['msg_wamid.REENTREGA'] === 21600 && passou === 1)
+      || `ttl=${ttls['msg_wamid.REENTREGA']} processada ${passou}x`;
+  });
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.ok ? '' : '\n     ' + c.detalhe}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');
