@@ -2422,3 +2422,53 @@ diferente do esperado. Nada vai para a rede e nenhuma credencial é usada.
 também exige que a prova não seja apagada). Os cinco cenários reprovam contra a versão anterior —
 dois deles com exit 0 onde deveria ser 1.
 
+---
+
+### BL-17 — nota de 24/09 (4): a chamada errada, e o mock que a abençoava
+
+O conserto anterior funcionou como devia: o verificador **recusou-se a dar veredito**, imprimiu
+39 "NÃO SEI" e saiu com 1. A versão de antes teria dito "16 FALTANDO, 25 SOBRANDO, ainda é
+administrador" — acusando um usuário correto por um erro do próprio script.
+
+O que ele expôs:
+
+```
+BaseModel.has_access() missing 1 required positional argument: 'operation'
+```
+
+**A chamada estava errada.** Em `odoo/api.py`, método que não é `@api.model` é despachado por
+`_call_kw_multi`:
+
+```python
+ids, args = args[0], args[1:]
+recs = model.browse(ids)
+result = method(recs, *args, **kwargs)
+```
+
+`args[0]` é **sempre** consumido como lista de ids. Mandando `['read']`, o Odoo leu `'read'` como
+ids e chamou `has_access(recs)` sem operação. O certo é `[[], 'read']` — recordset vazio
+explícito, depois a operação. O comentário que eu tinha escrito ali ("num recordset vazio, que é
+o que o execute_kw entrega quando não se passam ids") descrevia um mecanismo que não existe.
+
+**E a prova não pegou, porque o mock errava igual.** O Odoo de mentira lia `args[0]` como a
+operação — exatamente o engano de quem chamava. Um mock que repete a suposição de quem chama não
+testa a suposição: **ele a confirma**. A prova ficou verde contra código que o Odoo real recusou
+39 vezes seguidas.
+
+**Correção dupla:** a chamada virou `[[], op]`, e o mock passou a reproduzir o despacho —
+consome `args[0]` como ids e devolve a mensagem real do Odoo quando a forma está errada.
+Revertendo só a chamada, a prova agora reprova em 2 cenários. Antes, passava em 5.
+
+**Varredura:** nenhum outro ponto do projeto tem o mesmo problema. Todas as demais chamadas são
+CRUD padrão (`read`, `write`, `create`, `unlink`, `search*`), onde `args[0]` já é id ou domínio
+por definição. `has_access` era a única com argumento posicional extra.
+
+**Quinta falha do mesmo script, e a primeira em que o próprio script se protegeu.** As quatro
+anteriores deram veredito errado; esta parou e disse que não sabia. É a diferença entre um
+verificador quebrado e um verificador honesto — e foi o conserto da nota (3) que produziu isso.
+
+**A lição sobre mocks**, que vale além deste item: o mock foi escrito lendo o mesmo trecho de
+código que o chamador. Onde os dois compartilham uma suposição, o teste não tem como falhar.
+Vale para o fake do Odoo no `conta-mensagens.js` também — ele já mentiu três vezes por motivos
+dessa família.
+
