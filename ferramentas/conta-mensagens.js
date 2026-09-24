@@ -3492,12 +3492,36 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // entrava duas vezes no total.
     { nome: 'ir.model.fields não é verificado em duplicidade',
       ok: (fonte.match(/'ir\.model\.fields'/g) || []).length === 1 },
+    // Um uid inexistente recebia ✅ e exit 0. A conferência de credencial é o
+    // que separa "não pode" de "não conectou".
+    { nome: 'confere a credencial antes de montar a matriz',
+      ok: /AccessDenied/.test(fonte) && /NÃO EXISTE/.test(fonte) },
+    // Erro que não é AccessError vira null, nunca string: string comparada
+    // com booleano é sempre diferente, e virava FALTA/SOBRA.
+    { nome: 'resposta desconhecida é null, não string de erro',
+      ok: /indeterminado/.test(fonte) && !/return `erro: /.test(fonte) },
+    // Era `w !== true`, então erro passava como "ok" — a checagem de
+    // segurança aprovava justamente quando não sabia.
+    { nome: 'na lista de administrador, só false é aprovação',
+      ok: /w === false \? '· ok'/.test(fonte) },
+    // process.exit(faltando ? 1 : 0) ignorava sobrando: um usuário AINDA
+    // ADMINISTRADOR saía com zero, e passaria em qualquer CI.
+    { nome: 'sobra e indeterminado também derrubam o código de saída',
+      ok: /process\.exit\(faltando \|\| sobrando \|\| indeterminado/.test(fonte) },
   ];
 
   for (const c of casos) {
     if (!c.ok) falhas++;
     console.log(`${c.ok ? '✅' : '❌'} ${c.nome}`);
   }
+
+  // Ler o código não pegou nenhuma das quatro falhas deste script — três
+  // passaram por revisão. Só executar pega. A prova roda à parte porque sobe
+  // servidor e processo filho; aqui só se garante que ela não sumiu.
+  const prova = fs.existsSync(path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'));
+  if (!prova) falhas++;
+  console.log(`${prova ? '✅' : '❌'} a prova executável existe`
+    + (prova ? ' (node ferramentas/prova-verificador.mjs)' : ' — foi apagada'));
 }
 
 console.log('\n' + '─'.repeat(64));
