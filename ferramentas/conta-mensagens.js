@@ -3507,7 +3507,20 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // process.exit(faltando ? 1 : 0) ignorava sobrando: um usuário AINDA
     // ADMINISTRADOR saía com zero, e passaria em qualquer CI.
     { nome: 'sobra e indeterminado também derrubam o código de saída',
-      ok: /process\.exit\(faltando \|\| sobrando \|\| indeterminado/.test(fonte) },
+      ok: /process\.exit\(faltando \|\| sobraNoBot \|\| sobraDeAdmin \|\| indeterminado/.test(fonte) },
+    // Sobra por ACL aditiva NÃO é poder de administrador, e dizer que é manda
+    // a pessoa procurar em Administração quando o problema está em
+    // ir.model.access. Os dois contadores têm de ser separados.
+    { nome: 'sobra nos modelos do bot é distinguida de poder de administrador',
+      ok: /sobraNoBot/.test(fonte) && /sobraDeAdmin/.test(fonte)
+       && /NÃO é poder de administrador/.test(fonte) },
+    // Saber QUE sobra sem saber DE ONDE não é acionável.
+    { nome: 'existe modo --explicar apontando a regra culpada',
+      ok: /--explicar/.test(fonte) && /ir\.model\.access/.test(fonte) },
+    // ir.model.access.model_id volta como [id, RÓTULO amigável]. Agrupar pelo
+    // rótulo casaria com nada — mesma armadilha do grupo de admin por nome.
+    { nome: '--explicar resolve o nome técnico do modelo, não o rótulo',
+      ok: /buscar\('ir\.model',\s*\[\['id', 'in', ids\]\]/.test(fonte) },
     // O call_kw do Odoo consome args[0] como lista de ids em todo método que
     // não é @api.model. Chamando `[op]`, a operação virava os ids e o Odoo
     // recusava as 39 perguntas. Tem de ser `[[], op]`.

@@ -107,6 +107,14 @@ function subir(cenario, porta) {
           if (cenario === 'ainda-admin' && SO_ADMIN.includes(model)) {
             return res.end(JSON.stringify({ result: true }));
           }
+          // A situação real de 24/09: o usuário NÃO é administrador, mas uma
+          // outra regra de ir.model.access — a que o Studio cria com o modelo
+          // — concede escrita nos x_*. ACL do Odoo soma; o grupo restritivo
+          // não anula a permissiva. São diagnósticos diferentes e não podem
+          // sair com a mesma frase.
+          if (cenario === 'sobra-no-bot' && model.startsWith('x_')) {
+            return res.end(JSON.stringify({ result: true }));
+          }
           return res.end(JSON.stringify({ result: !!(PERMISSOES[model] || {})[operacao] }));
         }
 
@@ -124,8 +132,10 @@ const CENARIOS = [
     porque: 'AccessDenied é credencial, não permissão — dizer "sobrando" acusa o inocente' },
   { nome: 'rede-instavel', saida: 1, espera: /INDETERMINADA/,
     porque: 'erro de rede é ignorância, e ignorância não vira veredito' },
-  { nome: 'ainda-admin', saida: 1, espera: /SOBRANDO/,
+  { nome: 'ainda-admin', saida: 1, espera: /ainda é admin/,
     porque: 'é a condição que o BL-17 existe para detectar — não pode sair com zero' },
+  { nome: 'sobra-no-bot', saida: 1, espera: /NÃO é poder de administrador/,
+    porque: 'sobra por ACL aditiva não é admin — dizer que é manda procurar no lugar errado' },
   { nome: 'feliz', saida: 0, espera: /✅/,
     porque: 'e o caminho certo tem de passar, senão o resto não prova nada' },
 ];
@@ -166,4 +176,4 @@ if (falhas) {
   console.log('   Não o publique assim.\n');
   process.exit(1);
 }
-console.log('✅ Os cinco cenários respondem como devem.\n');
+console.log(`✅ Os ${CENARIOS.length} cenários respondem como devem.\n`);

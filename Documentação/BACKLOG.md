@@ -2472,3 +2472,62 @@ código que o chamador. Onde os dois compartilham uma suposição, o teste não 
 Vale para o fake do Odoo no `conta-mensagens.js` também — ele já mentiu três vezes por motivos
 dessa família.
 
+---
+
+### BL-17 — nota de 24/09 (5): a sobra não era administrador
+
+Com a chamada corrigida, o `--verificar` finalmente devolveu a matriz de verdade:
+
+```
+   x_devolucao              read:✓  write:✓  create:✓  unlink:·
+   x_dizimista              read:✓  write:✓  create:✓  unlink:·
+   x_contato_bot            read:✓  write:✓  create:✓  unlink:·
+   x_notificacao_log        read:✓  write:✓ SOBRA  create:✓  unlink:·
+   x_comunidade             read:✓  write:✓ SOBRA  create:✓ SOBRA  unlink:·
+   x_parametros             read:✓  write:✓ SOBRA  create:✓ SOBRA  unlink:·
+   x_parametros_line_c498a  read:✓  write:✓ SOBRA  create:✓ SOBRA  unlink:·
+   ir.model.fields          read:✓  write:·  create:·  unlink:·
+   res.users                read:✓  write:✓ SOBRA  create:·  unlink:·
+```
+
+**Oito sobras reais** — e a mensagem final dizia *"o usuário ainda tem poder de administrador"*,
+**contradizendo a própria saída do comando**, que mostrava `ir.ui.view`, `ir.cron` e `res.groups`
+todos em `· ok`. A tela do Odoo confirma: Função = Usuário, e os 4 grupos são Todos, Usuário,
+Meu Dízimo · Bot e Procedimentos técnicos. Nenhum é Administração.
+
+**A causa real: ACLs do Odoo são ADITIVAS.** Criar um grupo restritivo não anula uma regra
+permissiva já existente. O Studio cria uma `ir.model.access` junto com cada modelo `x_*`, valendo
+para todo usuário interno — e é ela que concede a escrita. O grupo "Meu Dízimo · Bot" soma,
+nunca subtrai.
+
+Mandar a pessoa procurar em Administração quando o problema está em `ir.model.access` custa uma
+tarde. **Dois contadores separados agora:**
+
+| | O que é | O que fazer |
+|---|---|---|
+| `sobraDeAdmin` | escrita em `ir.ui.view` / `ir.cron` / `res.groups` | tirar de Administração |
+| `sobraNoBot` | escrita a mais nos `x_*` | achar a `ir.model.access` permissiva |
+
+**Modo `--explicar` (novo), rodado com a chave do administrador:** lista, por modelo, cada regra
+de `ir.model.access`, o grupo dela e o que concede a mais — marcando 🚨 só quando o bot pertence
+àquele grupo (ou quando a regra não tem grupo, valendo para todos).
+
+Uma armadilha evitada ali: `ir.model.access.model_id` volta como `[id, rótulo AMIGÁVEL]`
+("Devolução"), não o nome técnico. Agrupar pelo rótulo casaria com nada — é a mesma armadilha do
+grupo de administrador buscado por nome. O modo resolve o nome técnico via `ir.model`, e há caso
+no harness exigindo isso.
+
+**O que o `--explicar` NÃO faz, de propósito:** apagar as regras. Elas existem provavelmente para
+os agentes da pastoral, que editam comunidade e parâmetros pela tela. Apagá-las tranca as pessoas
+para fora. O caminho é restringir a regra a um grupo de quem usa a tela e deixar o bot fora dele —
+decisão sobre quem pode o quê na paróquia, não coisa de script.
+
+**Risco concreto enquanto isso não fecha:** `x_comunidade` com escrita significa que a **chave PIX
+da paróquia é gravável pelo bot**. Quem obtiver a chave de API poderia redirecionar doações. É
+bem menor que o risco de administrador (apagar a base, gerenciar usuários), mas é o que resta.
+
+**Cobertura:** cenário novo `sobra-no-bot` na prova executável — o caso real, em que os modelos do
+bot sobram e os de administrador estão limpos —, mais 3 casos no `conta-mensagens.js`. A prova
+passou de 5 para 6 cenários, e a contagem na mensagem final passou a sair da lista em vez de um
+literal, que já estava desatualizado.
+
