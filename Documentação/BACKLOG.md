@@ -105,7 +105,7 @@
 | BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 📋 **Plano fechado (24/09)** — `MIGRACAO-NIVEL-1.md` (como) + `EVOLUCAO-ARQUITETURA.md` (porquê). 6 fases, continuidade de serviço e limites gratuitos verificados. Fecha BL-20/21/43 e parte do BL-29 |
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
-| BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Em andamento (24/09)** — usuário criado, `ODOO_UID = 13` conectando. Falta `--aplicar --login=`, tirar de Administração e `--verificar`. Detecção de admin corrigida: casava por nome em inglês |
+| BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
 
 ---
 
@@ -2757,4 +2757,46 @@ usuário do bot"* pegou uma execução feita com a chave do administrador ainda 
 relatório saiu coerente e completamente inútil, e a linha com nome e login foi o que denunciou.
 E `res.users write` aparece como `~ piso` em vez de achado, conforme a nota (7): as sobras caíram
 de 8 para 7 sem que nada no Odoo mudasse.
+
+---
+
+### BL-17 — FECHADO (24/09)
+
+```
+   x_devolucao              read:✓  write:✓  create:✓  unlink:·
+   x_dizimista              read:✓  write:✓  create:✓  unlink:·
+   x_contato_bot            read:✓  write:✓  create:✓  unlink:·
+   x_notificacao_log        read:✓  write:·  create:✓  unlink:·
+   x_comunidade             read:✓  write:·  create:·  unlink:·
+   x_parametros             read:✓  write:·  create:·  unlink:·
+   x_parametros_line_c498a  read:✓  write:·  create:·  unlink:·
+   ir.model.fields          read:✓  write:·  create:·  unlink:·
+   res.users                read:✓  write:~ piso  create:·  unlink:·
+
+   ir.ui.view  · ok      ir.cron  · ok      res.groups  · ok
+
+✅ Exatamente o que o código usa nos modelos do bot, e nada de administrador.
+```
+
+**O que mudou de verdade:** a chave de API do bot deixou de valer o ERP inteiro. Antes, quem a
+obtivesse — um script exposto, uma conta Google comprometida, alguém com acesso ao editor do Apps
+Script — podia apagar ou exportar a base da paróquia, criar usuários e instalar módulos. Agora
+alcança nove modelos, sem `unlink` em nenhum.
+
+**O residual, dito com todas as letras:** o bot continua alcançando `res.partner`,
+`ir.attachment` e `mail.message` com escrita, porque é o piso de `base.group_user` e um usuário
+interno não pode ser mais restrito que isso. Baixar dali exigiria regras de registro por modelo,
+ou um usuário de portal — que não serve para acesso via API aos modelos `x_*`.
+
+**O que este item custou, e por quê vale registrar.** Nove notas de correção, todas do
+**verificador**, não do que ele verificava. As seis primeiras foram a mesma coisa: nome de API do
+Odoo escrito de memória em vez de conferido na versão fixada. As três últimas foram mensagens
+confiantes e erradas — "ainda é administrador" quando não era, "nada foi alterado" sem saber.
+
+O padrão só quebrou quando o script passou a **falhar em vez de concluir**: a nota (4) fez ele
+dizer "NÃO SEI" e sair com 1, e foi essa recusa que expôs o bug real da chamada. Um verificador
+que aprova quando não sabe é pior que verificador nenhum — ele encerra a investigação.
+
+Ficou `ferramentas/prova-verificador.mjs`, com **12 cenários** executáveis contra um Odoo de
+mentira, cobrindo três modos. Ler o código não pegou nenhuma das nove; três passaram por revisão.
 
