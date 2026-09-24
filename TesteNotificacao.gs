@@ -116,12 +116,19 @@ function testeSimularRotina() {
   try {
     // Verificar parâmetro de ativação
     Logger.log('1️⃣ Verificando parâmetro de ativação...');
-    const notificacoesAtivas = OdooService.buscarParametro('notificacao_ativa');
-    Logger.log(`   Status: ${notificacoesAtivas || 'não configurado'}`);
-    
-    if (notificacoesAtivas !== 'true') {
-      Logger.log('⚠️ AVISO: Notificações estão desativadas no sistema!');
-      Logger.log('💡 Para ativar, adicione em x_parametros_line:');
+    // Lê o MESMO interruptor que a produção lê. Antes consultava
+    // `x_parametros_line`, modelo que não existe no Odoo — o teste dizia
+    // "não configurado" para todo mundo, sempre, e ninguém notava porque a
+    // consulta falhava em silêncio dentro de um try/catch.
+    const flag = PropertiesService.getScriptProperties().getProperty('NOTIFICACOES_ATIVAS');
+    const notificacoesAtivas = (flag === null) ? '(ausente → ATIVADO)' : flag;
+    Logger.log(`   Status: ${notificacoesAtivas}`);
+
+    const desligado = ['false', '0', 'nao', 'não', 'off', 'desativado']
+      .indexOf(String(flag || '').trim().toLowerCase()) >= 0;
+    if (desligado) {
+      Logger.log('⚠️ AVISO: Notificações estão desativadas!');
+      Logger.log('💡 Para ativar, apague ou mude a Script Property NOTIFICACOES_ATIVAS:');
       Logger.log('   Chave: notificacao_ativa');
       Logger.log('   Valor: true');
     }
@@ -408,11 +415,13 @@ function testeValidarConfiguracao() {
   // 4. Parâmetros no Odoo
   Logger.log('\n4️⃣ Testando parâmetros no Odoo...');
   try {
-    const paramAtivo = OdooService.buscarParametro('notificacao_ativa');
-    
-    if (paramAtivo === 'true') {
+    const paramAtivo = PropertiesService.getScriptProperties()
+      .getProperty('NOTIFICACOES_ATIVAS');
+
+    if (paramAtivo === null || String(paramAtivo).toLowerCase() === 'true') {
       Logger.log('   ✅ Notificações ativas no sistema');
-    } else if (paramAtivo === 'false') {
+    } else if (['false', '0', 'nao', 'não', 'off', 'desativado']
+                 .indexOf(String(paramAtivo).trim().toLowerCase()) >= 0) {
       Logger.log('   ⚠️ Notificações DESATIVADAS no sistema');
       Logger.log('   💡 Para ativar, mude o parâmetro para "true"');
     } else {

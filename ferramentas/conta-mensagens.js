@@ -3602,6 +3602,76 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🔑 Todo modelo que o bot toca está na matriz de permissões (BL-17)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O `--verificar` prova que as permissões batem com a MATRIZ. Não prova que a
+// matriz cobre o que o código usa — e essa é a metade que quebra em produção,
+// em silêncio: basta alguém acrescentar um `OdooService.create('x_novo', …)`
+// e o bot passa a levar AccessError num caminho que ninguém testa até alguém
+// reclamar.
+//
+// A troca de ODOO_UID vale NA HORA (Script Property lida a cada execução),
+// sem `clasp push`. Então uma matriz incompleta quebra a produção antes de
+// qualquer deploy — não há janela para perceber.
+{
+  // `this.` além de `OdooService.`: dentro do próprio OdooService.gs as
+  // chamadas são internas. E `\s*` tem de atravessar quebra de linha, porque
+  // o nome do modelo costuma vir na linha seguinte ao parêntese — a primeira
+  // versão disto não pegava nenhuma das duas coisas e acusou três modelos de
+  // "sem uso" que são usados o tempo todo.
+  const CHAMADAS = /(?:OdooService|this)\.(?:searchRead|count|create|write|unlink|read|campoExiste|camposExistentes)\(\s*'([a-z_][\w.]*)'/g;
+
+  // Rodam só pelo menu do editor, com credencial de ADMINISTRADOR, e criam
+  // schema — a matriz os exclui de propósito (ver comentário da MATRIZ).
+  const MANUAIS = new Set(['SetupCamposFamilia.gs', 'SetupCamposOferta.gs']);
+
+  const ignorados = fs.readFileSync(path.join(RAIZ, '.claspignore'), 'utf8')
+    .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+
+  const matriz = fs.readFileSync(
+    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'), 'utf8');
+  const naMatriz = new Set(
+    [...matriz.matchAll(/\{ model: '([^']+)'/g)].map((m) => m[1]));
+
+  const forasteiros = new Map();
+  for (const arq of fs.readdirSync(RAIZ).filter((f) => f.endsWith('.gs'))) {
+    if (ignorados.includes(arq) || MANUAIS.has(arq)) continue;   // não vai a produção
+    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    for (const m of fonte.matchAll(CHAMADAS)) {
+      if (!naMatriz.has(m[1])) {
+        if (!forasteiros.has(m[1])) forasteiros.set(m[1], []);
+        forasteiros.get(m[1]).push(arq);
+      }
+    }
+  }
+
+  if (forasteiros.size) {
+    falhas += forasteiros.size;
+    for (const [modelo, arqs] of forasteiros) {
+      console.log(`❌ ${modelo} é usado em ${[...new Set(arqs)].join(', ')} e NÃO está na matriz`);
+      console.log(`   O bot vai levar AccessError ali. Acrescente à MATRIZ de`);
+      console.log(`   instalar-usuario-bot.mjs e rode --aplicar de novo.`);
+    }
+  } else {
+    console.log(`✅ ${naMatriz.size} modelos na matriz cobrem todas as chamadas do código de produção`);
+  }
+
+  // O caminho contrário também importa, mas é só desperdício, não quebra:
+  // permissão concedida a modelo que o código não usa mais.
+  const usados = new Set();
+  for (const arq of fs.readdirSync(RAIZ).filter((f) => f.endsWith('.gs'))) {
+    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    for (const m of fonte.matchAll(CHAMADAS)) usados.add(m[1]);
+  }
+  const sobrando = [...naMatriz].filter((m) => !usados.has(m));
+  if (sobrando.length) {
+    console.log(`⚠️  na matriz mas sem uso no código: ${sobrando.join(', ')}`);
+    console.log('   Não quebra nada — é permissão a mais. Vale revisar.');
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');

@@ -2800,3 +2800,47 @@ que aprova quando não sabe é pior que verificador nenhum — ele encerra a inv
 Ficou `ferramentas/prova-verificador.mjs`, com **12 cenários** executáveis contra um Odoo de
 mentira, cobrindo três modos. Ler o código não pegou nenhuma das nove; três passaram por revisão.
 
+---
+
+### BL-17 — nota final: a metade que o `--verificar` não prova
+
+Com o `--verificar` limpo, restava uma pergunta que ele **não responde**: ele prova que as
+permissões batem com a MATRIZ, não que a matriz cobre o que o código usa. São coisas diferentes,
+e a segunda é a que quebra em produção.
+
+**E quebra sem janela.** `ODOO_UID` e `ODOO_API_KEY` são lidos das Script Properties **a cada
+execução** — a troca do usuário valeu no instante em que foi salva no editor, sem `clasp push`.
+Uma matriz incompleta derruba o bot antes de qualquer deploy, e o sintoma é um `AccessError` num
+caminho que ninguém percorre até alguém reclamar.
+
+**Varredura feita:** todo modelo Odoo citado no código foi comparado com a matriz. Dois ficavam
+de fora:
+
+| Modelo | Situação |
+|---|---|
+| `ir.model` | só em `SetupCamposFamilia.gs` e `SetupCamposOferta.gs`, funções manuais do editor que criam schema e rodam com credencial de administrador — já excluídas de propósito na MATRIZ |
+| `x_parametros_line` | **modelo que não existe no Odoo** (o real é `x_parametros_line_c498a`) |
+
+**O segundo virou limpeza.** `OdooService.buscarParametro(chave)` consultava `x_parametros_line`
+e era chamado só por `TesteNotificacao.gs`, que está no `.claspignore`. Em produção, código morto
+apontando para um modelo inexistente. Removido.
+
+Os dois usos no teste passaram a ler a **Script Property `NOTIFICACOES_ATIVAS`**, que é o
+interruptor que a produção realmente usa. Antes o teste dizia "não configurado" para todo mundo,
+sempre — a consulta falhava em silêncio dentro de um `try/catch` e ninguém notava. Um teste que
+sempre dá a mesma resposta não testa nada.
+
+**Virou verificação permanente.** O `conta-mensagens.js` passou a cruzar as chamadas
+`OdooService.*`/`this.*` de todo `.gs` que vai ao deploy contra a MATRIZ, e reprova se aparecer
+modelo não coberto. Também avisa (sem reprovar) sobre permissão concedida a modelo sem uso.
+
+Um detalhe do próprio guarda, encontrado ao escrevê-lo: a primeira versão só casava
+`OdooService.metodo('modelo'` numa linha, e dentro do `OdooService.gs` as chamadas são `this.` com
+o nome do modelo **na linha seguinte**. Ele acusou três modelos usados o tempo todo de estarem
+"sem uso". Corrigido antes de entrar.
+
+**O que continua sem prova, e só um teste real fecha:** as **regras de registro** (a instância tem
+58). Elas filtram QUAIS REGISTROS um usuário alcança, e `has_access` responde pelo MODELO, não
+pela linha. O bot pode ter permissão em `x_dizimista` e uma regra de registro limitá-lo a zero
+registros. Mandar uma mensagem ao bot e fazer uma devolução cobre isso e o resto.
+
