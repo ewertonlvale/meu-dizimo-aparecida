@@ -102,10 +102,18 @@
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
-| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 🔶 **Fase 0 feita (24/09)** — CI rodando em todo PR. Falta ligar o branch protection. Fases 1–6 em `MIGRACAO-NIVEL-1.md` |
+| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 🔶 **Fase 0 fechada (24/09)** — CI em todo PR e check `Harness` exigido na `staging`; harness verde também no Windows (#145). Fases 1–6 em `MIGRACAO-NIVEL-1.md` |
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
+| BL-77 | Dízimo gravado como oferta por campo de oferta que sobra na sessão | 🔴 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-78 | Deduplicação do webhook vale 10 min e não é atômica — reentrega duplica devolução | 🔴 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-79 | Reação, figurinha ou áudio zeram a conversa em andamento | 🟠 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-80 | O código de acesso ao relatório (e dados do cadastro) vão para o log | 🟠 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | 📋 Aberto (24/09) — revisão de código |
+| BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-84 | Achados da revisão de 24/09 ainda não conferidos linha a linha | 🟠 | M | 🔎 A triar — lista em `notas.md` |
 
 ---
 
@@ -2844,3 +2852,126 @@ o nome do modelo **na linha seguinte**. Ele acusou três modelos usados o tempo 
 pela linha. O bot pode ter permissão em `x_dizimista` e uma regra de registro limitá-lo a zero
 registros. Mandar uma mensagem ao bot e fazer uma devolução cobre isso e o resto.
 
+---
+
+## Revisão de código de 24/09/2026
+
+Revisão dos `.gs` de produção feita junto com a análise de escopo da migração (BL-74). Os itens
+BL-77 a BL-83 foram **conferidos linha a linha**; o BL-84 reúne o que os revisores apontaram e
+ainda precisa de conferência antes de virar correção. Detalhes e contexto em
+[notas.md](notas.md).
+
+Nenhum depende da migração: valem para o Apps Script de hoje.
+
+### BL-77 — Dízimo gravado como oferta 🔴 (P)
+
+**Arquivos:** `OfertaHandler.gs:58-65`, `ComprovanteHandler.gs:774`, `MenuHandler.gs`,
+`DevolucaoHandler.gs`
+
+**O problema.** Quando o dizimista toca em *Oferta*, `OfertaHandler.iniciar` já grava
+`ofertaComunidadeId`, `ofertaComunidadeNome`, `ofertaNome` e `ofertaDizimistaId` na sessão —
+antes de ele escolher qualquer coisa. Nada limpa esses campos: `menuPrincipal`, `menuDizimista`
+e `iniciarDevolucao` só trocam o estado. E o `ComprovanteHandler` decide o caminho **só pela
+presença** de `ofertaComunidadeId`.
+
+**Cenário.** Toca em Oferta → desiste → toca em Dízimo → manda o comprovante. A devolução é
+gravada com `tipo='oferta'`, some do relatório de dízimo, e a pessoa lê "Oferta recebida".
+Dado financeiro errado, em silêncio.
+
+**Proposta.** Limpar os quatro campos `oferta*` ao entrar em `iniciarDevolucao` e no menu. Mais
+robusto ainda: decidir o caminho pelo **estado** da conversa, não pela sobra de um campo.
+
+**Aceite.** Caso novo no `conta-mensagens.js`: Oferta → Menu → Dízimo → comprovante grava
+`tipo='dizimo'`.
+
+### BL-78 — Deduplicação do webhook curta e não atômica 🔴 (P)
+
+**Arquivo:** `Webhook.gs:316-322`
+
+**O problema.** A chave `msg_<id>` vive 600 s, e o `CacheService` pode descartá-la antes. A Meta
+reentrega o webhook por horas quando não recebe resposta a tempo — e as execuções medidas levam
+10 a 24 s. Uma reentrega depois de 10 min é processada de novo; se a mensagem era um comprovante,
+`registrarDevolucao` faz um segundo `create`. Além disso o `get` → `put` não é atômico: duas
+entregas simultâneas passam juntas pelo filtro.
+
+**Proposta.** TTL de 6 h (o máximo do cache). Para o caso simultâneo, o BL-74 Fase 3 resolve de
+vez (nome de tarefa determinístico no Cloud Tasks); até lá, aceitar o risco residual e registrar.
+
+### BL-79 — Reação, figurinha ou áudio zeram a conversa 🟠 (P)
+
+**Arquivo:** `Router.gs:32-35`
+
+**O problema.** `reaction`, `sticker`, `audio`, `location`, `contacts`, `unsupported` e `system`
+caem no `default`, que chama `MenuHandler.menuPrincipal` → `setEstado(MENU)` e envia um menu
+(mensagem cobrada). Um 👍 no meio do cadastro, ou logo antes de mandar o comprovante, desfaz o
+estado; a foto seguinte recebe "Não estou esperando uma imagem".
+
+**Proposta.** `reaction` → ignorar. Demais tipos → aviso curto ("ainda não entendo áudio…")
+**sem mexer no estado**. Subtipo `interactive` desconhecido hoje é descartado sem resposta —
+tratar igual.
+
+### BL-80 — Código de acesso ao relatório no log 🟠 (P)
+
+**Arquivo:** `Router.gs:324`
+
+**O problema.** `console.log(\`💬 Texto: "${texto}" | Estado: ${estado}\`)` registra toda
+mensagem de texto, inclusive em `AGUARDANDO_CODIGO_RELATORIO` — anulando o cuidado de
+`RelatorioHandler.gs:222`, que diz para não logar a senha. Também vão para o log endereço, data de
+nascimento e valores digitados no cadastro por conversa.
+
+**Proposta.** Logar tamanho e estado, não o conteúdo; ou mascarar nos estados sensíveis.
+
+### BL-81 — A baixa age sobre a pendente errada 🟠 (M)
+
+**Arquivo:** `RelatorioHandler.gs:987-1049` (e `processarSelecaoPendente`, `:853-883`)
+
+**O problema.** Os botões `btn_confirmar_baixa`/`btn_rejeitar_baixa` têm id fixo; a devolução
+alvo vem de `pendente_devolucao_id` na sessão, que é sobrescrito a cada pendente aberta.
+
+**Cenário.** O coordenador abre A, depois B, rola a conversa e toca "Confirmar" na mensagem de A.
+Quem é confirmada é **B**. A baixa também não confere se o status ainda é Pendente (outra pessoa
+pode ter rejeitado pelo Odoo), e `processarSelecaoPendente` não confere se a comunidade da
+devolução está no acesso daquele coordenador.
+
+**Proposta.** Id do botão carrega a devolução (`btn_confirmar_baixa_<id>`); ao confirmar,
+reler e exigir status Pendente e comunidade dentro do acesso.
+
+### BL-82 — OCR corta valor sem separador de milhar 🟠 (P)
+
+**Arquivo:** `VisionService.gs:231-232` (e o caminho alternativo em `:249`)
+
+**O problema.** `\d{1,3}(?:\.\d{3})*(?:,\d{2})?` não tem delimitador no fim. "Valor: R$ 1234,56"
+casa só `123`; "R$ 10000,00" vira `100`. O BL-69 marca "Não confere" em várias situações, mas não
+nesta: o valor lido é plausível.
+
+**Proposta.** Aceitar `\d{1,3}(?:\.\d{3})+|\d+` antes da vírgula e ancorar com `(?![\d.,])`.
+Casos no harness com e sem separador.
+
+### BL-83 — Primeiro contato em hora local num campo `datetime` 🟡 (P)
+
+**Arquivo:** `OdooService.gs:1244`
+
+**O problema.** `x_studio_data_primeiro_contato` é `datetime`; o Odoo interpreta o valor recebido
+como **UTC**. O código grava `formatDate(..., 'America/Sao_Paulo', ...)`, então a tela mostra 3 h
+a menos, e contatos depois das 21h aparecem no dia anterior.
+
+**Proposta.** Formatar em `'UTC'`. Mesma família do BL-01 (campo `date` com formato errado).
+
+### BL-84 — Achados da revisão ainda a conferir 🟠 (M)
+
+Apontados pelos revisores, com arquivo e linha, mas **não conferidos por mim** — triar antes de
+corrigir. Lista completa em [notas.md](notas.md), seção 2:
+
+- `parseValorBR` cola números ("100 ou 200" → 100200), sem teto — `Utils.gs:673`
+- Devolução duplicada em dois comprovantes seguidos, ou em timeout após `create` com mensagem
+  pedindo reenvio — `ComprovanteHandler.gs:866-873`; `criarMembro` sem guarda contra toque duplo
+- Oferta ou devolução Rejeitada impede o lembrete de dízimo — `NotificacaoHandler.gs:469-480`
+- Lote de notificações travável por números com erro permanente; reenvio quando o log falha;
+  `lote` 200 × 2 s passa de 6 min — `NotificacaoHandler.gs:298-313, 456-467, 503-506`
+- Relatório consolidado soma Pendentes e Rejeitadas — `OdooService.gs:1103`
+- Trigger apaga cadastro ativo porque `sessao_inicio_` não é renovado — `TriggerSessoes.gs:50-57`
+- Lock global segurado durante HTTP faz o `_comLock` desistir sob carga —
+  `StateManager.gs:287`, `OdooService.gs:288`
+- Menores: aviso de expiração em dobro; 429 da Meta chega como HTTP 400; PII em logs; Flow aceita
+  `comunidade_id` sem conferir; "menu" conta como tentativa de PIN; admin vê só 10 comunidades;
+  código PIX enviado a `api.qrserver.com`; documento qualquer com `sha256` tratado como imagem.
