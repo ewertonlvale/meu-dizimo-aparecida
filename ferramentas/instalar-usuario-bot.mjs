@@ -42,7 +42,7 @@ if (env?.carregadas.length) console.log(`🔑 ${env.caminho}: ${env.carregadas.j
 
 const argv = process.argv.slice(2);
 {
-  const CONHECIDOS = new Set(['--aplicar', '--simular', '--verificar', '--explicar']);
+  const CONHECIDOS = new Set(['--aplicar', '--simular', '--verificar', '--explicar', '--restringir']);
   const estranhos = argv.filter((a) => a.startsWith('--') && !CONHECIDOS.has(a) && !a.startsWith('--login='));
   if (estranhos.length) {
     console.error(`❌ Não conheço: ${estranhos.join(', ')}`);
@@ -59,6 +59,7 @@ const CONFIG = {
   aplicar: argv.includes('--aplicar'),
   verificar: argv.includes('--verificar'),
   explicar: argv.includes('--explicar'),
+  restringir: argv.includes('--restringir'),
   login: (argv.find((a) => a.startsWith('--login=')) || '').slice(8),
 };
 if (!CONFIG.url || !CONFIG.db || !CONFIG.uid || !CONFIG.apiKey) {
@@ -123,7 +124,17 @@ const MATRIZ = [
   { model: 'x_parametros',            read: 1, write: 0, create: 0, unlink: 0 },
   { model: 'x_parametros_line_c498a', read: 1, write: 0, create: 0, unlink: 0 },
   { model: 'ir.model.fields',         read: 1, write: 0, create: 0, unlink: 0 },
-  { model: 'res.users',               read: 1, write: 0, create: 0, unlink: 0 },
+  // `write` aqui NÃO é 0 por engano, e a matriz não o exige mais: o ACL de
+  // fábrica do Odoo (base/security/ir.model.access.csv) já dá write em
+  // res.users a todo `base.group_user`:
+  //
+  //   "access_res_users_employee","res_users all","model_res_users","base.group_user",1,1,0,0
+  //
+  // É o que permite a cada um editar as próprias preferências (idioma, fuso,
+  // assinatura). Tirar isso quebra todo usuário interno, e o Odoo restaura na
+  // próxima atualização. Exigir 0 aqui era pedir o impossível e gerar um
+  // achado que ninguém pode resolver — some junto com `res.partner` no piso.
+  { model: 'res.users',               read: 1, write: null, create: 0, unlink: 0 },
 ];
 
 const NOME_GRUPO = 'Meu Dízimo · Bot';
@@ -232,6 +243,10 @@ if (CONFIG.verificar) {
   for (const m of MATRIZ) {
     const linha = [];
     for (const op of ['read', 'write', 'create', 'unlink']) {
+      // `null` na matriz = piso do Odoo, não se opina. Diferente de 0, que
+      // quer dizer "não pode" e vira achado quando pode.
+      if (m[op] === null) { linha.push(`${op}:~ piso`); continue; }
+
       const tem  = await pode(m.model, op);
       const quer = !!m[op];
 
@@ -410,6 +425,101 @@ if (CONFIG.explicar) {
   console.log('   não faço por script.');
   console.log('');
   process.exit(1);
+}
+
+// ===========================================================================
+// MODO RESTRINGIR — tira o excesso das ACLs do grupo de usuário interno
+// ===========================================================================
+//
+// O `--explicar` de 24/09 mostrou que TODO o excesso vinha de um grupo só:
+// `base.group_user` (aparece como "Role / User"), o grupo de qualquer usuário
+// interno. As regras são as que o Studio cria junto com cada modelo `x_*`, e
+// dão escrita a todo mundo.
+//
+// DUAS TRAVAS, porque isto mexe na permissão de TODOS os usuários internos,
+// não só do bot:
+//
+//   1. Só toca em modelo que começa com `x_`. Os do Odoo (`res.users`,
+//      `ir.model.fields`) ficam de fora por construção — e `res_users all`
+//      com write É DE FÁBRICA (base/security/ir.model.access.csv), serve para
+//      cada um editar as próprias preferências. Mexer ali quebra todo mundo e
+//      o Odoo restaura na atualização.
+//   2. Só toca em regra cujo grupo é `base.group_user`, resolvido por XML ID.
+//      As da Secretaria, da Pastoral e do Administrador não são tocadas —
+//      são elas que mantêm as PESSOAS trabalhando.
+//
+// O que sobra depois: quem tem papel na paróquia continua com o que o papel
+// dá; quem só é usuário interno passa a poder LER e não escrever; e o bot
+// fica na matriz.
+//
+//     node ferramentas/instalar-usuario-bot.mjs --restringir            (simula)
+//     node ferramentas/instalar-usuario-bot.mjs --restringir --aplicar  (grava)
+if (CONFIG.restringir) {
+  console.log('🔒 modo: RESTRINGIR — excesso nas ACLs de base.group_user\n');
+  console.log(CONFIG.aplicar ? '   ✍️  APLICAR\n' : '   👀 simulação (acrescente --aplicar para gravar)\n');
+
+  const [gu] = await buscar('ir.model.data',
+    [['model', '=', 'res.groups'], ['module', '=', 'base'], ['name', '=', 'group_user']],
+    ['res_id'], { limit: 1 });
+  if (!gu) {
+    console.error('❌ não resolvi base.group_user. Abortando — sem isso eu não sei');
+    console.error('   quais regras são do grupo de usuário interno.\n');
+    process.exit(1);
+  }
+
+  // Só os x_*. Os modelos do Odoo ficam de fora por construção.
+  const alvos = MATRIZ.filter((m) => m.model.startsWith('x_'));
+  const acls = await buscar('ir.model.access',
+    [['model_id.model', 'in', alvos.map((m) => m.model)], ['group_id', '=', gu.res_id]],
+    ['name', 'model_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink']);
+
+  const ids = [...new Set(acls.map((a) => a.model_id[0]))];
+  const tecnico = Object.fromEntries(
+    (await buscar('ir.model', [['id', 'in', ids]], ['model'])).map((n) => [n.id, n.model]));
+
+  const OPS = ['read', 'write', 'create', 'unlink'];
+  let mexidas = 0;
+
+  for (const a of acls) {
+    const model = tecnico[a.model_id[0]];
+    const quer  = MATRIZ.find((m) => m.model === model);
+    if (!quer) continue;
+
+    const vals = {};
+    const tirar = [];
+    for (const op of OPS) {
+      // `null` = piso, não se opina. Nunca chega aqui porque só x_* entram,
+      // mas a regra fica explícita.
+      if (quer[op] === null) continue;
+      if (a[`perm_${op}`] && !quer[op]) { vals[`perm_${op}`] = false; tirar.push(op); }
+    }
+
+    if (!tirar.length) { console.log(`   · ${a.name.padEnd(36)} já está certo`); continue; }
+
+    mexidas++;
+    if (!CONFIG.aplicar) {
+      console.log(`   ~ ${a.name.padEnd(36)} perderia: ${tirar.join(', ')}`);
+    } else {
+      await rpc('ir.model.access', 'write', [[a.id], vals]);
+      console.log(`   ✓ ${a.name.padEnd(36)} tirado: ${tirar.join(', ')}`);
+    }
+  }
+
+  console.log('');
+  if (!mexidas) {
+    console.log('✅ Nada a restringir — as regras de base.group_user já batem com a matriz.\n');
+    process.exit(0);
+  }
+  if (!CONFIG.aplicar) {
+    console.log(`👀 ${mexidas} regra(s) seriam alteradas. Nada foi gravado.`);
+    console.log('   Repita com --aplicar quando quiser valer, e confira depois com');
+    console.log('   --verificar usando a chave do bot.\n');
+    process.exit(0);
+  }
+  console.log(`✅ ${mexidas} regra(s) restringidas.`);
+  console.log('   Confira com a chave do BOT: --verificar');
+  console.log('   E confira com uma pessoa da Secretaria que a tela dela ainda edita.\n');
+  process.exit(0);
 }
 
 // ===========================================================================

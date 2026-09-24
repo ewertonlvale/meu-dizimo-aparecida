@@ -2588,3 +2588,57 @@ o exit code, e agora `groups_id`. O padrão é claro, e o antídoto é o que já
 **Cobertura:** a prova foi de 6 para **8 cenários** e passou a exercitar dois modos em vez de um;
 mais 4 casos no `conta-mensagens.js`.
 
+---
+
+### BL-17 — nota de 24/09 (7): o `--explicar` respondeu, e uma das 5 é intocável
+
+O diagnóstico saiu limpo: **todas as 5 sobras vinham de um grupo só**, `base.group_user`
+("Role / User"), o grupo de qualquer usuário interno.
+
+```
+🚨 Notificaçao Log group_user   →  A MAIS: write
+🚨 Comunidade group_user        →  A MAIS: write, create
+🚨 Parâmetros group_user        →  A MAIS: write, create
+🚨 parametros_line group_user   →  A MAIS: write, create
+🚨 res_users all (Role / User)  →  A MAIS: write
+```
+
+**A quinta não é do Studio — é do Odoo.** Conferido em
+`odoo/addons/base/security/ir.model.access.csv` da tag `saas-19.3`:
+
+```
+"access_res_users_employee","res_users all","model_res_users","base.group_user",1,1,0,0
+```
+
+Write em `res.users` para todo `base.group_user` é de fábrica, e é o que permite a cada pessoa
+editar as próprias preferências (idioma, fuso, assinatura). Tirar quebraria todos os usuários
+internos, e o Odoo restauraria na próxima atualização.
+
+**A matriz estava pedindo o impossível.** `res.users: write 0` gerava um achado que ninguém pode
+resolver — o mesmo erro do `res.partner` da nota (2), repetido. Agora a matriz aceita `null` para
+"piso do Odoo, não se opina", distinto de `0` ("não pode, e poder é achado"), e a linha do
+`res.users` usa `null`.
+
+**As outras quatro são do Studio e saem.** E dá para vê-lo pelo próprio relatório: a paróquia já
+tem papéis de verdade — `Pastoral do Dízimo / Acesso Comunidade`, `Pastoral do Dízimo / Secretaria
+Paroquial`, `Role / Administrator` — e a Secretaria já tem `read, write, create` em Comunidade e
+Parâmetros pela regra dela. A regra de `group_user` é **redundante para quem tem papel** e
+permissiva para quem não tem.
+
+**Modo `--restringir` (novo), com duas travas**, porque isto altera a permissão de **todos os
+usuários internos**, não só do bot:
+
+1. **Só toca em modelo `x_*`.** Os do Odoo (`res.users`, `ir.model.fields`) ficam fora por
+   construção — exatamente o caso acima.
+2. **Só toca em regra cujo grupo é `base.group_user`**, resolvido por XML ID. As da Secretaria,
+   da Pastoral e do Administrador não são tocadas: são elas que mantêm as pessoas trabalhando.
+
+Simula por padrão. Há caso na prova afirmando que **nenhuma escrita sai sem `--aplicar`** — não
+basta o texto dizer que simulou, o mock registra as gravações e o cenário exige zero.
+
+**Depois de aplicar, o estado esperado:** quem tem papel continua com o que o papel dá; quem é só
+usuário interno passa a ler e não escrever nos modelos do dízimo; o bot fica na matriz.
+
+**Cobertura:** a prova foi de 8 para **10 cenários**, cobrindo agora três modos (`--verificar`,
+`--explicar`, `--restringir`); mais 5 casos no `conta-mensagens.js`.
+
