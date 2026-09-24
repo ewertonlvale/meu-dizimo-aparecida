@@ -104,7 +104,7 @@
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
 | BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 📋 **Plano fechado (24/09)** — `MIGRACAO-NIVEL-1.md` (como) + `EVOLUCAO-ARQUITETURA.md` (porquê). 6 fases, continuidade de serviço e limites gratuitos verificados. Fecha BL-20/21/43 e parte do BL-29 |
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
-| BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Ferramenta pronta (23/09)** — grupo, matriz de permissões e modo `--verificar`. Falta criar o usuário e trocar as Properties |
+| BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Em andamento (24/09)** — usuário criado, `ODOO_UID = 13` conectando. Falta `--aplicar --login=`, tirar de Administração e `--verificar`. Detecção de admin corrigida: casava por nome em inglês |
 
 ---
 
@@ -2283,4 +2283,46 @@ faltava. Três dos quatro reprovam contra o código anterior.
 
 **Ordem de uso:** `clasp push` → `podarContadores()` → recarregar o editor (F5) → editar
 `ODOO_UID` e `ODOO_API_KEY` → `testarConexaoOdoo()` → seguir o BL-17.
+
+---
+
+### BL-17 — nota de 24/09: a detecção de administrador dava falso OK
+
+Com `ODOO_UID = 13` conectando e o `testarConexaoOdoo()` verde, faltava rodar
+`--aplicar --login=` e depois `--verificar`. Ao reler o script antes disso, apareceu um defeito
+no **único aviso que justifica o item inteiro**.
+
+A checagem de "este usuário ainda é administrador?" estava assim:
+
+```js
+[['id', 'in', u.groups_id], ['name', 'ilike', 'Settings']]
+```
+
+**`res.groups.name` é traduzido.** Num Odoo em português o grupo se chama "Configurações" /
+"Administração", e o filtro não casa com nada — o script então **silencia** sobre um usuário que
+continua administrador. Não é um erro que apareça como erro: aparece como "está tudo certo",
+que é o desfecho pior que não ter checagem nenhuma.
+
+É a **segunda vez** que este script falha assim. A primeira foi o `check_access_rights`, que não
+existe mais na `saas-19.3` e teria estourado no primeiro modelo. Os dois casos têm a mesma forma:
+o script cujo trabalho é provar que o resto ficou certo não tinha nada provando que ele próprio
+estava.
+
+**Correção:** resolver os grupos por **XML ID** via `ir.model.data`, que não é traduzido —
+`base.group_system` (Administração → Configurações) e `base.group_erp_manager` (Administração →
+Direitos de acesso). O segundo faltava por completo: um usuário só com ele administra direitos de
+acesso e passaria batido mesmo em inglês.
+
+E, quando os XML IDs não resolvem, **avisa em vez de calar** — não dá para afirmar que alguém não
+é administrador quando a consulta falhou.
+
+**Cobertura:** 5 casos no `conta-mensagens.js`, três deles reprovando contra a versão anterior.
+Um detalhe do próprio harness ficou registrado ali: os comentários deste script **citam o código
+errado de propósito**, ao explicar por que foi trocado, então a busca por "não pode conter X"
+acusava a própria explicação de X. A varredura passou a ignorar comentários — foi ela que pegou
+isso, na primeira execução.
+
+**O que continua sendo manual, de propósito:** tirar o usuário de Administração. Tirar acesso por
+script tranca alguém para fora quando o login errado é informado, e há caso no harness garantindo
+que o script nunca remove ninguém de grupo.
 

@@ -3445,6 +3445,51 @@ console.log('🗂️  Teto de 50 propriedades do editor (BL-75)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🔐 O verificador do usuário do bot (BL-17)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Este script existe para PROVAR que o bot deixou de ser administrador. Um
+// erro nele não aparece como erro: aparece como "está tudo certo". Já
+// aconteceu duas vezes — `check_access_rights`, que não existe mais nesta
+// versão, e a busca do grupo de admin por nome em inglês num Odoo em
+// português. As duas dariam falso OK.
+{
+  const bruto = fs.readFileSync(
+    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'), 'utf8');
+
+  // Os comentários deste script CITAM o código errado de propósito, ao
+  // explicar por que ele foi trocado. Sem tirar comentário, a busca por
+  // "não pode conter X" acusa a própria explicação de X — foi o que
+  // aconteceu ao escrever esta verificação. Só o código executável conta.
+  const fonte = bruto.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ');
+
+  const casos = [
+    // res.groups.name é TRADUZIDO. Casar por nome só funciona em inglês.
+    { nome: 'grupo de administrador é resolvido por XML ID, não por nome traduzido',
+      ok: /ir\.model\.data/.test(fonte)
+       && /group_system/.test(fonte)
+       && !/name'\s*,\s*'ilike'\s*,\s*'Settings'/.test(fonte) },
+    // group_system sozinho não cobre quem administra direitos de acesso.
+    { nome: 'cobre também base.group_erp_manager',
+      ok: /group_erp_manager/.test(fonte) },
+    // has_access existe na saas-19.3; check_access_rights não.
+    { nome: 'usa has_access, não o check_access_rights que sumiu',
+      ok: /has_access/.test(fonte) && !/check_access_rights'/.test(fonte) },
+    // Falhar em resolver os XML IDs não pode passar como "sem administrador".
+    { nome: 'não achar os XML IDs avisa, em vez de calar',
+      ok: /!dados\.length/.test(fonte) },
+    // Tirar acesso por script tranca gente para fora — é passo manual.
+    { nome: 'não remove ninguém de grupo por script',
+      ok: !/groups_id:\s*\[\[\s*3\s*,/.test(fonte) },
+  ];
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');
