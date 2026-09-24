@@ -285,18 +285,7 @@ const OdooService = {
     // O lock fecha a janela do toque duplo: duas execuções do Apps Script
     // chegando com 400 ms de diferença passariam as duas pela busca antes de
     // qualquer uma criar. É o mesmo padrão de `StateManager.ehPrimeiroContato`.
-    const lock = LockService.getScriptLock();
-    let travado = false;
-    try {
-      lock.waitLock(10000);
-      travado = true;
-    } catch (e) {
-      // Sem o lock ainda vale conferir: pega o caso comum (formulário antigo),
-      // só não protege contra a corrida.
-      console.warn('⚠️ [criarDizimista] Lock não obtido, seguindo sem serializar:', e.message);
-    }
-
-    try {
+    const guardaECria = () => {
       const existente = this.buscarDizimistaPorWhatsapp(dados.whatsapp);
       if (existente) {
         const erro = new Error(
@@ -308,9 +297,14 @@ const OdooService = {
       }
 
       return this._criarDizimista(dados);
-    } finally {
-      if (travado) lock.releaseLock();
-    }
+    };
+
+    return Plataforma.trava.comTrava(`dizimista_${dados.whatsapp}`, 10000, guardaECria, (e) => {
+      // Sem o lock ainda vale conferir: pega o caso comum (formulário antigo),
+      // só não protege contra a corrida.
+      console.warn('⚠️ [criarDizimista] Lock não obtido, seguindo sem serializar:', e.message);
+      return guardaECria();
+    });
   },
 
   /**
@@ -626,7 +620,7 @@ const OdooService = {
     this._camposGravaveis = this._camposGravaveis || {};
     if (chave in this._camposGravaveis) return this._camposGravaveis[chave];
 
-    const cache    = CacheService.getScriptCache();
+    const cache    = Plataforma.cache;
     const cacheado = cache.get(chave);
     if (cacheado) {
       this._camposGravaveis[chave] = cacheado === '1';
@@ -703,7 +697,7 @@ const OdooService = {
    */
   camposExistentes(model, nomes) {
     this._camposConhecidos = this._camposConhecidos || {};
-    const cache = CacheService.getScriptCache();
+    const cache = Plataforma.cache;
 
     const chaveDe   = (n) => `campo_${model}_${n}`;
     const resolvido = {};
@@ -758,7 +752,7 @@ const OdooService = {
     this._camposConhecidos = this._camposConhecidos || {};
     if (chave in this._camposConhecidos) return this._camposConhecidos[chave];
 
-    const cache    = CacheService.getScriptCache();
+    const cache    = Plataforma.cache;
     const cacheado = cache.get(chave);
     if (cacheado) {
       this._camposConhecidos[chave] = cacheado === '1';
@@ -840,7 +834,7 @@ const OdooService = {
    * @throws {Error} se não houver como determinar a comunidade
    */
   registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '', extras = {}) {
-    const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
+    const hoje = Plataforma.relogio.formatar(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
     // O `split('/')` só faz sentido em dd/mm/aaaa, e precisa CONFERIR que é
     // isso: com qualquer outro formato ele não lança erro — devolve um pedaço
@@ -1069,8 +1063,8 @@ const OdooService = {
    */
   devolucoesDoMes(dizimistaId, tipo = 'dizimo') {
     const hoje = new Date();
-    const primeiro = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
-    const ultimo   = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
+    const primeiro = Plataforma.relogio.formatar(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
+    const ultimo   = Plataforma.relogio.formatar(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
     const regs = this.searchRead(
       'x_devolucao',
       ['x_studio_data_da_devolucao', 'x_studio_value'],
@@ -1241,7 +1235,7 @@ const OdooService = {
    * @returns {number} ID criado
    */
   registrarContatoBot(from) {
-    const agora = Utilities.formatDate(new Date(), 'America/Sao_Paulo', "yyyy-MM-dd HH:mm:ss");
+    const agora = Plataforma.relogio.formatar(new Date(), 'America/Sao_Paulo', "yyyy-MM-dd HH:mm:ss");
     return this.create('x_contato_bot', {
       x_name:                         from,
       x_studio_data_primeiro_contato: agora,

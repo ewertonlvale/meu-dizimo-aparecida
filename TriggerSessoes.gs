@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * Trigger agendada para detectar e tratar sessões de cadastro abandonadas.
- * Executa a cada 20 minutos via time-driven trigger.
+ * Executa a cada 5 minutos via time-driven trigger.
  *
  * Responsabilidades:
  * - Verificar sessões de cadastro que expiraram silenciosamente
@@ -23,16 +23,16 @@
  * - Sessão com ≥ 55 minutos: persiste log no Odoo e limpa cache
  * - Sessão com ≥ 50 minutos sem aviso prévio: envia aviso ao usuário
  *
- * Chamada automaticamente pela trigger a cada 20 minutos.
+ * Chamada automaticamente pela trigger a cada 5 minutos.
  */
 function verificarSessoesAbandonadas() {
   console.log('🔄 [Trigger] Verificando sessões abandonadas...');
 
   try {
     // Garante que o OAuth seja exercitado mesmo se não houver sessões
-    ScriptApp.getOAuthToken();
+    Plataforma.gatilhos.exercitarAutorizacao();
 
-    const cache   = CacheService.getScriptCache();
+    const cache   = Plataforma.cache;
     const sessoes = StateManager.getSessoesAtivas();
 
     if (sessoes.length === 0) {
@@ -101,7 +101,7 @@ function verificarSessoesAbandonadas() {
     // silencioso — o mesmo defeito que este ciclo corrigiu em outros pontos.
     // Por isso são duas varreduras por execução, não uma: a de sessões
     // acontece antes das escritas e não pode ser reaproveitada aqui.
-    const propsAtuais = PropertiesService.getScriptProperties().getProperties();
+    const propsAtuais = Plataforma.propriedades.getProperties();
     Utils.verificarCotaUrlFetch(propsAtuais);
     Utils.verificarCotaMensagens(propsAtuais);
   }
@@ -145,10 +145,7 @@ function instalarTriggerSessoes() {
   // Remove triggers anteriores para evitar duplicatas
   removerTriggerSessoes();
 
-  ScriptApp.newTrigger('verificarSessoesAbandonadas')
-    .timeBased()
-    .everyMinutes(5)
-    .create();
+  Plataforma.gatilhos.aCadaMinutos('verificarSessoesAbandonadas', 5);
 
   console.log('✅ Trigger instalada: verificarSessoesAbandonadas a cada 5 minutos');
 }
@@ -158,15 +155,7 @@ function instalarTriggerSessoes() {
  * Útil para manutenção ou desativação.
  */
 function removerTriggerSessoes() {
-  const triggers = ScriptApp.getProjectTriggers();
-  let removidas = 0;
-
-  triggers.forEach(trigger => {
-    if (trigger.getHandlerFunction() === 'verificarSessoesAbandonadas') {
-      ScriptApp.deleteTrigger(trigger);
-      removidas++;
-    }
-  });
+  const removidas = Plataforma.gatilhos.removerDe('verificarSessoesAbandonadas');
 
   if (removidas > 0) {
     console.log(`🗑️ ${removidas} trigger(s) removida(s)`);

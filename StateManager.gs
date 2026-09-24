@@ -22,14 +22,14 @@ const StateManager = {
 
   /** Retorna o estado atual da conversa. Padrão: ESTADOS.MENU */
   getEstado(from) {
-    const estado = CacheService.getScriptCache().get(`estado_${from}`) || ESTADOS.MENU;
+    const estado = Plataforma.cache.get(`estado_${from}`) || ESTADOS.MENU;
     console.log(`📊 Estado de ${from}: ${estado}`);
     return estado;
   },
 
   /** Grava um novo estado. Expira em 1 hora. */
   setEstado(from, estado) {
-    CacheService.getScriptCache().put(`estado_${from}`, estado, 3600);
+    Plataforma.cache.put(`estado_${from}`, estado, 3600);
     console.log(`📝 Estado de ${from} → ${estado}`);
   },
 
@@ -39,13 +39,13 @@ const StateManager = {
 
   /** Retorna os dados temporários do usuário. Retorna {} se não existirem. */
   getDadosTemporarios(from) {
-    const dados = CacheService.getScriptCache().get(`dados_${from}`);
+    const dados = Plataforma.cache.get(`dados_${from}`);
     return dados ? JSON.parse(dados) : {};
   },
 
   /** Salva dados temporários. Expira em 1 hora. */
   setDadosTemporarios(from, dados) {
-    CacheService.getScriptCache().put(`dados_${from}`, JSON.stringify(dados), 3600);
+    Plataforma.cache.put(`dados_${from}`, JSON.stringify(dados), 3600);
   },
 
   /**
@@ -59,29 +59,24 @@ const StateManager = {
    * webhook de forma assíncrona (ver BL-21). Best-effort: se o lock não for
    * obtido no tempo limite, a operação segue mesmo assim (melhor gravar sem
    * lock do que perder o dado).
+   *
+   * A chave é por usuário (`dados_<from>`). Hoje o Apps Script a ignora; na
+   * Fase 3 do BL-74 ela vira trava por usuário no Redis, e a serialização
+   * global deixa de existir.
    * @private
    */
-  _comLock(fn) {
-    const lock = LockService.getScriptLock();
-    let locked = false;
-    try {
-      lock.waitLock(3000);
-      locked = true;
-    } catch (e) {
+  _comLock(from, fn) {
+    return Plataforma.trava.comTrava(`dados_${from}`, 3000, fn, (e) => {
       console.warn('⚠️ [StateManager] Lock não obtido, seguindo sem lock:', e.message);
-    }
-    try {
       return fn();
-    } finally {
-      if (locked) { try { lock.releaseLock(); } catch (ignore) {} }
-    }
+    });
   },
 
   /**
    * Helper: salva um único campo e muda o estado em uma única chamada.
    */
   salvarCampoEMudarEstado(from, campo, valor, novoEstado) {
-    this._comLock(() => {
+    this._comLock(from, () => {
       const dados = this.getDadosTemporarios(from);
       dados[campo] = valor;
       this.setDadosTemporarios(from, dados);
@@ -93,7 +88,7 @@ const StateManager = {
    * Helper: mescla múltiplos campos de uma vez nos dados temporários.
    */
   salvarMultiplosCampos(from, campos) {
-    this._comLock(() => {
+    this._comLock(from, () => {
       const dados = this.getDadosTemporarios(from);
       Object.assign(dados, campos);
       this.setDadosTemporarios(from, dados);
@@ -123,7 +118,7 @@ const StateManager = {
    */
   persistirLogCadastro(from, finalizou) {
     try {
-      const cache  = CacheService.getScriptCache();
+      const cache  = Plataforma.cache;
       const estado = this.getEstado(from);
       const log    = cache.get(`log_cadastro_${from}`);
 
@@ -148,7 +143,7 @@ const StateManager = {
    * @param {string} from - Número do WhatsApp
    */
  limparDados(from) {
-    const cache = CacheService.getScriptCache();
+    const cache = Plataforma.cache;
     cache.remove(`estado_${from}`);
     cache.remove(`dados_${from}`);
     cache.remove(`log_cadastro_${from}`);
@@ -169,9 +164,9 @@ const StateManager = {
    * @param {string} texto - Mensagem digitada pelo usuário
    */
   appendLog(from, texto) {
-    const cache     = CacheService.getScriptCache();
+    const cache     = Plataforma.cache;
     const logAtual  = cache.get(`log_cadastro_${from}`) || '';
-    const agora     = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'HH:mm');
+    const agora     = Plataforma.relogio.formatar(new Date(), 'America/Sao_Paulo', 'HH:mm');
     const novaLinha = `[${agora}] ${texto}\n`;
     // CacheService tem limite de 100KB por entrada — trunca se necessário
     const novoLog   = (logAtual + novaLinha).slice(-90000);
@@ -188,7 +183,7 @@ const StateManager = {
    */
   iniciarSessaoCadastro(from) {
     const agora = Date.now().toString();
-    CacheService.getScriptCache().put(`sessao_inicio_${from}`, agora, 3600);
+    Plataforma.cache.put(`sessao_inicio_${from}`, agora, 3600);
     console.log(`⏱️ Sessão de cadastro iniciada para ${from}`);
   },
   
@@ -201,7 +196,7 @@ const StateManager = {
    * @returns {boolean} true se a pergunta foi enviada agora
    */
   verificarExpiracaoSessao(from, estado) {
-    const cache     = CacheService.getScriptCache();
+    const cache     = Plataforma.cache;
     const inicio    = cache.get(`sessao_inicio_${from}`);
     const jaAvisado = cache.get(`aviso_sessao_${from}`);
 
@@ -238,7 +233,7 @@ const StateManager = {
    * @param {string} from - Número do WhatsApp
    */
   renovarSessao(from) {
-    const cache = CacheService.getScriptCache();
+    const cache = Plataforma.cache;
     const estado = this.getEstado(from);
 
     // Renova o timestamp de início da sessão
@@ -270,7 +265,7 @@ const StateManager = {
    * @returns {boolean} true apenas na primeira mensagem
    */
   ehPrimeiroContato(from) {
-    const cache = CacheService.getScriptCache();
+    const cache = Plataforma.cache;
     const cacheKey = `contato_${from}`;
 
     // Cache hit → já conhecido, sem lock e sem chamada HTTP ao Odoo.
@@ -284,41 +279,36 @@ const StateManager = {
     // que encontra, então o log de cadastro passava a cair num registro
     // arbitrário. O lock só é disputado no cache miss — contato novo ou cache
     // expirado (6 h) — e não pesa no fluxo normal de mensagens.
-    const lock = LockService.getScriptLock();
-    try {
-      lock.waitLock(5000);
-    } catch (e) {
+    return Plataforma.trava.comTrava(cacheKey, 5000, () => {
+      try {
+        // Dupla checagem: outra execução pode ter registrado enquanto esperávamos.
+        if (cache.get(cacheKey)) return false;
+
+        const contato = OdooService.buscarContatoBot(from);
+
+        if (contato) {
+          // Existe no Odoo → cachear e retornar false
+          cache.put(cacheKey, '1', 21600); // 6 horas
+          return false;
+        }
+
+        // Primeiro contato → registrar no Odoo e cachear
+        OdooService.registrarContatoBot(from);
+        cache.put(cacheKey, '1', 21600);
+        console.log(`🆕 Primeiro contato registrado no Odoo: ${from}`);
+        return true;
+
+      } catch (e) {
+        console.error('❌ Erro ao verificar primeiro contato no Odoo:', e.message);
+        // Fallback: não bloqueia o fluxo em caso de erro
+        return false;
+      }
+    }, (e) => {
       // Sem serializar, preferimos pular a boas-vindas a arriscar duplicar o
       // registro: a próxima mensagem do usuário refaz a verificação.
       console.warn('⚠️ [ehPrimeiroContato] Lock não obtido, pulando verificação:', e.message);
       return false;
-    }
-
-    try {
-      // Dupla checagem: outra execução pode ter registrado enquanto esperávamos.
-      if (cache.get(cacheKey)) return false;
-
-      const contato = OdooService.buscarContatoBot(from);
-
-      if (contato) {
-        // Existe no Odoo → cachear e retornar false
-        cache.put(cacheKey, '1', 21600); // 6 horas
-        return false;
-      }
-
-      // Primeiro contato → registrar no Odoo e cachear
-      OdooService.registrarContatoBot(from);
-      cache.put(cacheKey, '1', 21600);
-      console.log(`🆕 Primeiro contato registrado no Odoo: ${from}`);
-      return true;
-
-    } catch (e) {
-      console.error('❌ Erro ao verificar primeiro contato no Odoo:', e.message);
-      // Fallback: não bloqueia o fluxo em caso de erro
-      return false;
-    } finally {
-      try { lock.releaseLock(); } catch (ignore) {}
-    }
+    });
   },
 
   // ==========================================================================
@@ -346,7 +336,7 @@ const StateManager = {
    */
   registrarSessaoAtiva(from) {
     try {
-      PropertiesService.getScriptProperties()
+      Plataforma.propriedades
         .setProperty(this.PREFIXO_SESSAO + from, Date.now().toString());
     } catch (e) {
       console.warn('⚠️ Erro ao registrar sessão ativa:', e.message);
@@ -358,7 +348,7 @@ const StateManager = {
    */
   removerSessaoAtiva(from) {
     try {
-      PropertiesService.getScriptProperties()
+      Plataforma.propriedades
         .deleteProperty(this.PREFIXO_SESSAO + from);
     } catch (e) {
       console.warn('⚠️ Erro ao remover sessão ativa:', e.message);
@@ -376,7 +366,7 @@ const StateManager = {
    */
   getSessoesAtivas(todasProps) {
     try {
-      const todas = todasProps || PropertiesService.getScriptProperties().getProperties();
+      const todas = todasProps || Plataforma.propriedades.getProperties();
       return Object.keys(todas)
         .filter(chave => chave.startsWith(this.PREFIXO_SESSAO))
         .map(chave => chave.slice(this.PREFIXO_SESSAO.length));

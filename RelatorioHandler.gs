@@ -134,7 +134,7 @@ const RelatorioHandler = {
    */
   iniciar(from) {
     // ── Rate limiting: verificar bloqueio ───────────────────────────
-    const cache    = CacheService.getScriptCache();
+    const cache    = Plataforma.cache;
     const bloqueio = cache.get(`bloqueio_relatorio_${from}`);
 
     if (bloqueio) {
@@ -220,7 +220,7 @@ const RelatorioHandler = {
     if (codigoFornecido.toLowerCase() !== codigoEsperado.toLowerCase()) {
       // Rate limiting real: conta a tentativa e bloqueia ao atingir o máximo.
       // NÃO logar a senha tentada (dado sensível).
-      const cache = CacheService.getScriptCache();
+      const cache = Plataforma.cache;
       const tentativas = parseInt(cache.get(`tentativas_relatorio_${from}`) || '0', 10) + 1;
       const restantes  = RelatorioHandler.MAX_TENTATIVAS - tentativas;
 
@@ -251,7 +251,7 @@ const RelatorioHandler = {
     }
 
     // Código correto → zera o contador de tentativas e segue
-    CacheService.getScriptCache().remove(`tentativas_relatorio_${from}`);
+    Plataforma.cache.remove(`tentativas_relatorio_${from}`);
 
     // Código correto → montar perfil definitivo e mostrar menu
     const acesso = {
@@ -448,7 +448,7 @@ const RelatorioHandler = {
       const devAnt      = devolucoesAnt.filter(dev => idsEscopo.has(this._dizimistaId(dev)));
 
       // ── Mensagem 1: Cabeçalho ──────────────────────────────────────────────
-      const agora = Utilities.formatDate(new Date(), TIMEZONE, 'dd/MM/yyyy HH:mm');
+      const agora = Plataforma.relogio.formatar(new Date(), TIMEZONE, 'dd/MM/yyyy HH:mm');
       const escopoTexto = acesso.tipoAcesso === 'admin'
         ? '🏛️ Todas as Comunidades'
         : `⛪ ${acesso.comunidadeNome}`;
@@ -922,7 +922,7 @@ const RelatorioHandler = {
 
       // Enviar comprovante (se existir)
       if (dev.x_studio_comprovante) {
-        Utilities.sleep(1000);
+        Plataforma.relogio.dormir(1000);
         this._enviarComprovante(from, dev);
       } else {
         Utils.enviarSimples(from, '📎 _Sem comprovante anexado._');
@@ -937,7 +937,7 @@ const RelatorioHandler = {
       );
 
       // Botões de ação
-      Utilities.sleep(1500);
+      Plataforma.relogio.dormir(1500);
       Utils.enviarMenu(from,
         `O que deseja fazer com esta devolução?`,
         [

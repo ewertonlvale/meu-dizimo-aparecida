@@ -557,7 +557,7 @@ const MenuHandler = {
    * @private
    */
   _numeroDoBot() {
-    const props = PropertiesService.getScriptProperties();
+    const props = Plataforma.propriedades;
     let bruto = '';
     try {
       bruto = props.getProperty('WHATSAPP_NUMERO_BOT') ||

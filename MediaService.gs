@@ -154,7 +154,7 @@ const MediaService = {
       // raro. Mantida em 3s de propósito: é margem para o WhatsApp registrar a
       // mídia recém-enviada, e encurtá-la sem evidência arriscaria o envio —
       // o ganho real veio de não passar mais por aqui a cada primeiro contato.
-      Utilities.sleep(3000);
+      Plataforma.relogio.dormir(3000);
 
       const resultado = this._enviarMensagemMidia(to, 'image', { id: mediaId, caption });
       console.log('📤 Resposta envio imagem:', resultado ? resultado.getContentText() : 'null');
@@ -180,8 +180,8 @@ const MediaService = {
   subirImagem(base64Data) {
     const config = getConfig();
 
-    const imageBytes = Utilities.base64Decode(base64Data);
-    const blob       = Utilities.newBlob(imageBytes, 'image/png', 'image.png');
+    const imageBytes = Plataforma.bytes.deBase64(base64Data);
+    const blob       = Plataforma.bytes.blob(imageBytes, 'image/png', 'image.png');
 
     const uploadResponse = Utils.fetchComRetry(
       getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/media`),
@@ -245,7 +245,7 @@ const MediaService = {
    */
   _mediaIdEmCache(chaveCache, base64Data) {
     try {
-      const bruto = PropertiesService.getScriptProperties().getProperty(`media_id_${chaveCache}`);
+      const bruto = Plataforma.propriedades.getProperty(`media_id_${chaveCache}`);
       if (!bruto) return null;
 
       const guardado = JSON.parse(bruto);
@@ -261,7 +261,7 @@ const MediaService = {
   /** @private */
   _guardarMediaId(chaveCache, base64Data, id) {
     try {
-      PropertiesService.getScriptProperties().setProperty(
+      Plataforma.propriedades.setProperty(
         `media_id_${chaveCache}`,
         JSON.stringify({ id, digital: this._digitalImagem(base64Data), em: Date.now() })
       );
@@ -273,7 +273,7 @@ const MediaService = {
   /** @private */
   _descartarMediaId(chaveCache) {
     try {
-      PropertiesService.getScriptProperties().deleteProperty(`media_id_${chaveCache}`);
+      Plataforma.propriedades.deleteProperty(`media_id_${chaveCache}`);
     } catch (e) { /* nada a fazer */ }
   },
 
@@ -302,8 +302,8 @@ const MediaService = {
     const config = getConfig();
 
     try {
-      const bytes = Utilities.base64Decode(base64Data);
-      const blob  = Utilities.newBlob(bytes, mimeType, filename);
+      const bytes = Plataforma.bytes.deBase64(base64Data);
+      const blob  = Plataforma.bytes.blob(bytes, mimeType, filename);
 
       // 1. Upload do arquivo
       const uploadResponse = Utils.fetchComRetry(
@@ -325,7 +325,7 @@ const MediaService = {
       }
 
       console.log(`✅ Upload documento concluído. Media ID: ${uploadResult.id}`);
-      Utilities.sleep(2000);
+      Plataforma.relogio.dormir(2000);
 
       // 2. Enviar mensagem com o documento
       const resultado = this._enviarMensagemMidia(to, 'document', {
@@ -404,7 +404,7 @@ const MediaService = {
       }
 
       const blob     = fileResponse.getBlob();
-      const base64   = Utilities.base64Encode(fileResponse.getContent());
+      const base64   = Plataforma.bytes.paraBase64(fileResponse.getContent());
       const mimeType = blob.getContentType();
 
       console.log('✅ Arquivo baixado. Tipo:', mimeType, '| Tamanho:', blob.getBytes().length, 'bytes');
@@ -607,7 +607,7 @@ const MediaService = {
         { idempotente: true, rotulo: 'QR Code' });
 
       if (response.getResponseCode() === 200) {
-        this.enviarImagemBase64(to, Utilities.base64Encode(response.getContent()), instrucao);
+        this.enviarImagemBase64(to, Plataforma.bytes.paraBase64(response.getContent()), instrucao);
       } else {
         console.warn('⚠️ API QR Code falhou, status:', response.getResponseCode());
         Utils.enviarSimples(to, semImagem);
