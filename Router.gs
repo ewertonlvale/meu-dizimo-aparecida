@@ -231,6 +231,18 @@ const Router = {
       return;
     }
 
+    // ── BL-81: baixa de pendente — a devolução viaja NO ID do botão ────────
+    // Mesmo raciocínio do BL-62 logo abaixo. Com o id fixo e o alvo na sessão,
+    // tocar "Confirmar" numa mensagem antiga agia sobre a ÚLTIMA pendente
+    // aberta, não sobre a que a mensagem mostrava.
+    const baixa = buttonId && buttonId.match(/^btn_(confirmar|rejeitar)_baixa_(\d+)$/);
+    if (baixa) {
+      const id = parseInt(baixa[2], 10);
+      if (baixa[1] === 'confirmar') RelatorioHandler.confirmarBaixa(from, id);
+      else                          RelatorioHandler.rejeitarBaixa(from, id);
+      return;
+    }
+
     // ── BL-62: correção do mês de referência ───────────────────────────────
     // Os ids do registro pago e do mês em aberto viajam DENTRO do id do botão,
     // não em sessão. Por isso isto funciona mesmo horas depois, e mesmo se a
@@ -328,8 +340,10 @@ const Router = {
       case 'btn_sessao_sair':      this._encerrarSessao(from);   break;
 
       // --- Devoluções Pendentes ---
-      case 'btn_confirmar_baixa':   RelatorioHandler.confirmarBaixa(from);   break;
-      case 'btn_rejeitar_baixa':    RelatorioHandler.rejeitarBaixa(from);    break;
+      // Botões de antes do BL-81, sem a devolução no id: não há como saber a
+      // qual se referem, então não agem — reabrem a lista.
+      case 'btn_confirmar_baixa':
+      case 'btn_rejeitar_baixa':    RelatorioHandler.baixaSemAlvo(from);     break;
       case 'btn_voltar_pendentes':  RelatorioHandler.voltarPendentes(from);  break;
 
       default:

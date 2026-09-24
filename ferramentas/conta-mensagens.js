@@ -4085,6 +4085,74 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return (log.length > 0 && !vazou.length) || `vazou: ${vazou[0] || '(log vazio)'}`;
   });
 
+  // ── BL-81 ──────────────────────────────────────────────────────────────
+  // RelatorioHandler e Router reais; o Odoo é um mapa de devoluções.
+  // `naSessao` imita o que o código anterior guardava em `pendente_devolucao_id`
+  // — sem isso os casos passariam no código antigo só por achar a sessão vazia.
+  const baixas = (acesso, devolucoes, naSessao) => {
+    const r = { gravou: [], enviadas: [], botoes: [] };
+    const globais = {
+      StateManager: { getCampo: (f, c) => (c === 'relatorio_acesso' ? acesso
+                        : c === 'pendente_devolucao_id' ? naSessao : undefined),
+                      setEstado() {}, salvarMultiplosCampos() {}, salvarCampoEMudarEstado() {} },
+      OdooService: {
+        buscarDevolucaoDetalhada: (id) => devolucoes[id] || null,
+        atualizarStatusDevolucao: (id, st) => r.gravou.push(`${id}:${st}`),
+        listarPendentes: () => [], listarComunidades: () => []
+      },
+      Utils: new Proxy({
+        enviarSimples: (f, t) => r.enviadas.push(t),
+        enviarMenu: (f, t, b) => { r.enviadas.push(t); r.botoes.push(...(b || []).map((x) => x.id)); }
+      }, { get: (o, k) => o[k] || (() => {}) }),
+      MenuHandler: new Proxy({}, { get: () => () => {} }),
+      // O detalhe espera entre as mensagens; sem isto ele lançaria no
+      // `dormir` e os casos de "não abriu" passariam por acidente.
+      Utilities: { sleep() {} }
+    };
+    const m = carregar(['RelatorioHandler.gs', 'Router.gs'], globais, '{ RelatorioHandler, Router }');
+    r.R = m.RelatorioHandler; r.Router = m.Router;
+    return r;
+  };
+  const COORD_1 = { tipoAcesso: 'coordenador', comunidadeId: 1, comunidadeNome: 'Matriz' };
+  const pend = (id, com, status = 'Pendente') => ({ id, x_studio_status: status,
+    x_studio_comunidade: [com, 'C' + com], x_studio_dizimista: [9, 'Ana'], x_studio_value: 50 });
+
+  caso('BL-81: o botão carrega a devolução — tocar na mensagem antiga baixa a antiga', () => {
+    const r = baixas(COORD_1, { 41: pend(41, 1), 42: pend(42, 1) });
+    // Abriu A (41), depois B (42); tocou "Confirmar" na mensagem de A.
+    r.R.processarSelecaoPendente('55', 'pend_41');
+    r.R.processarSelecaoPendente('55', 'pend_42');
+    const doA = r.botoes.find((b) => b.startsWith('btn_confirmar_baixa_41'));
+    if (!doA) return `botões enviados: ${r.botoes.join()}`;
+    r.Router.rotear('55', { type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: doA } } });
+    return r.gravou.join() === '41:Confirmado' || `gravou ${r.gravou.join() || 'nada'}`;
+  });
+  caso('BL-81: não dá baixa em devolução que já saiu de Pendente', () => {
+    const r = baixas(COORD_1, { 42: pend(42, 1, 'Rejeitado') }, 42);
+    r.R.confirmarBaixa('55', 42);
+    return !r.gravou.length || `gravou ${r.gravou.join()}`;
+  });
+  caso('BL-81: coordenador não abre nem dá baixa em outra comunidade', () => {
+    const r = baixas(COORD_1, { 77: pend(77, 2) }, 77);
+    r.R.processarSelecaoPendente('55', 'pend_77');
+    r.R.rejeitarBaixa('55', 77);
+    return (!r.gravou.length && !r.botoes.some((b) => b.includes('baixa')))
+      || `gravou ${r.gravou.join()} botões ${r.botoes.join()}`;
+  });
+  caso('BL-81: o admin dá baixa em qualquer comunidade', () => {
+    const r = baixas({ tipoAcesso: 'admin' }, { 77: pend(77, 2) });
+    r.R.confirmarBaixa('55', 77);
+    return r.gravou.join() === '77:Confirmado' || `gravou ${r.gravou.join() || 'nada'}`;
+  });
+  caso('BL-81: botão antigo, sem id, não age — reabre a lista', () => {
+    const r = baixas(COORD_1, { 42: pend(42, 1) }, 42);
+    r.Router.rotear('55', { type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: 'btn_confirmar_baixa' } } });
+    return (!r.gravou.length && r.enviadas.some((t) => /mensagem antiga/.test(t)))
+      || `gravou ${r.gravou.join()} · ${r.enviadas[0]}`;
+  });
+
   caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
     const r = roteador('MENU');
     r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });
