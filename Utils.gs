@@ -40,7 +40,33 @@ const Utils = {
   // ~100 mil em Workspace. Confirme no painel de cotas do projeto e ajuste.
   URLFETCH_COTA_DIARIA: 20000,
   URLFETCH_PREFIXO:     'uso_urlfetch_',
-  URLFETCH_SHARDS:      5,
+
+  // BL-75: eram 5. O Properties do Apps Script tem um TETO DE 50 PROPRIEDADES
+  // NA INTERFACE do editor — acima disso a lista vira somente leitura e não há
+  // como editar nem ODOO_API_KEY nem nada. Com 5 shards, 7 dias de chamadas e
+  // 6 meses de mensagens, o regime normal era ~120 propriedades: o teto seria
+  // cruzado na primeira semana, e foi.
+  //
+  // O shard existe porque `setProperties` é read-modify-write sem trava, então
+  // execuções simultâneas perdem incremento. Menos shards = mais colisão = a
+  // contagem subestima um pouco mais. É telemetria, não dinheiro, e já
+  // subestimava sob concorrência. Perder precisão aqui custa menos do que
+  // ficar trancado fora da própria configuração.
+  //
+  // Dois, e não três, porque a conta não fechava: o harness calcula o regime
+  // permanente a partir destas constantes e reprovou em 51. O número de
+  // chaves de CONFIGURAÇÃO (27) é piso — não dá para podar —, então a folga
+  // tinha de sair daqui.
+  //
+  // (O BL-74 Fase 3 troca isto por `INCR` no Redis, que é atômico de verdade
+  //  e torna o shard desnecessário.)
+  URLFETCH_SHARDS:      2,
+
+  // Por quantos dias guardar o contador de chamadas. Só HOJE é lido — por
+  // `verificarCotaUrlFetch`, que é o único leitor. O resto era histórico que
+  // ninguém consultava: 80 das ~95 chaves de contador eram só escrita.
+  // Dois dias, e não um, por causa da virada do dia no fuso de São Paulo.
+  URLFETCH_DIAS_GUARDADOS: 2,
 
   // ── Mensagens entregues ao WhatsApp (custo) ─────────────────────────────
   // Desde 01/10/2026 a Meta cobra as mensagens de serviço acima de uma
@@ -52,7 +78,13 @@ const Utils = {
   // template tem tarifa própria.
   MSG_PREFIXO:          'msgs_',
   MSG_FRANQUIA_SERVICO: 1000,
-  MSG_MESES_GUARDADOS:  6,
+  // BL-75: eram 6 meses. Pelo mesmo motivo do URLFETCH_SHARDS — e porque
+  // NENHUM leitor olha mês passado: `somarMensagensDoMes` e
+  // `verificarCotaMensagens` filtram pelo mês corrente. Guardar seis meses
+  // custava 60 propriedades para servir 10.
+  // Dois, e não um, para a virada do mês não apagar o número antes de alguém
+  // conferir a fatura.
+  MSG_MESES_GUARDADOS:  2,
 
   // Contadores da execução atual. Cada execução do Apps Script roda num
   // contexto JS próprio, então isto zera sozinho a cada disparo — é por
@@ -314,7 +346,7 @@ const Utils = {
         prefixo: this.URLFETCH_PREFIXO,
         tamanho: 10,                    // yyyy-MM-dd
         atual:   this._hoje(),
-        corte:   this._hoje(new Date(Date.now() - 7 * 86400000))
+        corte:   this._hoje(new Date(Date.now() - this.URLFETCH_DIAS_GUARDADOS * 86400000))
       });
 
       const pct = Math.round((total / this.URLFETCH_COTA_DIARIA) * 100);
