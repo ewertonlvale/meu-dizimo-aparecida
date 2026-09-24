@@ -63,7 +63,7 @@ function testarCabecalhoImagem(numero) {
   Logger.log('━'.repeat(60));
 
   const destino =
-    numero || PropertiesService.getScriptProperties().getProperty('NUMERO_TESTE');
+    numero || Plataforma.propriedades.getProperty('NUMERO_TESTE');
   if (!destino) {
     Logger.log('❌ Sem destino. Configure a Script Property NUMERO_TESTE');
     Logger.log("   ou chame testarCabecalhoImagem('5586988521231').");
@@ -83,7 +83,7 @@ function testarCabecalhoImagem(numero) {
   // respeitada e a idade vai para o log.
   let mediaId = null;
   try {
-    const bruto = PropertiesService.getScriptProperties().getProperty('media_id_avatar');
+    const bruto = Plataforma.propriedades.getProperty('media_id_avatar');
     if (bruto) {
       const guardado = JSON.parse(bruto);
       const idadeMs = Date.now() - (guardado.em || 0);

@@ -406,7 +406,7 @@ function getWhatsAppUrl(path) {
  *                      WHATSAPP_NUMERO_EXIBICAO }
  */
 function getConfig() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
 
   const config = {
     WHATSAPP_TOKEN:    props.getProperty('WHATSAPP_TOKEN'),
@@ -444,7 +444,7 @@ function getConfig() {
  * @returns {string|null} Segredo configurado, ou null se não definido.
  */
 function getWebhookSecret() {
-  return PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
+  return Plataforma.propriedades.getProperty('WEBHOOK_SECRET');
 }
 
 // ============================================================================
@@ -457,7 +457,7 @@ function getWebhookSecret() {
  * @returns {Object} { url, database, uid, apiKey }
  */
 function getOdooConfig() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
 
   // SEM PADRÃO PARA NENHUM DELES. (BL-17)
   //
@@ -504,7 +504,7 @@ function getOdooConfig() {
  * @returns {Object} { API_KEY, ENDPOINT, ENDPOINT_FILES }
  */
 function getVisionConfig() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const apiKey = props.getProperty('GOOGLE_VISION_API_KEY');
 
   if (!apiKey) {

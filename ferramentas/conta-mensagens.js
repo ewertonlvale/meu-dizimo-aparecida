@@ -42,6 +42,12 @@ const RAIZ = path.join(__dirname, '..');
 // impedir. Normalizar na leitura vale para qualquer checkout.
 const lerTexto = (caminho) => fs.readFileSync(caminho, 'utf8').replace(/\r\n/g, '\n');
 
+// A fachada do Apps Script (BL-74, Fase 1). Todo contexto que EXECUTA `.gs` do
+// deploy a carrega primeiro: os `.gs` só falam com a Plataforma, e ela delega
+// aos stubs de CacheService, PropertiesService etc. de cada cenário — assim o
+// harness exercita a fachada de verdade, não um dublê dela.
+const PLATAFORMA = lerTexto(path.join(RAIZ, 'Plataforma.gs'));
+
 // ---------------------------------------------------------------------------
 // A borda: tudo o que sai do processo vira contador
 // ---------------------------------------------------------------------------
@@ -158,6 +164,7 @@ function montarContexto(cenario) {
   // tudo é carregado num script só e os objetos são devolvidos no fim — é a
   // forma de alcançá-los sem tocar nos arquivos do projeto.
   const ARQUIVOS = [
+    'Plataforma.gs',
     'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
     'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
     'OfertaHandler.gs', 'TestePixNativo.gs',
@@ -1260,7 +1267,7 @@ console.log('🧭 Métodos chamados que não existem\n');
   vm.createContext(ctxTudo);
   const fontes = OBJETOS.map(([arq]) => lerTexto(path.join(RAIZ, arq)));
   const tudo = vm.runInContext(
-    [lerTexto(path.join(RAIZ, 'Config.gs'))].concat(fontes).join('\n;\n') +
+    [PLATAFORMA, lerTexto(path.join(RAIZ, 'Config.gs'))].concat(fontes).join('\n;\n') +
     '\n;({' + OBJETOS.map(([, nome]) => nome).join(', ') + '});',
     ctxTudo, { filename: 'todos.gs' }
   );
@@ -1486,6 +1493,7 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
     let erro = null;
     try {
       vm.runInContext(
+        PLATAFORMA + '\n;\n' +
         lerTexto(path.join(RAIZ, 'Config.gs')) + '\n;\n' +
         lerTexto(path.join(RAIZ, sonda.arquivo)) + '\n;\n' +
         sonda.funcao + '();',
@@ -1597,6 +1605,7 @@ console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
   };
   vm.createContext(ctxFlow);
   const FlowReal = vm.runInContext(
+    PLATAFORMA + '\n;\n' +
     lerTexto(path.join(RAIZ, 'FlowHandler.gs')) + '\n;FlowHandler;',
     ctxFlow, { filename: 'FlowHandler.gs' }
   );
@@ -3176,7 +3185,7 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
     };
     vm.createContext(ctx);
     vm.runInContext(
-      fonteConfig + '\n;\n' + fonteNotif + '\n;\nexecutarNotificacoesDiarias();',
+      PLATAFORMA + '\n;\n' + fonteConfig + '\n;\n' + fonteNotif + '\n;\nexecutarNotificacoesDiarias();',
       ctx, { filename: 'NotificacaoHandler.gs' }
     );
 
@@ -3361,14 +3370,19 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
 // O acionador TEM QUE continuar de hora em hora. Se alguém "otimizar" para
 // everyHours(2), o intervalo volta a morar no Apps Script e mudá-lo no Odoo
 // deixa de ter efeito — sem erro nenhum, só com a configuração virando enfeite.
+//
+// Desde a Fase 1 do BL-74 o pedido passa pela Plataforma — então são dois
+// elos: o handler pede 1 hora, e a fachada repassa o número sem mexer nele.
 {
   const fonte = lerTexto(path.join(RAIZ, 'NotificacaoHandler.gs'));
-  const m = fonte.match(/\.everyHours\((\d+)\)/);
-  const ok = m && m[1] === '1';
+  const m = fonte.match(/aCadaHoras\(\s*'executarNotificacoesDiarias'\s*,\s*(\d+)\s*\)/);
+  const repassa = /aCadaHoras:\s*\(funcao, horas\)\s*=>[^;]*\.everyHours\(horas\)/.test(PLATAFORMA);
+  const ok = m && m[1] === '1' && repassa;
   if (!ok) falhas++;
   console.log(`${ok ? '✅' : '❌'} o acionador acorda de hora em hora`
     + (ok ? ' (o intervalo real vem de x_parametros)'
-          : ` — everyHours(${m ? m[1] : '?'}) tira o intervalo do Odoo`));
+          : !repassa ? ' — a Plataforma não repassa as horas ao everyHours'
+          : ` — aCadaHoras(${m ? m[1] : '?'}) tira o intervalo do Odoo`));
 }
 
 console.log('\n' + '─'.repeat(64));
@@ -3728,6 +3742,230 @@ console.log('⚙️  O CI roda o mesmo que você roda (BL-74, Fase 0)\n');
   for (const c of casos) {
     if (!c.ok) falhas++;
     console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.detalhe ? ' — falta: ' + c.detalhe : ''}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧱 A fachada da Plataforma não vaza (BL-74, Fase 1)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Para sair do Apps Script, só o Plataforma.gs pode falar com as APIs dele.
+// Se um `.gs` do deploy voltar a chamar `CacheService.…` direto, a Fase 2
+// (runtime Node) quebra ali — em produção, no dia do corte, e não aqui.
+//
+// Conta USO (`Nome.`), não menção: comentários e textos de log que explicam o
+// CacheService continuam permitidos. Os arquivos cortados pelo .claspignore
+// (a suíte de testes do editor) ficam fora: não vão para o runtime novo.
+{
+  const APIS = ['CacheService', 'PropertiesService', 'UrlFetchApp', 'Utilities',
+                'LockService', 'ContentService', 'ScriptApp'];
+  const USO = new RegExp(`\\b(${APIS.join('|')})\\s*\\.[A-Za-z]`);
+  const ehComentario = (linha) => /^\s*(\/\/|\*|\/\*)/.test(linha);
+  const usos = (fonte) => fonte.split('\n')
+    .map((linha, i) => ({ linha, n: i + 1 }))
+    .filter(({ linha }) => !ehComentario(linha) && USO.test(linha));
+
+  // O detector precisa acusar o que deve e poupar o que deve — senão o verde
+  // abaixo não prova nada.
+  const detectorOk =
+    usos('const c = CacheService.getScriptCache();').length === 1 &&
+    usos('  Utilities.sleep(10);').length === 1 &&
+    usos('// CacheService.getScriptCache() não lista chaves').length === 0 &&
+    usos("Logger.log('o CacheService não lista chaves');").length === 0;
+
+  const ignorados = lerTexto(path.join(RAIZ, '.claspignore'))
+    .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  const doDeploy = fs.readdirSync(RAIZ)
+    .filter((f) => f.endsWith('.gs') && !ignorados.includes(f) && f !== 'Plataforma.gs');
+
+  const vazamentos = [];
+  for (const arq of doDeploy) {
+    for (const u of usos(lerTexto(path.join(RAIZ, arq)))) {
+      vazamentos.push(`${arq}:${u.n}  ${u.linha.trim().slice(0, 70)}`);
+    }
+  }
+
+  const casos = [
+    { nome: 'o detector acusa uso e poupa comentário e texto', ok: detectorOk },
+    // Um diretório vazio ou um .claspignore que corta tudo daria verde por
+    // falta de arquivo. 20 é folga abaixo dos 25 de hoje.
+    { nome: `a varredura alcança o deploy (${doDeploy.length} arquivos)`, ok: doDeploy.length >= 20 },
+    { nome: 'nenhum .gs do deploy fala com o Apps Script fora do Plataforma.gs',
+      ok: vazamentos.length === 0 },
+    { nome: 'o Plataforma.gs vai para o deploy', ok: !ignorados.includes('Plataforma.gs') },
+  ];
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}`);
+  }
+  vazamentos.forEach((v) => console.log(`     ${v}`));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// O CONTRATO da fachada, executado. Na Fase 1 a troca foi mecânica e o resto
+// do harness prova que nada mudou nos fluxos — mas três travas e os gatilhos
+// moram em arquivos que nenhum outro cenário carrega (StateManager, Webhook,
+// TriggerSessoes). E é este contrato que a implementação Node da Fase 2/3
+// terá de cumprir: rodar os mesmos casos contra ela é o critério de troca.
+{
+  // Um LockService que obedece ao cenário e registra o que lhe pedem.
+  const fazLock = (obtem) => {
+    const log = [];
+    return {
+      log,
+      LockService: { getScriptLock: () => ({
+        waitLock(ms) { log.push(`wait ${ms}`); if (!obtem) throw new Error('timeout (simulado)'); },
+        releaseLock() { log.push('release'); }
+      }) }
+    };
+  };
+
+  const carregar = (arquivos, globais, devolve) => {
+    const ctx = Object.assign({
+      console: { log() {}, warn() {}, error() {} }, Logger: { log() {} }
+    }, globais);
+    vm.createContext(ctx);
+    return vm.runInContext(
+      [PLATAFORMA].concat(arquivos.map((a) => lerTexto(path.join(RAIZ, a)))).join('\n;\n') +
+      `\n;(${devolve});`, ctx, { filename: 'plataforma-contrato.gs' });
+  };
+
+  const casos = [];
+  const caso = (nome, fn) => {
+    let ok = false, detalhe = '';
+    try { const r = fn(); ok = r === true; if (!ok) detalhe = String(r); }
+    catch (e) { detalhe = 'lançou: ' + e.message; }
+    casos.push({ nome, ok, detalhe });
+  };
+
+  // ── Plataforma.trava, isolada ─────────────────────────────────────────
+  caso('trava obtida: roda fn, devolve o resultado e libera', () => {
+    const L = fazLock(true);
+    const P = carregar([], { LockService: L.LockService }, 'Plataforma');
+    const r = P.trava.comTrava('k', 1234, () => 'feito');
+    return r === 'feito' && L.log.join('|') === 'wait 1234|release' || L.log.join('|');
+  });
+  caso('fn que lança ainda libera a trava', () => {
+    const L = fazLock(true);
+    const P = carregar([], { LockService: L.LockService }, 'Plataforma');
+    try { P.trava.comTrava('k', 1, () => { throw new Error('x'); }); } catch (e) { /* esperado */ }
+    return L.log.includes('release') || L.log.join('|');
+  });
+  caso('trava negada: quem decide é aoFalhar, e nada é liberado', () => {
+    const L = fazLock(false);
+    const P = carregar([], { LockService: L.LockService }, 'Plataforma');
+    let rodou = false;
+    const r = P.trava.comTrava('k', 1, () => { rodou = true; }, () => 'desisti');
+    return (r === 'desisti' && !rodou && !L.log.includes('release')) || `r=${r} rodou=${rodou}`;
+  });
+  caso('trava negada sem aoFalhar: o erro sobe', () => {
+    const P = carregar([], { LockService: fazLock(false).LockService }, 'Plataforma');
+    try { P.trava.comTrava('k', 1, () => 1); return 'não lançou'; } catch (e) { return true; }
+  });
+
+  // ── As três políticas do projeto, nos arquivos reais ──────────────────
+  // StateManager: gravar campo do cadastro SEGUE sem trava (perder o campo é pior).
+  caso('StateManager._comLock sem trava: grava mesmo assim (BL-20)', () => {
+    const L = fazLock(false);
+    const cache = {};
+    const SM = carregar(['StateManager.gs'], {
+      LockService: L.LockService,
+      CacheService: { getScriptCache: () => ({
+        get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) }
+    }, 'StateManager');
+    SM.salvarMultiplosCampos('5511999990000', { nome: 'Ana' });
+    const dados = JSON.parse(cache['dados_5511999990000'] || '{}');
+    return dados.nome === 'Ana' || JSON.stringify(cache);
+  });
+  // Primeiro contato DESISTE sem trava (duplicar o registro no Odoo é pior).
+  caso('StateManager.ehPrimeiroContato sem trava: desiste e não toca o Odoo (BL-23)', () => {
+    let tocou = false;
+    const SM = carregar(['StateManager.gs'], {
+      LockService: fazLock(false).LockService,
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      OdooService: { buscarContatoBot() { tocou = true; }, registrarContatoBot() { tocou = true; } }
+    }, 'StateManager');
+    return (SM.ehPrimeiroContato('5511999990000') === false && !tocou) || `tocou=${tocou}`;
+  });
+  caso('StateManager.ehPrimeiroContato com trava: registra e responde true', () => {
+    const registrados = [];
+    const SM = carregar(['StateManager.gs'], {
+      LockService: fazLock(true).LockService,
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      OdooService: { buscarContatoBot: () => null, registrarContatoBot: (n) => registrados.push(n) }
+    }, 'StateManager');
+    return (SM.ehPrimeiroContato('5511999990000') === true && registrados.length === 1)
+      || `registrados=${registrados.length}`;
+  });
+  // Criar dizimista SEGUE sem trava, mas ainda confere se já existe.
+  caso('OdooService.criarDizimista sem trava: ainda confere e cria', () => {
+    const OS = carregar(['OdooService.gs'], {
+      LockService: fazLock(false).LockService,
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    let conferiu = false;
+    OS.buscarDizimistaPorWhatsapp = () => { conferiu = true; return null; };
+    OS._criarDizimista = () => 42;
+    return (OS.criarDizimista({ whatsapp: '5511999990000' }) === 42 && conferiu) || `conferiu=${conferiu}`;
+  });
+
+  // ── Propriedades: o `true` que apaga tudo não passa ────────────────────
+  caso('propriedades.setProperties só mescla, mesmo se pedirem para apagar o resto', () => {
+    const chamadas = [];
+    const P = carregar([], { PropertiesService: { getScriptProperties: () => ({
+      setProperties: (...a) => chamadas.push(a.length) }) } }, 'Plataforma');
+    P.propriedades.setProperties({ A: '1' }, true);
+    return chamadas.join() === '1' || `argumentos repassados: ${chamadas.join()}`;
+  });
+
+  // ── Gatilhos: os dois instaladores, com os números de hoje ────────────
+  caso('instalar/remover gatilhos: hora em hora e 5 min, removendo só os seus', () => {
+    const existentes = [
+      { getHandlerFunction: () => 'executarNotificacoesDiarias' },
+      { getHandlerFunction: () => 'verificarSessoesAbandonadas' },
+      { getHandlerFunction: () => 'outraCoisa' }
+    ];
+    const criados = [], apagados = [];
+    const construtor = (f) => {
+      const t = { f };
+      const b = { timeBased: () => b, everyHours: (h) => { t.h = h; return b; },
+                  everyMinutes: (m) => { t.m = m; return b; }, create: () => criados.push(t) };
+      return b;
+    };
+    const g = carregar(['NotificacaoHandler.gs', 'TriggerSessoes.gs'], {
+      ScriptApp: { newTrigger: construtor, getProjectTriggers: () => existentes,
+                   deleteTrigger: (t) => apagados.push(t.getHandlerFunction()) },
+      NOTIFICACAO_PADRAO: { horaInicio: 8, horaFim: 20, intervaloHoras: 2, lote: 20 }
+    }, '{ instalarTriggerNotificacoes, instalarTriggerSessoes }');
+    g.instalarTriggerNotificacoes();
+    g.instalarTriggerSessoes();
+    const ok = JSON.stringify(criados) ===
+      JSON.stringify([{ f: 'executarNotificacoesDiarias', h: 1 }, { f: 'verificarSessoesAbandonadas', m: 5 }])
+      && apagados.join() === 'executarNotificacoesDiarias,verificarSessoesAbandonadas';
+    return ok || `criados=${JSON.stringify(criados)} apagados=${apagados}`;
+  });
+
+  // ── Webhook: o GET de verificação e a recusa sem segredo ──────────────
+  caso('doGet responde o desafio e doPost sem segredo recusa', () => {
+    const saidas = [];
+    const W = carregar(['Webhook.gs'], {
+      ContentService: {
+        MimeType: { TEXT: 'text/plain' },
+        createTextOutput: (c) => { const o = { c, mime: null,
+          setMimeType(m) { o.mime = m; return o; } }; saidas.push(o); return o; }
+      },
+      getConfig: () => ({ VERIFY_TOKEN: 'v' }),
+      getWebhookSecret: () => null,
+      Utils: { registrarConsumoExterno() {} }
+    }, '{ doGet, doPost }');
+    const g = W.doGet({ parameter: { 'hub.mode': 'subscribe', 'hub.verify_token': 'v', 'hub.challenge': '42' } });
+    const p = W.doPost({ parameter: {}, postData: { contents: '{}' } });
+    return (g.c === '42' && p.c === 'Forbidden' && saidas.length === 2) || JSON.stringify(saidas);
+  });
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.ok ? '' : '\n     ' + c.detalhe}`);
   }
 }
 

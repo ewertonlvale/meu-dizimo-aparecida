@@ -75,7 +75,7 @@ function testarCabecalhoFlow(numero) {
   Logger.log('\n📋 SONDA S10: cabeçalho de IMAGEM em mensagem de FLOW');
   Logger.log('━'.repeat(60));
 
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const destino = numero || props.getProperty('NUMERO_TESTE');
 
   if (!destino) {

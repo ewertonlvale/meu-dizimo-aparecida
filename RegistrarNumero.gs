@@ -11,7 +11,7 @@
 function registrarNumero() {
   // Se a verificação em duas etapas estiver DESATIVADA, deixe vazio ('').
   // Se estiver ativada, coloque o PIN de 6 dígitos.
-  const PIN = PropertiesService.getScriptProperties().getProperty('WHATSAPP_PIN');
+  const PIN = Plataforma.propriedades.getProperty('WHATSAPP_PIN');
 
   const config = getConfig(); // usa WHATSAPP_TOKEN e WHATSAPP_PHONE_ID já configurados
   const url = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${config.WHATSAPP_PHONE_ID}/register`;
@@ -19,7 +19,7 @@ function registrarNumero() {
   const payload = { messaging_product: 'whatsapp' };
   if (PIN) payload.pin = PIN;
 
-  const response = UrlFetchApp.fetch(url, {
+  const response = Plataforma.http.fetch(url, {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + config.WHATSAPP_TOKEN },

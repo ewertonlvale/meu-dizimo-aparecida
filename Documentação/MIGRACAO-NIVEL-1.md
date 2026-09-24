@@ -129,7 +129,47 @@ vermelho não entra em `staging`"* — é preciso exigir o check:
 
 Enquanto isso não for feito, a Fase 0 está metade pronta: o sinal existe e é ignorável.
 
-### Fase 1 — Camada `Plataforma`, ainda 100% no Apps Script (2–3 dias)
+### Fase 1 — Camada `Plataforma`, ainda 100% no Apps Script (2–3 dias) · 🔶 código pronto (24/09), falta publicar
+
+#### Como ficou (e onde divergiu do desenho abaixo)
+
+`Plataforma.gs` existe e é o **único** `.gs` do deploy que fala com o Apps Script. 127 linhas
+trocadas mecanicamente em 20 arquivos, mais os casos à mão (três travas, dois gatilhos, as
+respostas do webhook). Harness verde, 4/4.
+
+| Fachada | Cobre | Desvio do desenho |
+|---|---|---|
+| `Plataforma.cache` | `get`, `getAll`, `put`, `putAll`, `remove`, `removeAll` | nomes do GAS, de propósito |
+| `Plataforma.propriedades` | `getProperty`, `getProperties`, `setProperty`, `setProperties`, `deleteProperty` | **substitui `config` + `estado`**: há famílias dinâmicas lidas por prefixo; a divisão vai para a Fase 2, por prefixo, dentro da fachada. `setProperties` **não repassa** o `true` que apaga o store |
+| `Plataforma.http` | `fetch(url, opcoes)` | — |
+| `Plataforma.relogio` | `formatar(data, fuso, formato)`, `dormir(ms)` | sem `agora()`: ninguém precisava |
+| `Plataforma.bytes` | `paraBase64`, `deBase64`, `blob`, `uuid` | **nova** — o `Utilities` não era só relógio |
+| `Plataforma.trava` | `comTrava(chave, esperaMs, fn, aoFalhar)` | **`esperaMs` e `aoFalhar`**: os três locks têm políticas opostas (seguir sem trava × desistir) e a política fica com quem pede |
+| `Plataforma.gatilhos` | `aCadaHoras`, `aCadaMinutos`, `removerDe`, `exercitarAutorizacao`, `urlDoServico` | **nova** — era o `ScriptApp` |
+| `Plataforma.resposta` | `texto(conteudo)` | **nova** — era o `ContentService` |
+
+**Por que a interface imita o Apps Script.** Com ~150 sítios, trocar
+`CacheService.getScriptCache()` por `Plataforma.cache` é revisável linha a linha; uma API nova
+em cada sítio não seria. O critério da fase é não mudar comportamento, e a forma mais segura de
+cumpri-lo é não mudar o jeito de chamar.
+
+**As chaves das travas** já são por usuário: `dados_<from>`, `contato_<from>`,
+`dizimista_<whatsapp>`. O Apps Script as ignora; a Fase 3 as usa.
+
+**Como se provou que nada mudou.** Além do harness de sempre, uma seção nova no
+`conta-mensagens.js` executa o **contrato** da fachada — as três políticas de trava nos arquivos
+reais, os dois gatilhos, o webhook — e esses casos foram rodados também contra o código **anterior**
+à fase: passam nos dois, o que é a prova de equivalência. E um defeito plantado numa política de
+trava é acusado. Esses mesmos casos são o critério de aceite da implementação Node.
+
+**Removido:** `limparTodasProperties()` (Setup.gs). Apagava o store inteiro atrás de uma
+confirmação por `SpreadsheetApp.getUi()`, que num projeto standalone lança erro antes de
+perguntar — nunca funcionou.
+
+**Falta, e é seu:** `clasp push` + republicar o deployment. É o momento de risco desta fase
+(ver *Continuidade de serviço*): convém ter ensaiado antes o rollback da implantação.
+
+#### O desenho original
 
 Novo `Plataforma.gs`, seis fachadas:
 

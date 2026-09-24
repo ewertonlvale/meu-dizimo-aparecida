@@ -58,7 +58,7 @@ function getAvatar() {
     }
 
     const bytes  = response.getContent();
-    const base64 = Utilities.base64Encode(bytes);
+    const base64 = Plataforma.bytes.paraBase64(bytes);
 
     console.log(`✅ Avatar obtido. Tamanho: ${bytes.length} bytes (~${Math.round(bytes.length / 1024)} KB)`);
     return base64;

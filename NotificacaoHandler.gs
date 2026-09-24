@@ -225,7 +225,7 @@ function ehHoraDeDisparar(hora, cfg) {
 
 function executarNotificacoesDiarias() {
   const t0 = Date.now();
-  const agora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  const agora = Plataforma.relogio.formatar(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
   console.log(`━━━━━━ [Notif] INÍCIO da rotina de notificações — ${agora} (${TIMEZONE}) ━━━━━━`);
 
   try {
@@ -234,7 +234,7 @@ function executarNotificacoesDiarias() {
     // NOTIFICACOES_ATIVAS = 'false' em Script Properties.
     // (Antes lia de x_parametros_line, modelo inexistente no Odoo, o que poluía
     //  o log com um erro a cada execução — agora sem consulta que falha.)
-    const flagNotif = PropertiesService.getScriptProperties().getProperty('NOTIFICACOES_ATIVAS');
+    const flagNotif = Plataforma.propriedades.getProperty('NOTIFICACOES_ATIVAS');
     const desligado = ['false', '0', 'nao', 'não', 'off', 'desativado']
       .indexOf(String(flagNotif || '').trim().toLowerCase()) >= 0;
 
@@ -254,7 +254,7 @@ function executarNotificacoesDiarias() {
     const esc = lerEscalonamentoNotificacao();
     esc.ajustes.forEach((a) => console.warn(`⚠️ [Notif] parâmetro: ${a}`));
 
-    const horaAtual = Number(Utilities.formatDate(new Date(), TIMEZONE, 'H'));
+    const horaAtual = Number(Plataforma.relogio.formatar(new Date(), TIMEZONE, 'H'));
     const degrau = ehHoraDeDisparar(horaAtual, esc);
     if (!degrau.disparar) {
       console.log(`🌙 [Notif] ${degrau.motivo} — encerrando sem enviar.`);
@@ -299,7 +299,7 @@ function executarNotificacoesDiarias() {
       console.log(`➡️ [Notif] (${index + 1}/${dizimistasParaNotificar.length}) ` +
                   `id=${dizimista.id} ${dizimista.x_name}`);
       try {
-        if (index > 0) Utilities.sleep(2000);  // Delay de 2s entre envios (rate limit)
+        if (index > 0) Plataforma.relogio.dormir(2000);  // Delay de 2s entre envios (rate limit)
 
         NotificacaoHandler.enviarLembreteSimples(dizimista);
         registrarLogNotificacao(dizimista.id, 'sucesso', null);
@@ -491,7 +491,7 @@ function registrarLogNotificacao(dizimistaId, status, mensagemErro) {
     // x_studio_data_envio é um campo DATE no Odoo → precisa de 'yyyy-MM-dd'.
     // Antes gravava toISOString() (datetime ISO), o que o Odoo rejeitava e
     // impedia o registro do log (quebrando a deduplicação).
-    x_studio_data_envio: Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'),
+    x_studio_data_envio: Plataforma.relogio.formatar(hoje, TIMEZONE, 'yyyy-MM-dd'),
     x_studio_mes_referencia: mesReferencia,
     x_studio_status_envio: status,
     x_studio_mensagem_erro: mensagemErro || false
@@ -535,10 +535,8 @@ function getMesReferenciaAtual() {
 function instalarTriggerNotificacoes() {
   removerTriggerNotificacoes();
 
-  ScriptApp.newTrigger('executarNotificacoesDiarias')
-    .timeBased()
-    .everyHours(1)     // despertador; o disparo em si obedece x_parametros (BL-73)
-    .create();
+  // De hora em hora: é despertador; o disparo em si obedece x_parametros (BL-73).
+  Plataforma.gatilhos.aCadaHoras('executarNotificacoesDiarias', 1);
 
   const p = NOTIFICACAO_PADRAO;
   console.log(`✅ Acionador instalado: executarNotificacoesDiarias (acorda de hora em hora).`);
@@ -551,11 +549,7 @@ function instalarTriggerNotificacoes() {
 
 /** Remove o(s) acionador(es) da rotina de notificações. */
 function removerTriggerNotificacoes() {
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'executarNotificacoesDiarias') {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
+  Plataforma.gatilhos.removerDe('executarNotificacoesDiarias');
 }
 
 // NOTA: a resposta do usuário ao lembrete (botão "Devolver agora" do template)
@@ -579,7 +573,7 @@ function removerTriggerNotificacoes() {
  *   3. Acompanhe os logs [Notif][TESTE] na aba Execuções.
  */
 function testarNotificacaoAgora() {
-  const props  = PropertiesService.getScriptProperties();
+  const props  = Plataforma.propriedades;
   const numero = props.getProperty('NUMERO_TESTE') || '5586988521231'; // <- ajuste se necessário
 
   console.log(`🧪 [Notif][TESTE] Lembrete imediato para ${numero} (ignora filtro de dia/mês)`);
@@ -626,7 +620,7 @@ function testarNotificacaoAgora() {
  * Menu: Executar → testarGravacaoLog
  */
 function testarGravacaoLog() {
-  const props  = PropertiesService.getScriptProperties();
+  const props  = Plataforma.propriedades;
   const numero = props.getProperty('NUMERO_TESTE') || '5586988521231';
 
   let dizimista;
@@ -647,7 +641,7 @@ function testarGravacaoLog() {
     x_name:                  `DIAGNÓSTICO — ${dizimista.x_name} — ${mesRef}`, // obrigatório
     x_studio_dizimista:      dizimista.id,
     x_studio_tipo:           'lembrete',
-    x_studio_data_envio:     Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'), // campo DATE
+    x_studio_data_envio:     Plataforma.relogio.formatar(hoje, TIMEZONE, 'yyyy-MM-dd'), // campo DATE
     x_studio_mes_referencia: mesRef,
     x_studio_status_envio:   'erro',   // 'erro' NÃO conta na deduplicação (que exige 'sucesso')
     x_studio_mensagem_erro:  'DIAGNOSTICO BL-01 — pode apagar este registro'

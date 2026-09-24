@@ -91,7 +91,7 @@ nesta tabela e defina **quem a apaga**. Sem isso ela vaza para sempre.
 ## 2. Chamadas externas
 
 **Regra:** todo acesso HTTP passa por **`Utils.fetchComRetry(url, options, { idempotente, rotulo })`**.
-Não chame `UrlFetchApp.fetch` diretamente — isso escapa da contagem de cota (BL-25) e do
+Não chame `Plataforma.http.fetch` diretamente — isso escapa da contagem de cota (BL-25) e do
 retry (BL-24). A única exceção é `RegistrarNumero.gs`, utilitário manual de setup.
 
 ### A política de retry depende de idempotência
@@ -109,6 +109,28 @@ cada chamada.
 
 Teto de 3 tentativas com backoff de 1 s e 2 s, baixo de propósito: cada espera consome o
 orçamento de 6 min por execução.
+
+### 2.1 A Plataforma (BL-74, Fase 1)
+
+**Nenhum `.gs` do deploy chama as APIs do Apps Script direto** — `CacheService`,
+`PropertiesService`, `UrlFetchApp`, `Utilities`, `LockService`, `ContentService` e `ScriptApp`
+só aparecem em `Plataforma.gs`. O `conta-mensagens.js` reprova se isso voltar. É o que permite
+trocar o runtime (Cloud Run + Redis) sem tocar nos handlers.
+
+| Em vez de | Use |
+|---|---|
+| `CacheService.getScriptCache()` | `Plataforma.cache` |
+| `PropertiesService.getScriptProperties()` | `Plataforma.propriedades` |
+| `UrlFetchApp.fetch` | `Utils.fetchComRetry` (ou, no setup, `Plataforma.http.fetch`) |
+| `Utilities.sleep` / `formatDate` | `Plataforma.relogio.dormir` / `formatar` |
+| `Utilities.base64Encode` / `base64Decode` / `newBlob` / `getUuid` | `Plataforma.bytes.*` |
+| `LockService` | `Plataforma.trava.comTrava(chave, esperaMs, fn, aoFalhar)` |
+| `ScriptApp` | `Plataforma.gatilhos.*` |
+| `ContentService.createTextOutput` | `Plataforma.resposta.texto` |
+
+As regras das seções 1 e 3 continuam valendo — a fachada repassa a semântica do Apps Script,
+com os mesmos limites. A única proteção a mais: `Plataforma.propriedades.setProperties` **não
+repassa** o segundo argumento, então o `true` que apagaria o store não passa.
 
 ---
 
@@ -169,6 +191,7 @@ na Meta *antes* de republicar.
 
 | Arquivo | Responsabilidade |
 |---|---|
+| `Plataforma.gs` | **Único** ponto de contato com as APIs do Apps Script (cache, propriedades, HTTP, relógio, trava, gatilhos) — ver seção 2.1 |
 | `Webhook.gs` | Entrada (GET de verificação, POST de mensagens), autenticação, idempotência |
 | `Router.gs` | Despacha por estado da conversa |
 | `StateManager.gs` | Estado, dados temporários, sessões, primeiro contato |

@@ -127,7 +127,7 @@ const Utils = {
 
       try {
         this._chamadasExternas++;   // BL-25: conta cada tentativa real
-        resposta = UrlFetchApp.fetch(url, options);
+        resposta = Plataforma.http.fetch(url, options);
       } catch (e) {
         excecao = e;
       }
@@ -159,7 +159,7 @@ const Utils = {
         console.warn(`⏳ [${rotulo}] Falha transitória ` +
                      `(${excecao ? excecao.message : 'HTTP ' + code}) — ` +
                      `tentativa ${tentativa}/${this.RETRY_MAX_TENTATIVAS}, aguardando ${espera}ms`);
-        Utilities.sleep(espera);
+        Plataforma.relogio.dormir(espera);
       } else {
         console.error(`❌ [${rotulo}] Esgotadas as ${this.RETRY_MAX_TENTATIVAS} tentativas.`);
       }
@@ -194,7 +194,7 @@ const Utils = {
     if (!chamadas && !servico && !template) return;
 
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
       const shard = Math.floor(Math.random() * this.URLFETCH_SHARDS);
       const mes   = this._mesAtual();
 
@@ -282,7 +282,7 @@ const Utils = {
    * @returns {{servico: number, template: number, mes: string}}
    */
   somarMensagensDoMes() {
-    const todas = PropertiesService.getScriptProperties().getProperties();
+    const todas = Plataforma.propriedades.getProperties();
     const mes   = this._mesAtual();
     let servico = 0, template = 0;
 
@@ -307,7 +307,7 @@ const Utils = {
    */
   verificarCotaMensagens(todasProps) {
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
       const mes   = this._mesAtual();
       let servico = 0, template = 0;
 
@@ -338,7 +338,7 @@ const Utils = {
 
   verificarCotaUrlFetch(todasProps) {
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
 
       const total = this._somarShards({
         props,
@@ -363,7 +363,7 @@ const Utils = {
 
   /** Data em America/Sao_Paulo no formato yyyy-MM-dd. @private */
   _hoje(data) {
-    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
+    return Plataforma.relogio.formatar(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
   },
 
   /**
@@ -383,7 +383,7 @@ const Utils = {
    * `console.warn`. O bot funcionava; só a medição estava morta.
    */
   _mesAtual(data) {
-    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
+    return Plataforma.relogio.formatar(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
   },
 
   /**
@@ -533,11 +533,11 @@ const Utils = {
   estaBloqueado(from) {
     const chave = `${this.BLOQUEIO_PREFIXO}${from}`;
     try {
-      const cache    = CacheService.getScriptCache();
+      const cache    = Plataforma.cache;
       const cacheado = cache.get(chave);
       if (cacheado !== null) return cacheado === '1';
 
-      const bloqueado = !!PropertiesService.getScriptProperties().getProperty(chave);
+      const bloqueado = !!Plataforma.propriedades.getProperty(chave);
       cache.put(chave, bloqueado ? '1' : '0', bloqueado ? 3600 : 300);
       return bloqueado;
     } catch (e) {
@@ -563,7 +563,7 @@ const Utils = {
    */
   marcarSuspeito(from) {
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
       const chave = `${this.SUSPEITO_PREFIXO}${from}`;
       const hoje  = this._hoje();
 
@@ -590,11 +590,11 @@ const Utils = {
 
   excedeuTaxa(from) {
     try {
-      const props  = PropertiesService.getScriptProperties();
+      const props  = Plataforma.propriedades;
       const porMin = parseInt(props.getProperty('LIMITE_MSG_MINUTO'), 10) || this.LIMITE_MSG_MINUTO_PADRAO;
       const porHora = parseInt(props.getProperty('LIMITE_MSG_HORA'), 10) || this.LIMITE_MSG_HORA_PADRAO;
 
-      const cache = CacheService.getScriptCache();
+      const cache = Plataforma.cache;
       const agora = Date.now();
 
       // A chave inclui o BALDE de tempo. Isso não é detalhe: `cache.put` renova

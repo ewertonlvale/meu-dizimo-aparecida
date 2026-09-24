@@ -75,7 +75,7 @@ function testarPixNativo(numero, valorForcado) {
   // Property direto. Não use a constante NUMERO_TESTE de Tests.gs: aquele
   // arquivo está no .claspignore e nunca chega ao Apps Script.
   const destino =
-    numero || PropertiesService.getScriptProperties().getProperty('NUMERO_TESTE');
+    numero || Plataforma.propriedades.getProperty('NUMERO_TESTE');
 
   if (!destino) {
     Logger.log('❌ Sem número de destino.');
@@ -135,7 +135,7 @@ function testarPixNativo(numero, valorForcado) {
 
   // Guardada para a segunda sonda (`testarPixNativoPago`): o `order_status`
   // precisa do MESMO reference_id para encontrar o pedido.
-  PropertiesService.getScriptProperties().setProperties({
+  Plataforma.propriedades.setProperties({
     SONDA_PIX_REFERENCIA: referencia,
     SONDA_PIX_DESTINO:    destino
   });
@@ -263,7 +263,7 @@ function testarPixNativoPago() {
   Logger.log('\n💳 SONDA 2: order_status — fechar o pedido custa mensagem?');
   Logger.log('━'.repeat(60));
 
-  const props      = PropertiesService.getScriptProperties();
+  const props      = Plataforma.propriedades;
   const referencia = props.getProperty('SONDA_PIX_REFERENCIA');
   const destino    = props.getProperty('SONDA_PIX_DESTINO');
 

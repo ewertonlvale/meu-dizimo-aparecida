@@ -387,7 +387,7 @@ const FlowHandler = {
    * @returns {boolean} true se o Flow foi enviado.
    */
   enviarFlowCadastro(from, preenchido) {
-    const props  = PropertiesService.getScriptProperties();
+    const props  = Plataforma.propriedades;
     const flowId = props.getProperty('FLOW_ID_CADASTRO');
 
     if (!flowId) {
@@ -536,7 +536,7 @@ const FlowHandler = {
    *   no `flow_action_payload`.
    */
   enviarFlowOferta(from, dados = {}) {
-    const props  = PropertiesService.getScriptProperties();
+    const props  = Plataforma.propriedades;
     const flowId = props.getProperty('FLOW_ID_OFERTA');
 
     if (!flowId) {
@@ -613,7 +613,7 @@ const FlowHandler = {
   },
 
   enviarFlowMembro(from, dados) {
-    const props  = PropertiesService.getScriptProperties();
+    const props  = Plataforma.propriedades;
     const flowId = props.getProperty('FLOW_ID_MEMBRO');
 
     if (!flowId) {

@@ -25,7 +25,7 @@
  * EXECUTE ESTA FUNÇÃO UMA ÚNICA VEZ
  */
 function setupProperties() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   
   // ⚠️ EDITE OS VALORES ABAIXO COM SUAS CREDENCIAIS REAIS:
   const configuracoes = {
@@ -128,11 +128,11 @@ function setupProperties() {
  * Se o segredo já existir, a função não o troca — apenas reimprime a URL.
  */
 function configurarSegredoWebhook() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
 
   if (!props.getProperty('WEBHOOK_SECRET')) {
     // UUID v4 do Apps Script é aleatório; dois deles dão 64 chars hex.
-    const segredo = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+    const segredo = (Plataforma.bytes.uuid() + Plataforma.bytes.uuid()).replace(/-/g, '');
     props.setProperty('WEBHOOK_SECRET', segredo);
     Logger.log('✅ WEBHOOK_SECRET gerado e salvo.');
   } else {
@@ -144,7 +144,7 @@ function configurarSegredoWebhook() {
 
   let url = null;
   try {
-    url = ScriptApp.getService().getUrl();
+    url = Plataforma.gatilhos.urlDoServico();
   } catch (e) {
     Logger.log(`⚠️ Não consegui obter a URL do deployment: ${e.message}`);
   }
@@ -172,7 +172,7 @@ function configurarSegredoWebhook() {
  * ============================================
  */
 function verificarProperties() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   
   const propriedadesNecessarias = [
     'WHATSAPP_TOKEN',
@@ -314,7 +314,7 @@ function testarConexaoOdoo() {
     Logger.log('✅ Conexão OK — o Odoo respondeu.');
     Logger.log(`   Comunidades acessíveis: ${comunidades.length > 0 ? 'sim' : 'nenhuma encontrada'}`);
 
-    const uid = PropertiesService.getScriptProperties().getProperty('ODOO_UID');
+    const uid = Plataforma.propriedades.getProperty('ODOO_UID');
     Logger.log(`   Conectado com ODOO_UID = ${uid}${uid === '2' ? ' (administrador — ver BL-17)' : ''}`);
 
   } catch (e) {
@@ -357,7 +357,7 @@ function verificarConsumoMensagens() {
   }
 
   const agora     = new Date();
-  const diaDoMes  = Number(Utilities.formatDate(agora, 'America/Sao_Paulo', 'd'));
+  const diaDoMes  = Number(Plataforma.relogio.formatar(agora, 'America/Sao_Paulo', 'd'));
   const ultimoDia = new Date(agora.getFullYear(), agora.getMonth() + 1, 0).getDate();
   const projecao  = Math.round((contagem.servico / diaDoMes) * ultimoDia);
   const franquia  = Utils.MSG_FRANQUIA_SERVICO;
@@ -383,33 +383,11 @@ function verificarConsumoMensagens() {
   Logger.log('');
 }
 
-/**
- * ============================================
- * LIMPAR TODAS AS PROPRIEDADES (CUIDADO!)
- * ============================================
- */
-function limparTodasProperties() {
-  const ui = SpreadsheetApp.getUi(); // Ou DocumentApp.getUi() ou FormApp.getUi()
-  
-  const resposta = ui.alert(
-    'ATENÇÃO - OPERAÇÃO PERIGOSA',
-    'Tem certeza que deseja DELETAR todas as propriedades?\n\nIsso irá apagar:\n- Tokens do WhatsApp\n- Credenciais do Odoo\n- Chave da Vision API\n\nVocê precisará executar setupProperties() novamente!',
-    ui.ButtonSet.YES_NO
-  );
-  
-  if (resposta === ui.Button.YES) {
-    PropertiesService.getScriptProperties().deleteAllProperties();
-    Logger.log('');
-    Logger.log('🗑️ Todas as propriedades foram deletadas.');
-    Logger.log('');
-    Logger.log('Execute setupProperties() para reconfigurar.');
-    Logger.log('');
-  } else {
-    Logger.log('');
-    Logger.log('❌ Operação cancelada.');
-    Logger.log('');
-  }
-}
+// `limparTodasProperties()` foi removida na Fase 1 do BL-74. Apagava o store
+// inteiro — credenciais, sessões e contadores — atrás de uma confirmação por
+// `SpreadsheetApp.getUi()`, que num projeto standalone lança erro antes de
+// perguntar. Nunca funcionou, e não deve voltar: apagar uma chave é
+// `Plataforma.propriedades.deleteProperty(chave)`.
 
 /**
  * ============================================
@@ -417,7 +395,7 @@ function limparTodasProperties() {
  * ============================================
  */
 function adicionarPropriedade(chave, valor) {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   props.setProperty(chave, valor);
   
   Logger.log('');
@@ -431,7 +409,7 @@ function adicionarPropriedade(chave, valor) {
  * ============================================
  */
 function removerPropriedade(chave) {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   props.deleteProperty(chave);
   
   Logger.log('');
@@ -445,7 +423,7 @@ function removerPropriedade(chave) {
  * ============================================
  */
 function listarPropriedades() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const todasProps = props.getProperties();
   
   Logger.log('');
@@ -499,7 +477,7 @@ function listarPropriedades() {
  * @param {string} [numero] - Destinatário. Omitido, usa NUMERO_TESTE.
  */
 function enviarFlowDeTeste(numero) {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const destino = numero || props.getProperty('NUMERO_TESTE');
 
   if (!destino) {
@@ -571,7 +549,7 @@ function enviarFlowDeTeste(numero) {
  * Exige FLOW_ID_CADASTRO configurado.
  */
 function ativarFlowCadastro() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
 
   if (!props.getProperty('FLOW_ID_CADASTRO')) {
     Logger.log('❌ FLOW_ID_CADASTRO não configurado — o Flow não teria o que abrir.');
@@ -596,7 +574,7 @@ function ativarFlowCadastro() {
  * sendo aceita. O desligamento vale para os PRÓXIMOS cadastros.
  */
 function desativarFlowCadastro() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   props.setProperty('FLOW_CADASTRO_ATIVO', 'false');
   Logger.log('🛑 Flow de cadastro DESATIVADO.');
   Logger.log('   O FLOW_ID_CADASTRO foi mantido; religue com ativarFlowCadastro().');
@@ -627,7 +605,7 @@ function desativarFlowCadastro() {
  * caminho que não dependa dele.
  */
 function ativarCadastroPorConversa() {
-  PropertiesService.getScriptProperties().setProperty('CADASTRO_CONVERSA_ATIVO', 'true');
+  Plataforma.propriedades.setProperty('CADASTRO_CONVERSA_ATIVO', 'true');
   Logger.log('✅ Cadastro por CONVERSA ativado — o passo a passo volta a valer.');
   Logger.log('   São ~19 mensagens por cadastro, contra 4 pelo formulário.');
   Logger.log('   Quem escrever com o formulário aberto volta a cair nele.');
@@ -641,7 +619,7 @@ function ativarCadastroPorConversa() {
  * `ativarCadastroPorConversa()` temporário.
  */
 function desativarCadastroPorConversa() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   props.setProperty('CADASTRO_CONVERSA_ATIVO', 'false');
   Logger.log('🛑 Cadastro por conversa DESATIVADO — só o formulário cadastra.');
 
@@ -666,9 +644,9 @@ function desativarCadastroPorConversa() {
  * dela, a próxima resposta simplesmente cai no menu.
  */
 function listarSessoesAtivas() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const todas = props.getProperties();
-  const cache = CacheService.getScriptCache();
+  const cache = Plataforma.cache;
   const pref  = StateManager.PREFIXO_SESSAO;
 
   const numeros = Object.keys(todas)
@@ -764,7 +742,7 @@ function limparCacheContatos(numeros) {
     return;
   }
 
-  const cache = CacheService.getScriptCache();
+  const cache = Plataforma.cache;
   numeros.forEach(n => cache.remove(`contato_${n}`));
   Logger.log(`🗑️ Cache de contato limpo para ${numeros.length} número(s).`);
   Logger.log('   Eles receberão as boas-vindas de novo no próximo contato.');
@@ -792,7 +770,7 @@ function limparCacheContatos(numeros) {
  */
 function reviverPrimeiroContato(numero) {
   const destino =
-    numero || PropertiesService.getScriptProperties().getProperty('NUMERO_TESTE');
+    numero || Plataforma.propriedades.getProperty('NUMERO_TESTE');
 
   if (!destino) {
     Logger.log('❌ Sem número. Configure a Script Property NUMERO_TESTE');
@@ -812,7 +790,7 @@ function reviverPrimeiroContato(numero) {
     'tentativas_relatorio_', 'bloqueio_relatorio_'
   ];
   try {
-    CacheService.getScriptCache().removeAll(prefixos.map(p => p + destino));
+    Plataforma.cache.removeAll(prefixos.map(p => p + destino));
     Logger.log(`🗑️ Cache limpo (${prefixos.length} chaves).`);
   } catch (e) {
     Logger.log(`⚠️ Falha ao limpar o cache: ${e.message}`);
@@ -820,7 +798,7 @@ function reviverPrimeiroContato(numero) {
 
   // ── 2. A sessão em Properties ───────────────────────────────────────────
   try {
-    PropertiesService.getScriptProperties()
+    Plataforma.propriedades
       .deleteProperty(`${StateManager.PREFIXO_SESSAO}${destino}`);
     Logger.log('🗑️ Sessão em Properties removida.');
   } catch (e) {
@@ -910,11 +888,11 @@ function bloquearNumero(numero, motivo) {
     }
   } catch (e) { /* Odoo fora do ar não impede o bloqueio */ }
 
-  PropertiesService.getScriptProperties().setProperty(
+  Plataforma.propriedades.setProperty(
     `${Utils.BLOQUEIO_PREFIXO}${numero}`,
     JSON.stringify({ em: new Date().toISOString(), motivo: motivo || '' })
   );
-  try { CacheService.getScriptCache().remove(`${Utils.BLOQUEIO_PREFIXO}${numero}`); } catch (e) {}
+  try { Plataforma.cache.remove(`${Utils.BLOQUEIO_PREFIXO}${numero}`); } catch (e) {}
 
   Logger.log(`⛔ ${numero} bloqueado.${motivo ? ' Motivo: ' + motivo : ''}`);
   Logger.log('   Pode levar até 5 min para valer em todas as execuções (cache).');
@@ -923,14 +901,14 @@ function bloquearNumero(numero, motivo) {
 /** Remove o bloqueio. O número volta a ser atendido normalmente. */
 function desbloquearNumero(numero) {
   if (!numero) return Logger.log("❌ Informe o número.");
-  PropertiesService.getScriptProperties().deleteProperty(`${Utils.BLOQUEIO_PREFIXO}${numero}`);
-  try { CacheService.getScriptCache().remove(`${Utils.BLOQUEIO_PREFIXO}${numero}`); } catch (e) {}
+  Plataforma.propriedades.deleteProperty(`${Utils.BLOQUEIO_PREFIXO}${numero}`);
+  try { Plataforma.cache.remove(`${Utils.BLOQUEIO_PREFIXO}${numero}`); } catch (e) {}
   Logger.log(`✅ ${numero} desbloqueado.`);
 }
 
 /** Lista quem está bloqueado, com data e motivo. Só lê. */
 function listarBloqueados() {
-  const todas = PropertiesService.getScriptProperties().getProperties();
+  const todas = Plataforma.propriedades.getProperties();
   const linhas = Object.keys(todas)
     .filter(k => k.indexOf(Utils.BLOQUEIO_PREFIXO) === 0)
     .map(k => {
@@ -954,7 +932,7 @@ function listarBloqueados() {
  * real sobre qual critério seria seguro o bastante para agir sozinho.
  */
 function listarSuspeitos() {
-  const todas = PropertiesService.getScriptProperties().getProperties();
+  const todas = Plataforma.propriedades.getProperties();
   const linhas = Object.keys(todas)
     .filter(k => k.indexOf(Utils.SUSPEITO_PREFIXO) === 0)
     .map(k => {
@@ -978,7 +956,7 @@ function listarSuspeitos() {
 
 /** Apaga o histórico de suspeitos. Útil depois de revisar a lista. */
 function limparSuspeitos() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const todas = props.getProperties();
   let n = 0;
   Object.keys(todas)
@@ -1017,7 +995,7 @@ function limparSuspeitos() {
  * Menu do editor: Executar → podarContadores
  */
 function podarContadores() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const todas = props.getProperties();
   const antes = Object.keys(todas).length;
 
@@ -1081,7 +1059,7 @@ function podarContadores() {
  * Menu do editor: Executar → listarPropriedades
  */
 function listarPropriedades() {
-  const todas = PropertiesService.getScriptProperties().getProperties();
+  const todas = Plataforma.propriedades.getProperties();
   const chaves = Object.keys(todas).sort();
 
   const grupo = (c) => {
