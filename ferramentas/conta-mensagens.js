@@ -3481,6 +3481,17 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // Tirar acesso por script tranca gente para fora — é passo manual.
     { nome: 'não remove ninguém de grupo por script',
       ok: !/groups_id:\s*\[\[\s*3\s*,/.test(fonte) },
+    // res.partner com escrita é o PISO de base.group_user: todo usuário
+    // interno tem. Contá-lo como sobra acusaria "ainda é administrador" em
+    // cima de um usuário corretamente limitado — e alarme falso gasta o
+    // alarme: na próxima sobra de verdade, ninguém olha.
+    { nome: 'o piso do usuário interno não é contado como sobra',
+      ok: /Piso do usuário interno/.test(fonte)
+       && !/\[\s*'res\.partner',\s*'ir\.model\.fields'/.test(fonte) },
+    // Estava na MATRIZ com write:0 E na lista de proibidos: a mesma falha
+    // entrava duas vezes no total.
+    { nome: 'ir.model.fields não é verificado em duplicidade',
+      ok: (fonte.match(/'ir\.model\.fields'/g) || []).length === 1 },
   ];
 
   for (const c of casos) {
