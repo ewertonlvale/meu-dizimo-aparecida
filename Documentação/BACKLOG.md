@@ -2326,3 +2326,40 @@ isso, na primeira execução.
 script tranca alguém para fora quando o login errado é informado, e há caso no harness garantindo
 que o script nunca remove ninguém de grupo.
 
+---
+
+### BL-17 — nota de 24/09 (2): o alarme falso do `res.partner`
+
+Com o usuário criado (**Função: Usuário**, não Administrador), o grupo "Meu Dízimo · Bot"
+instalado com a matriz correta e 1 usuário dentro, a tela do Odoo mostrava também:
+**Direitos de acesso: 127. Regras de registro: 58. Grupos: 4.**
+
+Nosso grupo contribui **9** desses 127. Os outros ~118 vêm do grupo de usuário interno padrão
+(`base.group_user`), e é aí que estava o defeito.
+
+**O verificador contava `res.partner` como sobra** e concluía *"provavelmente o usuário ainda é
+administrador"*. Isso é falso: `base.group_user` concede escrita em `res.partner`,
+`ir.attachment` e `mail.message` a **todo usuário interno** do Odoo. É o piso, não um sinal de
+privilégio — e o `--verificar` teria acusado de administrador um usuário corretamente limitado,
+logo depois de a tela provar o contrário.
+
+**Alarme falso desgasta o alarme.** Na próxima sobra de verdade, ninguém olha. Por isso a lista
+foi partida em duas:
+
+- **Escrita que só administrador deveria ter** — `ir.ui.view`, `ir.cron`, `res.groups`. Exigem
+  `base.group_system` ou `base.group_erp_manager`. Aqui, sobra é achado.
+- **Piso do usuário interno** — `res.partner`, `ir.attachment`, `mail.message`. Informativo,
+  não conta.
+
+`ir.model.fields` saiu da lista de proibidos: já estava na MATRIZ com `write: 0`, e a duplicação
+fazia a mesma falha entrar duas vezes no total.
+
+**O residual, dito com todas as letras.** No Odoo, um usuário interno não pode ser mais restrito
+que `base.group_user` — a alternativa seria usuário de portal, que não serve para o acesso via
+API aos modelos `x_*`. Então o bot **continua alcançando os modelos padrão do Odoo** (contatos,
+anexos, mensagens). O que o BL-17 elimina é o poder de administrador: apagar a base, gerenciar
+usuários, instalar módulos, ler tudo. É uma redução grande e não é redução total. Baixar do piso
+exigiria regras de registro por modelo, que é outro item.
+
+**Cobertura:** mais 2 casos no `conta-mensagens.js`, ambos reprovando contra a versão anterior.
+

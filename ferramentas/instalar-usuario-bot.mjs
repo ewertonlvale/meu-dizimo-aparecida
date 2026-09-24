@@ -162,20 +162,45 @@ if (CONFIG.verificar) {
     console.log(`   ${m.model.padEnd(24)} ${linha.join('  ')}`);
   }
 
-  // O que NÃO devia poder de jeito nenhum.
-  console.log('\n   Modelos que este usuário não deveria alcançar:');
-  for (const m of ['res.partner', 'ir.model.fields', 'ir.ui.view', 'ir.cron', 'res.groups']) {
+  // ── Escrita que só administrador tem ──────────────────────────────────
+  // Estes três exigem base.group_system (ou group_erp_manager, no caso de
+  // res.groups). Se algum responder que pode, o usuário ainda tem poder de
+  // administrador — e aí o grupo restritivo não limitou nada.
+  //
+  // `ir.model.fields` NÃO entra aqui: já está na MATRIZ com write:0, e
+  // repetir fazia a mesma falha ser contada duas vezes no total.
+  console.log('\n   Escrita que só administrador deveria ter:');
+  for (const m of ['ir.ui.view', 'ir.cron', 'res.groups']) {
     const w = await pode(m, 'write');
-    const esperado = false;
-    const ok = w === esperado;
+    const ok = w !== true;
     if (!ok) sobrando++;
     console.log(`   ${m.padEnd(24)} write:${w === true ? '✓ SOBRA' : '· ok'}`);
   }
 
+  // ── O piso do Odoo, que não dá para baixar ────────────────────────────
+  // Todo usuário INTERNO está em `base.group_user`, e esse grupo já concede
+  // escrita em res.partner, mail.message, ir.attachment e companhia. Não é
+  // sinal de administrador e NÃO conta como sobra — é o mínimo que o Odoo
+  // dá a quem não é portal.
+  //
+  // Isto estava junto com os de cima, e teria acusado "provavelmente ainda é
+  // administrador" em cima de um usuário corretamente limitado. Errar para o
+  // lado do alarme falso desgasta o alarme: na próxima sobra de verdade,
+  // ninguém olha.
+  console.log('\n   Piso do usuário interno (informativo, não é sobra):');
+  for (const m of ['res.partner', 'ir.attachment', 'mail.message']) {
+    const w = await pode(m, 'write');
+    console.log(`   ${m.padEnd(24)} write:${w === true ? '✓ (esperado)' : '·'}`);
+  }
+
   console.log('');
   if (faltando) console.log(`❌ ${faltando} permissão(ões) FALTANDO — o bot vai quebrar nelas.`);
-  if (sobrando) console.log(`⚠️  ${sobrando} permissão(ões) SOBRANDO — provavelmente o usuário ainda é administrador.`);
-  if (!faltando && !sobrando) console.log('✅ Exatamente o que o código usa, nada além.');
+  if (sobrando) console.log(`⚠️  ${sobrando} permissão(ões) SOBRANDO — o usuário ainda tem poder de administrador.`);
+  if (!faltando && !sobrando) {
+    console.log('✅ Exatamente o que o código usa nos modelos do bot, e nada de administrador.');
+    console.log('   Residual conhecido: o piso de `base.group_user` acima. Baixar disso');
+    console.log('   exigiria regras de registro (record rules) por modelo — fora do BL-17.');
+  }
   console.log('');
   process.exit(faltando ? 1 : 0);
 }
