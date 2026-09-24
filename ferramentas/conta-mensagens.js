@@ -3536,6 +3536,20 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // Mas a GRAVAÇÃO tem de ir no explícito — all_group_ids é computed.
     { nome: 'entra no grupo gravando o campo explícito',
       ok: /group_ids: \[\[4, grupoId\]\]/.test(fonte) },
+    // res_users write em base.group_user É DE FÁBRICA no Odoo
+    // (base/security/ir.model.access.csv: ...,base.group_user,1,1,0,0) e é o
+    // que permite a cada um editar as próprias preferências. Exigir 0 gerava
+    // achado que ninguém pode resolver.
+    { nome: 'res.users write é tratado como piso, não como achado',
+      ok: /read: 1, write: null/.test(fonte) },
+    // --restringir mexe na permissão de TODOS os internos. Duas travas.
+    { nome: '--restringir só toca em modelo x_*',
+      ok: /startsWith\('x_'\)/.test(fonte) },
+    { nome: '--restringir só toca em regra de base.group_user',
+      ok: /'name', '=', 'group_user'/.test(fonte)
+       && /\['group_id', '=', gu\.res_id\]/.test(fonte) },
+    { nome: '--restringir simula por padrão',
+      ok: /CONFIG\.restringir/.test(fonte) && /acrescente --aplicar para gravar/.test(fonte) },
     { nome: "has_access é chamado como [[], op], não [op]",
       ok: /has_access',\s*\[\[\],\s*op\]/.test(fonte) },
     // O mock lia args[0] como operação — repetia o engano de quem chamava e

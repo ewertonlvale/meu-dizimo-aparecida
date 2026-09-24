@@ -79,7 +79,7 @@ const CAMPOS = {
                       'perm_read', 'perm_write', 'perm_create', 'perm_unlink'],
 };
 
-function subir(cenario, porta) {
+function subir(cenario, porta, gravado = []) {
   return new Promise((pronto) => {
     const s = http.createServer((req, res) => {
       let corpo = '';
@@ -113,11 +113,19 @@ function subir(cenario, porta) {
         if (method === 'search_read') {
           if (model === 'ir.model.access')  return res.end(JSON.stringify({ result: ACLS[cenario] || [] }));
           if (model === 'ir.model')         return res.end(JSON.stringify({ result: [{ id: 9, model: 'x_comunidade' }] }));
-          if (model === 'ir.model.data')    return res.end(JSON.stringify({ result: [] }));
+          if (model === 'ir.model.data')    return res.end(JSON.stringify({
+            result: cenario.startsWith('restringir') ? [{ id: 1, name: 'group_user', res_id: 1 }] : [] }));
           if (model === 'res.users')        return res.end(JSON.stringify({
             result: [{ id: 13, name: 'Bot de Mentira', login: 'bot@exemplo.org',
                        group_ids: [1, 7], all_group_ids: [1, 7, 12] }] }));
           return res.end(JSON.stringify({ result: [] }));
+        }
+
+        // --restringir grava em ir.model.access. O mock registra o que foi
+        // gravado para o cenário poder afirmar QUE regras foram tocadas.
+        if (method === 'write' && model === 'ir.model.access') {
+          gravado.push({ ids: args[0], vals: args[1] });
+          return res.end(JSON.stringify({ result: true }));
         }
 
         if (method === 'has_access') {
@@ -186,6 +194,19 @@ const ACLS = {
   ],
 };
 
+// Para --restringir: o que base.group_user concede nos x_*. Espelha o achado
+// real de 24/09 — a regra do Studio dando escrita a todo usuário interno.
+ACLS['restringir-com-excesso'] = [
+  { id: 11, name: 'Comunidade group_user', model_id: [9, 'Comunidade'],
+    group_id: [1, 'Role / User'],
+    perm_read: true, perm_write: true, perm_create: true, perm_unlink: false },
+];
+ACLS['restringir-ja-certo'] = [
+  { id: 11, name: 'Comunidade group_user', model_id: [9, 'Comunidade'],
+    group_id: [1, 'Role / User'],
+    perm_read: true, perm_write: false, perm_create: false, perm_unlink: false },
+];
+
 const CENARIOS = [
   { nome: 'uid-inexistente', saida: 1, espera: /NÃO EXISTE/,
     porque: 'uid digitado errado não pode receber atestado de boa conduta' },
@@ -205,6 +226,13 @@ const CENARIOS = [
     porque: '--explicar precisa ao menos rodar: era ele que estourava no campo morto' },
   { nome: 'explicar-culpado', modo: 'explicar', saida: 1, espera: /SEM GRUPO/,
     porque: 'a regra do Studio, sem grupo, é a que concede a mais — tem de ser nomeada' },
+  // --restringir mexe na permissão de TODOS os usuários internos. Simular por
+  // padrão não é gentileza, é a diferença entre revisável e irreversível.
+  { nome: 'restringir-com-excesso', modo: 'restringir', saida: 0, espera: /Nada foi gravado/,
+    porque: 'sem --aplicar não pode gravar nada, por mais óbvia que a mudança pareça',
+    confere: (g) => (g.length === 0 ? null : `gravou ${g.length} vez(es) em modo simulação`) },
+  { nome: 'restringir-ja-certo', modo: 'restringir', saida: 0, espera: /Nada a restringir/,
+    porque: 'rodar de novo depois de aplicado não pode inventar mudança' },
 ];
 
 let porta = 8900;
@@ -213,11 +241,14 @@ let falhas = 0;
 console.log('\n🧪 O verificador do BL-17 contra um Odoo de mentira\n');
 
 for (const c of CENARIOS) {
-  const servidor = await subir(c.nome, ++porta);
+  const gravado = [];
+  const servidor = await subir(c.nome, ++porta, gravado);
 
   const r = await new Promise((ok) =>
     execFile('node', c.modo === 'explicar'
       ? ['ferramentas/instalar-usuario-bot.mjs', '--explicar', '--login=bot@exemplo.org']
+      : c.modo === 'restringir'
+      ? ['ferramentas/instalar-usuario-bot.mjs', '--restringir']
       : ['ferramentas/instalar-usuario-bot.mjs', '--verificar'], {
       cwd: RAIZ,
       env: { ...process.env,
@@ -230,11 +261,12 @@ for (const c of CENARIOS) {
 
   const codeOk = r.code === c.saida;
   const txtOk  = c.espera.test(r.txt);
-  const ok = codeOk && txtOk;
+  const extra = c.confere ? c.confere(gravado) : null;
+  const ok = codeOk && txtOk && !extra;
   if (!ok) falhas++;
 
   console.log(`${ok ? '✅' : '❌'} ${c.nome.padEnd(17)} exit ${r.code} (esperado ${c.saida})`
-    + (ok ? '' : `\n     ${txtOk ? '' : 'não disse ' + c.espera}`));
+    + (ok ? '' : `\n     ${txtOk ? '' : 'não disse ' + c.espera}${extra ? ' ' + extra : ''}`));
   console.log(`   ${c.porque}`);
 }
 
