@@ -2241,6 +2241,33 @@ const COMPROVANTES = [
     texto: 'Chave Pix: +55 86 98852-1231\nValor: R$ 25,00\n',
     chave: '+55 86 98852-1231',
     valor: 25
+  },
+  // BL-82: sem o ponto de milhar, a expressão parava no terceiro dígito.
+  // "R$ 1234,56" virava 123, e o valor plausível passava por todas as
+  // conferências.
+  {
+    nome: 'Valor sem separador de milhar, com rótulo — BL-82',
+    texto: 'Valor: R$ 1234,56\n',
+    chave: null,
+    valor: 1234.56
+  },
+  {
+    nome: 'Cinco dígitos sem separador — BL-82',
+    texto: 'Valor pago R$ 10000,00\n',
+    chave: null,
+    valor: 10000
+  },
+  {
+    nome: 'Sem rótulo e sem separador: o maior valor continua valendo — BL-82',
+    texto: 'Pix enviado\nR$ 1500,00\nTarifa: R$ 2,50\n',
+    chave: null,
+    valor: 1500
+  },
+  {
+    nome: 'Com separador de milhar continua certo — BL-82',
+    texto: 'Valor: R$ 1.234,56\n',
+    chave: null,
+    valor: 1234.56
   }
 ];
 
