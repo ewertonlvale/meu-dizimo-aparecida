@@ -35,6 +35,13 @@ const nodeCrypto = require('node:crypto');
 
 const RAIZ = path.join(__dirname, '..');
 
+// Toda leitura de fonte passa por aqui. No Windows, com `core.autocrlf=true`,
+// o Git entrega os arquivos com CRLF — e as expressões deste harness, escritas
+// com `\n`, deixavam de casar SÓ na máquina de quem desenvolve, enquanto o CI
+// (Linux, LF) seguia verde. É a divergência que o verificar-tudo existe para
+// impedir. Normalizar na leitura vale para qualquer checkout.
+const lerTexto = (caminho) => fs.readFileSync(caminho, 'utf8').replace(/\r\n/g, '\n');
+
 // ---------------------------------------------------------------------------
 // A borda: tudo o que sai do processo vira contador
 // ---------------------------------------------------------------------------
@@ -59,7 +66,7 @@ function extratoresDoVision() {
   };
   vm.createContext(ctx);
   return vm.runInContext(
-    fs.readFileSync(path.join(RAIZ, 'VisionService.gs'), 'utf8') + '\n;VisionService',
+    lerTexto(path.join(RAIZ, 'VisionService.gs')) + '\n;VisionService',
     ctx, { filename: 'VisionService.gs' }
   );
 }
@@ -160,7 +167,7 @@ function montarContexto(cenario) {
     'Router.gs'
   ];
   const fontes = ARQUIVOS
-    .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
+    .map(a => lerTexto(path.join(RAIZ, a)))
     .join('\n;\n');
 
   const mod = vm.runInContext(
@@ -1251,9 +1258,9 @@ console.log('🧭 Métodos chamados que não existem\n');
     SpreadsheetApp: {}, DriveApp: {}, MailApp: {}, Session: {}
   };
   vm.createContext(ctxTudo);
-  const fontes = OBJETOS.map(([arq]) => fs.readFileSync(path.join(RAIZ, arq), 'utf8'));
+  const fontes = OBJETOS.map(([arq]) => lerTexto(path.join(RAIZ, arq)));
   const tudo = vm.runInContext(
-    [fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8')].concat(fontes).join('\n;\n') +
+    [lerTexto(path.join(RAIZ, 'Config.gs'))].concat(fontes).join('\n;\n') +
     '\n;({' + OBJETOS.map(([, nome]) => nome).join(', ') + '});',
     ctxTudo, { filename: 'todos.gs' }
   );
@@ -1479,8 +1486,8 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
     let erro = null;
     try {
       vm.runInContext(
-        fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8') + '\n;\n' +
-        fs.readFileSync(path.join(RAIZ, sonda.arquivo), 'utf8') + '\n;\n' +
+        lerTexto(path.join(RAIZ, 'Config.gs')) + '\n;\n' +
+        lerTexto(path.join(RAIZ, sonda.arquivo)) + '\n;\n' +
         sonda.funcao + '();',
         ctx, { filename: sonda.arquivo }
       );
@@ -1518,7 +1525,7 @@ console.log('📦 Globais que só existem fora do deploy\n');
 // Esta varredura lê o .claspignore, coleta o que os arquivos EXCLUÍDOS
 // declaram no topo, e acusa quem é enviado e depende disso.
 {
-  const padroes = fs.readFileSync(path.join(RAIZ, '.claspignore'), 'utf8')
+  const padroes = lerTexto(path.join(RAIZ, '.claspignore'))
     .split('\n').map(l => l.trim())
     .filter(l => l && !l.startsWith('#'));
 
@@ -1533,14 +1540,14 @@ console.log('📦 Globais que só existem fora do deploy\n');
   const DECL = /^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm;
   const foraDoDeploy = new Map();
   for (const arq of excluidos) {
-    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    const fonte = lerTexto(path.join(RAIZ, arq));
     let m;
     while ((m = DECL.exec(fonte)) !== null) foraDoDeploy.set(m[1], arq);
   }
 
   let achados = 0;
   for (const arq of enviados) {
-    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8')
+    const fonte = lerTexto(path.join(RAIZ, arq))
       // Comentários e strings citam esses nomes o tempo todo; só o código conta.
       // Uma passada só, com alternância: quem começa primeiro vence. Em duas
       // passadas o `//` de uma URL dentro de string comeria o resto da linha e
@@ -1590,7 +1597,7 @@ console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
   };
   vm.createContext(ctxFlow);
   const FlowReal = vm.runInContext(
-    fs.readFileSync(path.join(RAIZ, 'FlowHandler.gs'), 'utf8') + '\n;FlowHandler;',
+    lerTexto(path.join(RAIZ, 'FlowHandler.gs')) + '\n;FlowHandler;',
     ctxFlow, { filename: 'FlowHandler.gs' }
   );
 
@@ -1746,7 +1753,7 @@ console.log('🔁 baixar-views: indentar não pode mudar a impressão digital\n'
 // tratei) e sim o texto solto, que o indentador põe na própria linha — e as
 // views do Studio são cheias de `<attribute name="x">true</attribute>`.
 {
-  const fonte = fs.readFileSync(path.join(RAIZ, 'ferramentas/baixar-views.mjs'), 'utf8');
+  const fonte = lerTexto(path.join(RAIZ, 'ferramentas/baixar-views.mjs'));
   const trecho = (de, ate) => fonte.slice(fonte.indexOf(de), fonte.indexOf(ate));
   const digital  = new Function('createHash', trecho('const digital', '// Tira o comentário') + '; return digital;')(nodeCrypto.createHash);
   const indentar = new Function(trecho('function indentar', '// Nome de arquivo') + '; return indentar;')();
@@ -2381,7 +2388,7 @@ console.log('🔐 Nada que identifique a instância no repositório público\n')
   for (const f of ARQUIVOS) {
     const caminho = path.join(RAIZ, f);
     if (!fs.existsSync(caminho) || fs.statSync(caminho).isDirectory()) continue;
-    const txt = fs.readFileSync(caminho, 'utf8');
+    const txt = lerTexto(caminho);
     for (const linha of txt.split('\n')) {
       const m = linha.match(CONCRETO);
       if (m) achados.push(`${f}: ${m[0]}`);
@@ -2417,7 +2424,7 @@ console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
   // A tabela vem do Config.gs de verdade, recortada e avaliada. Uma lista
   // copiada aqui envelheceria em silêncio — que é exatamente o problema que
   // esta verificação existe para pegar.
-  const cfg = fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8');
+  const cfg = lerTexto(path.join(RAIZ, 'Config.gs'));
   const de = cfg.indexOf('const CONFERENCIA = {');
   const ate = cfg.indexOf('\n};', de) + 3;
   const CONFERENCIA = de < 0 ? {} : new Function(cfg.slice(de, ate) + '; return CONFERENCIA;')();
@@ -2440,7 +2447,7 @@ console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
       console.log(`❌ ${rotulo}: ${arq} não existe`);
       continue;
     }
-    const xml = fs.readFileSync(caminho, 'utf8');
+    const xml = lerTexto(caminho);
 
     // Um código está traduzido quando há um <span invisible="… != 'codigo'">
     // com texto dentro — é essa a forma que faz a frase aparecer só no caso dele.
@@ -2861,7 +2868,7 @@ console.log('🛡️  baixar-views: o --download não pode apagar edição local
 //
 // O --update já tinha a trava no sentido contrário. Esta é a simétrica.
 {
-  const fonte = fs.readFileSync(path.join(RAIZ, 'ferramentas/baixar-views.mjs'), 'utf8');
+  const fonte = lerTexto(path.join(RAIZ, 'ferramentas/baixar-views.mjs'));
   const de = fonte.indexOf('const decidirDownload');
   const ate = fonte.indexOf('};', de) + 2;
   if (de < 0) {
@@ -2936,7 +2943,7 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
   let dominios = 0;
   const achados = [];
   for (const f of arquivos) {
-    const xml = fs.readFileSync(path.join(dirViews, f), 'utf8');
+    const xml = lerTexto(path.join(dirViews, f));
     // Só o conteúdo de domain="..." interessa: `.replace(` em outro lugar
     // (num t-out, num help) é JavaScript de verdade e funciona.
     for (const m of xml.matchAll(/\bdomain\s*=\s*"([^"]*)"/g)) {
@@ -2965,7 +2972,7 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
   {
     const quebrados = [];
     for (const f of arquivos) {
-      const xml = fs.readFileSync(path.join(dirViews, f), 'utf8');
+      const xml = lerTexto(path.join(dirViews, f));
       for (const c of xml.matchAll(/<!--([\s\S]*?)-->/g)) {
         if (c[1].includes('--')) {
           const trecho = c[1].match(/.{0,30}--.{0,20}/s)?.[0].replace(/\s+/g, ' ').trim();
@@ -3003,7 +3010,7 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
       falhas++;
       console.log(`❌ ${ARQ} não existe — é o card que leva os botões`);
     } else {
-      const arch = fs.readFileSync(caminho, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
+      const arch = lerTexto(caminho).replace(/^<!--[\s\S]*?-->\n/, '');
       const erros = [];
 
       if (arch.includes(MARCADOR)) {
@@ -3060,7 +3067,7 @@ console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n'
     const lerBotoes = (arq) => {
       const caminho = path.join(dirViews, arq);
       if (!fs.existsSync(caminho)) return null;
-      const xml = fs.readFileSync(caminho, 'utf8');
+      const xml = lerTexto(caminho);
       const achados = {};
       for (const m of xml.matchAll(/<button\s[^>]*>/g)) {
         const id = m[0].match(/name="(\d+)"/)?.[1];
@@ -3102,8 +3109,8 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
 // Por isso cada caso abaixo fixa o RELÓGIO e a RESPOSTA DO ODOO e afirma o
 // número exato de mensagens. Nada vai para a rede.
 {
-  const fonteConfig = fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8');
-  const fonteNotif  = fs.readFileSync(path.join(RAIZ, 'NotificacaoHandler.gs'), 'utf8');
+  const fonteConfig = lerTexto(path.join(RAIZ, 'Config.gs'));
+  const fonteNotif  = lerTexto(path.join(RAIZ, 'NotificacaoHandler.gs'));
 
   // Um dizimista sintético. `dia` 1 garante que o dia de notificação (dia+2,
   // teto 28) já passou na data fixada abaixo.
@@ -3301,9 +3308,9 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
 // pior que não documentar: alguém digitaria 300 porque o instalador disse que
 // podia, e o bot voltaria calado para 20.
 {
-  const cfg = fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8');
-  const mjs = fs.readFileSync(
-    path.join(RAIZ, 'ferramentas', 'instalar-escalonamento-notificacao.mjs'), 'utf8');
+  const cfg = lerTexto(path.join(RAIZ, 'Config.gs'));
+  const mjs = lerTexto(
+    path.join(RAIZ, 'ferramentas', 'instalar-escalonamento-notificacao.mjs'));
 
   const doCampo = {
     horaInicio:     'x_studio_notif_hora_inicio',
@@ -3355,7 +3362,7 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
 // everyHours(2), o intervalo volta a morar no Apps Script e mudá-lo no Odoo
 // deixa de ter efeito — sem erro nenhum, só com a configuração virando enfeite.
 {
-  const fonte = fs.readFileSync(path.join(RAIZ, 'NotificacaoHandler.gs'), 'utf8');
+  const fonte = lerTexto(path.join(RAIZ, 'NotificacaoHandler.gs'));
   const m = fonte.match(/\.everyHours\((\d+)\)/);
   const ok = m && m[1] === '1';
   if (!ok) falhas++;
@@ -3377,7 +3384,7 @@ console.log('🗂️  Teto de 50 propriedades do editor (BL-75)\n');
 // Nada no código dizia esse número. Esta verificação diz: calcula o regime
 // permanente a partir das constantes e reprova se ele voltar a passar do teto.
 {
-  const fonte = fs.readFileSync(path.join(RAIZ, 'Utils.gs'), 'utf8');
+  const fonte = lerTexto(path.join(RAIZ, 'Utils.gs'));
   const num = (nome) => {
     const m = fonte.match(new RegExp(nome + ':\\s*(\\d+)'));
     return m ? Number(m[1]) : null;
@@ -3390,7 +3397,7 @@ console.log('🗂️  Teto de 50 propriedades do editor (BL-75)\n');
   // Chaves de configuração que o código lê. É o piso: elas nunca são podadas.
   const config = new Set();
   for (const arq of fs.readdirSync(RAIZ).filter(f => f.endsWith('.gs'))) {
-    const src = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    const src = lerTexto(path.join(RAIZ, arq));
     for (const m of src.matchAll(/getProperty\(\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\)/g)) {
       config.add(m[1]);
     }
@@ -3426,7 +3433,7 @@ console.log('🗂️  Teto de 50 propriedades do editor (BL-75)\n');
   // A poda manual não pode encostar em nada que não seja contador. Trocar a
   // pane da tela por perda de ODOO_API_KEY seria um negócio muito pior.
   {
-    const setup = fs.readFileSync(path.join(RAIZ, 'Setup.gs'), 'utf8');
+    const setup = lerTexto(path.join(RAIZ, 'Setup.gs'));
     const corpo = setup.slice(setup.indexOf('function podarContadores()'));
     const fim   = corpo.indexOf('\nfunction ');
     const podar = fim > 0 ? corpo.slice(0, fim) : corpo;
@@ -3454,8 +3461,8 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
 // versão, e a busca do grupo de admin por nome em inglês num Odoo em
 // português. As duas dariam falso OK.
 {
-  const bruto = fs.readFileSync(
-    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'), 'utf8');
+  const bruto = lerTexto(
+    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'));
 
   // Os comentários deste script CITAM o código errado de propósito, ao
   // explicar por que ele foi trocado. Sem tirar comentário, a busca por
@@ -3507,7 +3514,7 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // process.exit(faltando ? 1 : 0) ignorava sobrando: um usuário AINDA
     // ADMINISTRADOR saía com zero, e passaria em qualquer CI.
     { nome: 'sobra e indeterminado também derrubam o código de saída',
-      ok: /process\.exit\(faltando \|\| sobraNoBot \|\| sobraDeAdmin \|\| indeterminado/.test(fonte) },
+      ok: /(?:process\.exit|await sair)\(faltando \|\| sobraNoBot \|\| sobraDeAdmin \|\| indeterminado/.test(fonte) },
     // Sobra por ACL aditiva NÃO é poder de administrador, e dizer que é manda
     // a pessoa procurar em Administração quando o problema está em
     // ir.model.access. Os dois contadores têm de ser separados.
@@ -3573,15 +3580,15 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // --aplicar --login=, modos que ela nem exercitava.
     { nome: 'a prova recusa campo inexistente, como o Odoo',
       ok: (() => {
-        const pv = fs.readFileSync(
-          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'), 'utf8');
+        const pv = lerTexto(
+          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'));
         return /Invalid field/.test(pv) && /const CAMPOS = \{/.test(pv)
             && /modo: 'explicar'/.test(pv);
       })() },
     { nome: 'o Odoo de mentira reproduz o despacho do call_kw',
       ok: (() => {
-        const pv = fs.readFileSync(
-          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'), 'utf8');
+        const pv = lerTexto(
+          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'));
         return /const \[ids, operacao\] = args/.test(pv)
             && /missing 1 required positional argument/.test(pv);
       })() },
@@ -3626,18 +3633,18 @@ console.log('🔑 Todo modelo que o bot toca está na matriz de permissões (BL-
   // schema — a matriz os exclui de propósito (ver comentário da MATRIZ).
   const MANUAIS = new Set(['SetupCamposFamilia.gs', 'SetupCamposOferta.gs']);
 
-  const ignorados = fs.readFileSync(path.join(RAIZ, '.claspignore'), 'utf8')
+  const ignorados = lerTexto(path.join(RAIZ, '.claspignore'))
     .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 
-  const matriz = fs.readFileSync(
-    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'), 'utf8');
+  const matriz = lerTexto(
+    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'));
   const naMatriz = new Set(
     [...matriz.matchAll(/\{ model: '([^']+)'/g)].map((m) => m[1]));
 
   const forasteiros = new Map();
   for (const arq of fs.readdirSync(RAIZ).filter((f) => f.endsWith('.gs'))) {
     if (ignorados.includes(arq) || MANUAIS.has(arq)) continue;   // não vai a produção
-    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    const fonte = lerTexto(path.join(RAIZ, arq));
     for (const m of fonte.matchAll(CHAMADAS)) {
       if (!naMatriz.has(m[1])) {
         if (!forasteiros.has(m[1])) forasteiros.set(m[1], []);
@@ -3661,7 +3668,7 @@ console.log('🔑 Todo modelo que o bot toca está na matriz de permissões (BL-
   // permissão concedida a modelo que o código não usa mais.
   const usados = new Set();
   for (const arq of fs.readdirSync(RAIZ).filter((f) => f.endsWith('.gs'))) {
-    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    const fonte = lerTexto(path.join(RAIZ, arq));
     for (const m of fonte.matchAll(CHAMADAS)) usados.add(m[1]);
   }
   const sobrando = [...naMatriz].filter((m) => !usados.has(m));
@@ -3688,7 +3695,7 @@ console.log('⚙️  O CI roda o mesmo que você roda (BL-74, Fase 0)\n');
   if (!fs.existsSync(wf)) {
     casos.push({ nome: 'o workflow de verificação existe', ok: false });
   } else {
-    const y = fs.readFileSync(wf, 'utf8');
+    const y = lerTexto(wf);
     casos.push(
       { nome: 'o workflow existe e roda em pull_request',
         ok: /^on:/m.test(y) && /pull_request/.test(y) },
@@ -3708,7 +3715,7 @@ console.log('⚙️  O CI roda o mesmo que você roda (BL-74, Fase 0)\n');
   if (!fs.existsSync(entrada)) {
     casos.push({ nome: 'o ponto de entrada existe', ok: false });
   } else {
-    const e = fs.readFileSync(entrada, 'utf8');
+    const e = lerTexto(entrada);
     const listadas = [...e.matchAll(/arquivo: '([^']+)'/g)].map((m) => m[1]);
     const faltando = listadas.filter((f) => !fs.existsSync(path.join(RAIZ, f)));
     casos.push({
