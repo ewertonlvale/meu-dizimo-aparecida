@@ -3365,6 +3365,86 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('🗂️  Teto de 50 propriedades do editor (BL-75)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A pane não foi vazamento: a poda automática sempre funcionou. Foi ARITMÉTICA
+// — a retenção estava dimensionada muito acima de qualquer leitor, e o regime
+// permanente ficava em ~120 propriedades contra um teto de INTERFACE de 50.
+// Acima dele a lista do editor vira somente leitura e se perde a tela de
+// configuração inteira: não dá para trocar ODOO_API_KEY nem nada.
+//
+// Nada no código dizia esse número. Esta verificação diz: calcula o regime
+// permanente a partir das constantes e reprova se ele voltar a passar do teto.
+{
+  const fonte = fs.readFileSync(path.join(RAIZ, 'Utils.gs'), 'utf8');
+  const num = (nome) => {
+    const m = fonte.match(new RegExp(nome + ':\\s*(\\d+)'));
+    return m ? Number(m[1]) : null;
+  };
+
+  const shards = num('URLFETCH_SHARDS');
+  const dias   = num('URLFETCH_DIAS_GUARDADOS');
+  const meses  = num('MSG_MESES_GUARDADOS');
+
+  // Chaves de configuração que o código lê. É o piso: elas nunca são podadas.
+  const config = new Set();
+  for (const arq of fs.readdirSync(RAIZ).filter(f => f.endsWith('.gs'))) {
+    const src = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    for (const m of src.matchAll(/getProperty\(\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\)/g)) {
+      config.add(m[1]);
+    }
+  }
+
+  const TETO = 50;
+  // Folga para o que é transitório e não dá para contar daqui: sessões de
+  // cadastro abertas, media_id, números em freio de taxa.
+  const FOLGA = 6;
+
+  const contadores = (dias * shards) + (meses * 2 * shards);
+  const regime = contadores + config.size + FOLGA;
+
+  const casos = [
+    { nome: 'as três constantes de retenção existem',
+      ok: shards !== null && dias !== null && meses !== null,
+      detalhe: `shards=${shards} dias=${dias} meses=${meses}` },
+    { nome: `regime permanente cabe nas ${TETO} propriedades da interface`,
+      ok: regime <= TETO,
+      detalhe: `${contadores} contador(es) + ${config.size} de config + ${FOLGA} de folga = ${regime}` },
+    // Se alguém "melhorar" a precisão voltando a 5 shards ou 6 meses, o número
+    // estoura de novo — e o sintoma só aparece semanas depois, no editor.
+    { nome: 'a poda usa a constante, não um 7 literal',
+      ok: /URLFETCH_DIAS_GUARDADOS \* 86400000/.test(fonte),
+      detalhe: 'corte do urlfetch precisa sair de URLFETCH_DIAS_GUARDADOS' },
+  ];
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome} — ${c.detalhe}`);
+  }
+
+  // A poda manual não pode encostar em nada que não seja contador. Trocar a
+  // pane da tela por perda de ODOO_API_KEY seria um negócio muito pior.
+  {
+    const setup = fs.readFileSync(path.join(RAIZ, 'Setup.gs'), 'utf8');
+    const corpo = setup.slice(setup.indexOf('function podarContadores()'));
+    const fim   = corpo.indexOf('\nfunction ');
+    const podar = fim > 0 ? corpo.slice(0, fim) : corpo;
+
+    // As duas guardas de prefixo têm de estar lá, e toda chave apagada precisa
+    // ter passado por uma delas: o `apagar.push` só pode acontecer dentro de um
+    // ramo que já conferiu o prefixo.
+    const temGuarda = /indexOf\(Utils\.URLFETCH_PREFIXO\) === 0/.test(podar)
+                   && /indexOf\(Utils\.MSG_PREFIXO\) === 0/.test(podar);
+    const pushes = (podar.match(/apagar\.push\(/g) || []).length;
+    const ok = temGuarda && pushes === 2;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} podarContadores só apaga chave com prefixo de contador`
+      + (ok ? '' : ` — ${pushes} ponto(s) de exclusão, guardas=${temGuarda}: risco de apagar configuração`));
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');

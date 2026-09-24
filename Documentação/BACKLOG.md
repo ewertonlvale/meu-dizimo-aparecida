@@ -103,6 +103,7 @@
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
 | BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 📋 **Plano fechado (24/09)** — `MIGRACAO-NIVEL-1.md` (como) + `EVOLUCAO-ARQUITETURA.md` (porquê). 6 fases, continuidade de serviço e limites gratuitos verificados. Fecha BL-20/21/43 e parte do BL-29 |
+| BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Ferramenta pronta (23/09)** — grupo, matriz de permissões e modo `--verificar`. Falta criar o usuário e trocar as Properties |
 
 ---
@@ -2209,4 +2210,77 @@ para poder ajustar.
 **Fica aberto:** o BL-73 mitiga o BL-21, não o fecha. O teto de execuções simultâneas continua de
 pé para o tráfego normal de conversas; o que mudou é que o disparo de lembretes deixou de ser um
 gatilho previsível para encostar nele.
+
+---
+
+### BL-75 — O teto de 50 propriedades do editor ✅ (P)
+
+**Sintoma (usuário, 24/09):** *"Criei o novo usuário, mas não consigo editar no properties porque
+passou de 50 propriedades."* O editor do Apps Script mostra no máximo 50 propriedades e, acima
+disso, **a lista inteira vira somente leitura** — perde-se a tela de configuração, não só o
+excedente. Sem ela não dá para trocar `ODOO_UID` nem `ODOO_API_KEY`, que era exatamente o passo
+que faltava no **BL-17**.
+
+**O diagnóstico errado, e por que ele era tentador.** A primeira leitura foi "os contadores nunca
+são apagados". Está errada: a poda automática existe e funciona — `Utils._somarShards` descarta os
+períodos vencidos a cada passagem, de carona na trigger de sessões, a cada 20 minutos. O que
+falhou não foi a limpeza, foi a **aritmética da retenção**:
+
+| Chave | Retenção | Shards | Regime permanente |
+|---|---|---|---|
+| `uso_urlfetch_<dia>_<0..4>` | 7 dias | 5 | 35 |
+| `msgs_<mês>_servico\|template_<0..4>` | **6 meses** | 5 | **60** |
+| configuração | — | — | 27 |
+
+**~120 propriedades em operação normal.** O teto de 50 seria cruzado na primeira semana, e foi. O
+harness calcula 93 contra o código anterior.
+
+**O achado que resolve:** das ~95 chaves de contador, **15 eram lidas**. `verificarCotaUrlFetch`
+soma só **hoje**; `somarMensagensDoMes` e `verificarCotaMensagens` somam só o **mês corrente**.
+As outras 80 eram escrita sem leitor — histórico que nenhuma tela mostra. Guardar seis meses
+custava 60 propriedades para servir 10.
+
+**O que passou a valer:**
+
+| Constante | Era | É | Custo |
+|---|---|---|---|
+| `URLFETCH_DIAS_GUARDADOS` | 7 (literal na poda) | 2 | nenhum — ninguém lê ontem |
+| `MSG_MESES_GUARDADOS` | 6 | 2 | nenhum — ninguém lê mês passado |
+| `URLFETCH_SHARDS` | 5 | 2 | ⚠️ real, ver abaixo |
+
+Regime permanente: 12 contadores + 27 de configuração + 6 de folga = **45**.
+
+**O shard é o único custo real, e não é de graça.** Ele existe porque `setProperties` é
+read-modify-write sem trava, então execuções simultâneas perdem incremento. De 5 para 2 a colisão
+fica mais provável e a contagem subestima um pouco mais. Aceitei porque é telemetria, não
+dinheiro; porque já subestimava sob concorrência; e porque ficar trancado fora da própria
+configuração custa mais. O **BL-74 Fase 3** troca o mecanismo por `INCR` no Redis, que é atômico
+de verdade e dispensa shard.
+
+Foram 3 shards primeiro. **O harness reprovou em 51** — as 27 chaves de configuração são piso e
+não podem ser podadas, então a folga tinha de sair do shard. A conta não foi feita de cabeça.
+
+**Ferramentas novas (`Setup.gs`):**
+
+- `podarContadores()` — apaga o que está fora da retenção e diz quantas propriedades sobraram.
+  **Só toca em chave com prefixo de contador**; configuração, sessão, bloqueio e `media_id` ficam
+  onde estão. Trocar uma pane de tela por perda de `ODOO_API_KEY` seria um negócio muito pior, e
+  há caso no harness verificando que os dois únicos pontos de exclusão estão dentro das guardas de
+  prefixo.
+- `listarPropriedades()` — lista tudo por grupo, com valores sensíveis mascarados. Existe porque
+  acima de 50 a tela não mostra o resto, e aí não se sabe nem o que está ocupando espaço.
+- `verificarProperties()` passou a **avisar a partir de 40** e a explicar a pane acima de 50. O
+  sintoma não diz a causa: a pessoa só descobre que não consegue mais editar `ODOO_API_KEY`.
+
+**A chave do Odoo não passa por código.** A saída poderia ter sido uma função que grava
+`ODOO_API_KEY` recebendo o valor como argumento — e aí o segredo ficaria digitado num `.gs`, a um
+`clasp push` de distância do repositório **público**. `podarContadores()` devolve a tela do
+editor, e o segredo continua sendo digitado onde sempre foi.
+
+**Cobertura:** 4 casos no `conta-mensagens.js`, sendo o principal o cálculo do **regime
+permanente a partir das constantes** — nada no código dizia esse número, e era o número que
+faltava. Três dos quatro reprovam contra o código anterior.
+
+**Ordem de uso:** `clasp push` → `podarContadores()` → recarregar o editor (F5) → editar
+`ODOO_UID` e `ODOO_API_KEY` → `testarConexaoOdoo()` → seguir o BL-17.
 
