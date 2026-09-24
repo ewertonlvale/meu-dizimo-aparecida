@@ -4180,6 +4180,20 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
       || `gravou ${r.gravou.join()} · ${r.enviadas[0]}`;
   });
 
+  // ── BL-83 ──────────────────────────────────────────────────────────────
+  caso('BL-83: o primeiro contato vai ao Odoo em UTC (campo datetime)', () => {
+    const pedidos = [];
+    let gravado = null;
+    const OS = carregar(['OdooService.gs'], {
+      Utilities: { formatDate: (d, fuso, fmt) => { pedidos.push(fuso); return `[${fuso}]`; } },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.create = (modelo, dados) => { gravado = dados; return 1; };
+    OS.registrarContatoBot('5511999990000');
+    return (gravado && gravado.x_studio_data_primeiro_contato === '[UTC]')
+      || `gravou ${gravado && gravado.x_studio_data_primeiro_contato} (fusos pedidos: ${pedidos.join()})`;
+  });
+
   caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
     const r = roteador('MENU');
     r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });
