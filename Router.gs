@@ -349,7 +349,11 @@ const Router = {
     const estado     = StateManager.getEstado(from);
     const lower      = texto.toLowerCase();
     const emCadastro = ESTADOS_CADASTRO.includes(estado);
-    console.log(`💬 Texto: "${texto}" | Estado: ${estado}`);
+    // BL-80: o CONTEÚDO não vai para o log. Era a linha que registrava o código
+    // de acesso ao relatório (anulando o cuidado de RelatorioHandler), e também
+    // endereço, nascimento e valores digitados no cadastro. Tamanho e estado
+    // bastam para seguir uma conversa no log sem guardar o que a pessoa disse.
+    console.log(`💬 Texto (${texto.length} caracteres) | Estado: ${estado}`);
 
     // Família: "Escolher vários" → números digitados (ex.: "1,3"). Tratado antes
     // dos atalhos para não confundir os números com comandos.

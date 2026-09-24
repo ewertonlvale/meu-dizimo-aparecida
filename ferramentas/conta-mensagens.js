@@ -4066,6 +4066,25 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     }
     return !erros.length || erros.join('; ');
   });
+  // ── BL-80 ──────────────────────────────────────────────────────────────
+  caso('BL-80: o código de acesso ao relatório não aparece no log', () => {
+    const log = [];
+    const grava = (...a) => log.push(a.map(String).join(' '));
+    const R = carregar(['Router.gs'], {
+      console: { log: grava, warn: grava, error: grava },
+      StateManager: { getEstado: () => 'AGUARDANDO_CODIGO_RELATORIO', setEstado() {},
+                      getCampo: () => undefined },
+      // O destino do código não importa aqui — só o que o Router registrou
+      // antes de despachar.
+      RelatorioHandler: new Proxy({}, { get: () => () => {} }),
+      Utils: new Proxy({}, { get: () => () => {} }),
+      MenuHandler: new Proxy({}, { get: () => () => {} })
+    }, 'Router');
+    R.rotear('55', { type: 'text', text: { body: 'CODIGO-SECRETO-4821' } });
+    const vazou = log.filter((l) => l.includes('CODIGO-SECRETO-4821'));
+    return (log.length > 0 && !vazou.length) || `vazou: ${vazou[0] || '(log vazio)'}`;
+  });
+
   caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
     const r = roteador('MENU');
     r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });
