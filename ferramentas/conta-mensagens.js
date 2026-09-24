@@ -502,6 +502,7 @@ const CENARIOS = [
     nome: 'Comprovante de OFERTA de quem não é cadastrado',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true,
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
     esperado: 1,
@@ -1062,6 +1063,7 @@ const REGRAS_DE_CONTEUDO = [
     nome: 'A oferta grava o valor do COMPROVANTE, não o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: 55 },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1083,6 +1085,7 @@ const REGRAS_DE_CONTEUDO = [
     nome: 'Valor diferente do escolhido é dito, mas não vira acusação — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: 55 },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1103,9 +1106,29 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
+    // O caso real: tocou em Oferta, desistiu, foi para Dízimo e mandou o
+    // comprovante. `ofertaComunidadeId` ficou na sessão desde o toque em
+    // Oferta, e era ele — não o estado — que decidia o caminho.
+    nome: 'Dízimo depois de desistir da oferta é gravado como DÍZIMO — BL-77',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE',
+               sessao: { ofertaComunidadeId: 3, ofertaComunidadeNome: 'Matriz',
+                         ofertaDizimistaId: 7 },
+               aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
+    roda: ctx => { gravado = null; ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'); },
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (/Oferta recebida/i.test(t)) return 'a conversa respondeu "Oferta recebida"';
+      if (!gravado) return 'nada foi gravado no Odoo';
+      if (gravado.x_studio_tipo_contribuicao === 'oferta') return 'o Odoo recebeu tipo oferta';
+      return null;
+    }
+  },
+  {
     nome: 'OCR sem valor: aí sim vale o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: null },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
