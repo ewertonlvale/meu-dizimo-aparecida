@@ -67,7 +67,18 @@ if (!CONFIG.url || !CONFIG.db || !CONFIG.uid || !CONFIG.apiKey) {
   process.exit(1);
 }
 
+// O que já foi GRAVADO nesta execução. Existe por causa de uma mentira:
+// qualquer falha de rede imprimia "Nada foi alterado", vindo de qualquer ponto
+// do código — inclusive do meio do laço de gravação do `--restringir`. Se o
+// timeout viesse na terceira de quatro regras, duas já estariam no banco e o
+// script juraria que nada mudou.
+//
+// Aconteceu de verdade em 24/09, só que na PRIMEIRA chamada, onde a frase por
+// acaso era verdadeira. Promessa que só vale por sorte não é promessa.
+const jaGravado = [];
+
 async function rpc(model, method, args = [], kwargs = {}) {
+  const escreve = ['create', 'write', 'unlink'].includes(method);
   let res;
   try {
     res = await fetch(`${CONFIG.url}/jsonrpc`, {
@@ -77,8 +88,20 @@ async function rpc(model, method, args = [], kwargs = {}) {
         args: [CONFIG.db, CONFIG.uid, CONFIG.apiKey, model, method, args, kwargs] } }),
     });
   } catch (e) {
-    console.error(`❌ não consegui falar com ${CONFIG.url} (${e.cause?.code || e.message})`);
-    console.error('   Isso é CONEXÃO, não credencial. Nada foi alterado.');
+    console.error(`\n❌ não consegui falar com ${CONFIG.url} (${e.cause?.code || e.message})`);
+    console.error('   Isso é CONEXÃO, não credencial.');
+    if (!jaGravado.length) {
+      console.error('   Nada foi alterado — a falha veio antes de qualquer gravação.');
+    } else {
+      // Não dá para desfazer daqui: reverter exigiria saber o valor anterior
+      // de cada campo, e tentar isso pela mesma rede que acabou de cair é
+      // como se conserta um problema virando dois.
+      console.error(`   ⚠️  ${jaGravado.length} GRAVAÇÃO(ÕES) JÁ FORAM FEITAS antes da falha:`);
+      jaGravado.forEach((g) => console.error(`      ${g}`));
+      console.error('   O estado ficou PELO MEIO. Rode o mesmo comando de novo:');
+      console.error('   ele é idempotente — o que já foi aplicado aparece como');
+      console.error('   "já está certo" e só o que falta é gravado.');
+    }
     process.exit(1);
   }
   const json = await res.json();
@@ -92,6 +115,7 @@ async function rpc(model, method, args = [], kwargs = {}) {
     erro.odooName = json.error.data?.name || '';
     throw erro;
   }
+  if (escreve) jaGravado.push(`${model}.${method} ${JSON.stringify(args[0] || '')}`);
   return json.result;
 }
 const buscar = (m, d, c, o = {}) => rpc(m, 'search_read', [d], { fields: c, ...o });

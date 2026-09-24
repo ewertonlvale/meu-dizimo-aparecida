@@ -3557,6 +3557,12 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     { nome: 'o aviso de órfão exclui o próprio grupo do bot e o admin',
       ok: /o\.group_id\[1\] !== NOME_GRUPO/.test(fonte)
        && /group_system/.test(fonte) },
+    // "Nada foi alterado" saía de QUALQUER falha de rede, inclusive do meio do
+    // laço de gravação. Timeout na 3a de 4 regras deixaria 2 no banco e o
+    // script juraria que nada mudou.
+    { nome: 'falha de rede não promete "nada foi alterado" sem saber',
+      ok: /jaGravado/.test(fonte) && /JÁ FORAM FEITAS/.test(fonte)
+       && /a falha veio antes de qualquer gravação/.test(fonte) },
     { nome: '--restringir simula por padrão',
       ok: /CONFIG\.restringir/.test(fonte) && /acrescente --aplicar para gravar/.test(fonte) },
     { nome: "has_access é chamado como [[], op], não [op]",

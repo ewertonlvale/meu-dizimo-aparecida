@@ -127,7 +127,7 @@ function subir(cenario, porta, gravado = []) {
           }
           if (model === 'ir.model')         return res.end(JSON.stringify({ result: [{ id: 9, model: 'x_comunidade' }] }));
           if (model === 'ir.model.data')    return res.end(JSON.stringify({
-            result: cenario.startsWith('restringir')
+            result: (cenario.startsWith('restringir') || cenario === 'queda-no-meio')
               ? [{ id: 1, name: dm, res_id: dm === 'group_user' ? 1 : 2 }] : [] }));
           if (model === 'res.users')        return res.end(JSON.stringify({
             result: [{ id: 13, name: 'Bot de Mentira', login: 'bot@exemplo.org',
@@ -138,6 +138,11 @@ function subir(cenario, porta, gravado = []) {
         // --restringir grava em ir.model.access. O mock registra o que foi
         // gravado para o cenário poder afirmar QUE regras foram tocadas.
         if (method === 'write' && model === 'ir.model.access') {
+          // Derruba a conexão DEPOIS da primeira gravação: é o caso em que o
+          // script dizia "Nada foi alterado" tendo alterado.
+          if (cenario === 'queda-no-meio' && gravado.length >= 1) {
+            return req.socket.destroy();
+          }
           gravado.push({ ids: args[0], vals: args[1] });
           return res.end(JSON.stringify({ result: true }));
         }
@@ -217,6 +222,7 @@ ACLS['restringir-com-excesso'] = [
 ];
 // Quem MAIS escreve nos x_*, além de base.group_user. É o que decide se
 // restringir deixa o modelo só nas mãos do administrador.
+const OUTRAS_PENDENTE = {};
 const OUTRAS = {
   // Tem a Secretaria: restringir é inócuo para as pessoas.
   'restringir-com-excesso': [
@@ -228,7 +234,22 @@ const OUTRAS = {
     { model_id: [9, 'Comunidade'], group_id: [2, 'Role / Administrator'] },
   ],
   'restringir-ja-certo': [],
+  ...OUTRAS_PENDENTE,
 };
+
+// Duas regras: o cenário `queda-no-meio` derruba a conexão depois da PRIMEIRA
+// gravação, que é justamente quando a frase "Nada foi alterado" mentia.
+ACLS['queda-no-meio'] = [
+  { id: 11, name: 'Comunidade group_user', model_id: [9, 'Comunidade'],
+    group_id: [1, 'Role / User'],
+    perm_read: true, perm_write: true, perm_create: true, perm_unlink: false },
+  { id: 12, name: 'Parâmetros group_user', model_id: [9, 'Comunidade'],
+    group_id: [1, 'Role / User'],
+    perm_read: true, perm_write: true, perm_create: true, perm_unlink: false },
+];
+OUTRAS_PENDENTE['queda-no-meio'] = [
+  { model_id: [9, 'Comunidade'], group_id: [5, 'Secretaria Paroquial'] },
+];
 
 ACLS['restringir-orfao'] = [
   { id: 11, name: 'Comunidade group_user', model_id: [9, 'Comunidade'],
@@ -272,6 +293,10 @@ const CENARIOS = [
     porque: 'rodar de novo depois de aplicado não pode inventar mudança' },
   { nome: 'restringir-orfao', modo: 'restringir', saida: 0, espera: /SÓ O ADMINISTRADOR escreve/,
     porque: 'sem outra regra de escrita, restringir tranca a Secretaria — e o sintoma só aparece ao salvar' },
+  { nome: 'queda-no-meio', modo: 'aplicar', saida: 1, espera: /JÁ FORAM FEITAS/,
+    naoEspera: /Nada foi alterado/,
+    porque: 'cair depois de gravar e dizer que nada mudou manda a pessoa confiar num estado pela metade',
+    confere: (g) => (g.length === 1 ? null : `gravou ${g.length}, esperava 1 antes da queda`) },
 ];
 
 let porta = 8900;
@@ -288,6 +313,8 @@ for (const c of CENARIOS) {
       ? ['ferramentas/instalar-usuario-bot.mjs', '--explicar', '--login=bot@exemplo.org']
       : c.modo === 'restringir'
       ? ['ferramentas/instalar-usuario-bot.mjs', '--restringir']
+      : c.modo === 'aplicar'
+      ? ['ferramentas/instalar-usuario-bot.mjs', '--restringir', '--aplicar']
       : ['ferramentas/instalar-usuario-bot.mjs', '--verificar'], {
       cwd: RAIZ,
       env: { ...process.env,
