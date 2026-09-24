@@ -3548,6 +3548,15 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     { nome: '--restringir só toca em regra de base.group_user',
       ok: /'name', '=', 'group_user'/.test(fonte)
        && /\['group_id', '=', gu\.res_id\]/.test(fonte) },
+    // Tirar write de group_user só é inócuo se OUTRO grupo não-admin ainda
+    // escrever. No caso real, x_parametros tinha regra da Secretaria e
+    // x_parametros_line_c498a NÃO — restringir deixaria as linhas só com o
+    // administrador, e a Secretaria descobriria ao tentar salvar.
+    { nome: '--restringir avisa quando sobra só o administrador',
+      ok: /SÓ O ADMINISTRADOR escreve/.test(fonte) && /orfaos/.test(fonte) },
+    { nome: 'o aviso de órfão exclui o próprio grupo do bot e o admin',
+      ok: /o\.group_id\[1\] !== NOME_GRUPO/.test(fonte)
+       && /group_system/.test(fonte) },
     { nome: '--restringir simula por padrão',
       ok: /CONFIG\.restringir/.test(fonte) && /acrescente --aplicar para gravar/.test(fonte) },
     { nome: "has_access é chamado como [[], op], não [op]",

@@ -104,6 +104,7 @@
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
 | BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 📋 **Plano fechado (24/09)** — `MIGRACAO-NIVEL-1.md` (como) + `EVOLUCAO-ARQUITETURA.md` (porquê). 6 fases, continuidade de serviço e limites gratuitos verificados. Fecha BL-20/21/43 e parte do BL-29 |
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
+| BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | 🔶 **Em andamento (24/09)** — usuário criado, `ODOO_UID = 13` conectando. Falta `--aplicar --login=`, tirar de Administração e `--verificar`. Detecção de admin corrigida: casava por nome em inglês |
 
 ---
@@ -2641,4 +2642,85 @@ usuário interno passa a ler e não escrever nos modelos do dízimo; o bot fica 
 
 **Cobertura:** a prova foi de 8 para **10 cenários**, cobrindo agora três modos (`--verificar`,
 `--explicar`, `--restringir`); mais 5 casos no `conta-mensagens.js`.
+
+---
+
+### BL-17 — nota de 24/09 (8): restringir podia trancar a Secretaria
+
+A simulação do `--restringir` saiu correta — 4 regras a alterar, as 3 que o bot legitimamente
+precisa intocadas, e `res_users all` **ausente da lista**, provando que a trava de "só modelo
+`x_*`" funcionou.
+
+Mas comparando com o relatório do `--explicar`, faltava uma pergunta:
+
+| Modelo | Regra de escrita fora de `group_user` |
+|---|---|
+| `x_comunidade` | ✅ `Secretaria - Comunidade` |
+| `x_parametros` | ✅ `Secretaria - Parâmetros` |
+| **`x_parametros_line_c498a`** | ❌ **nenhuma** |
+| `x_notificacao_log` | ❌ nenhuma (mas ninguém edita log à mão) |
+
+**A Secretaria edita as linhas de parâmetro hoje pela regra de `base.group_user`.** Tirando-a,
+só o Administrador escreve nelas — e o sintoma aparece quando alguém tenta salvar, não na hora
+de aplicar. Um script que faz uma mudança de permissão sem dizer isso empurra o custo para a
+pessoa errada, num momento pior.
+
+**O `--restringir` passou a avisar.** Para cada regra que perde `write`, ele pergunta se resta
+alguma outra regra de escrita **que não seja do administrador nem do próprio grupo do bot**. Se
+não restar, lista o modelo sob um aviso explícito e sugere criar antes a regra do grupo de quem
+usa a tela, espelhando a do modelo "pai".
+
+**A verificação que faltava na prova, e que quase passou despercebida:** o cenário órfão prova
+que o aviso *aparece*, mas não que ele *discrimina*. Um aviso disparando sempre passaria nos
+dois. Por isso o cenário com Secretaria ganhou uma **assertiva negativa** — ele reprova se o
+aviso aparecer. Conferido forçando `orfaos.push(model)` incondicional: reprova, como deve.
+
+**Cobertura:** a prova foi de 10 para **11 cenários**; mais 2 casos no `conta-mensagens.js`, que
+chegou a 265 verificações.
+
+---
+
+### BL-76 — Parâmetros, notificações e contato do bot só para o Administrador 📋 (P)
+
+**Decisão do usuário (24/09):** *"Quero manter os acessos de parametros, notificações e contato
+bot somente com o perfil admin. Mas isso pode ser feito depois."*
+
+**Por que é um item separado do BL-17.** O BL-17 trata do que o **bot** pode fazer. Este trata do
+que as **pessoas** podem fazer. Os dois se cruzam nas mesmas regras de `ir.model.access`, mas são
+perguntas diferentes e com riscos diferentes: errar no BL-17 deixa uma chave de API poderosa
+demais; errar aqui tranca um agente da pastoral para fora do trabalho dele.
+
+**Estado atual**, do relatório do `--explicar` de 24/09:
+
+| Modelo | Bot | Administrador | Secretaria | Acesso Comunidade | `Role / User` |
+|---|---|---|---|---|---|
+| `x_parametros` | read | tudo | read, write, create | read | read, write, create |
+| `x_parametros_line_c498a` | read | tudo | — | — | read, write, create |
+| `x_notificacao_log` | read, create | tudo | — | — | read, write, create |
+| `x_contato_bot` | read, write, create | tudo | — | — | read, write, create |
+
+**O alvo:** nas quatro linhas, sobrar **apenas o grupo do bot e o Administrador**.
+
+**O que precisa mudar** (a confirmar na tela antes de aplicar):
+
+1. Apagar, ou zerar, as regras de `Role / User` (`base.group_user`) nos quatro modelos.
+   O bot não perde nada: ele tem regra própria em todos.
+2. Em `x_parametros`, apagar também `Secretaria - Parâmetros` e `Comunidade - Parâmetros` — são
+   elas que hoje dão acesso à Secretaria e à Pastoral.
+3. Conferir com quem usa: **alguém da Secretaria edita parâmetros hoje?** Se sim, esta decisão
+   transfere essa tarefa para o Administrador, e isso é escolha da paróquia, não consequência
+   técnica.
+
+**Relação com o `--restringir` do BL-17.** Aquele modo tira só `write`/`create` de `group_user`,
+deixando `read`, e só nos modelos onde a matriz do bot pede menos. Ele **não fecha este item** —
+aqui o alvo inclui tirar o `read` e mexer nas regras da Secretaria, que o `--restringir` não toca
+de propósito.
+
+Uma consequência boa: com esta decisão registrada, o aviso *"depois disto, SÓ O ADMINISTRADOR
+escreve em x_parametros_line_c498a"* que o `--restringir` emite deixa de ser um impedimento e
+passa a ser o resultado desejado.
+
+**O que NÃO entra aqui:** `x_comunidade`. A Secretaria precisa editar comunidade (chave PIX,
+titular, endereço) e continua com a regra dela. `x_devolucao` e `x_dizimista` idem — são o
+trabalho diário da pastoral.
 
