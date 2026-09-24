@@ -41,6 +41,13 @@ ferramentas/**
 docs/**
 **/docs/**
 
+# ── Automação do GitHub (BL-74, Fase 0) ────────────────────────────────────
+# Hoje só há YAML aqui, que o clasp nem reconhece como arquivo de projeto. A
+# linha existe para o dia em que alguém puser um .js de workflow: sem ela, ele
+# subiria para o Apps Script e rodaria a cada carga do script.
+.github/**
+**/.github/**
+
 # ── Documentação do repositório ─────────────────────────────────────────────
 Documentação/**
 **/Documentação/**

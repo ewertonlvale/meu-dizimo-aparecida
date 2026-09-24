@@ -3672,6 +3672,59 @@ console.log('🔑 Todo modelo que o bot toca está na matriz de permissões (BL-
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('⚙️  O CI roda o mesmo que você roda (BL-74, Fase 0)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O valor da Fase 0 depende de uma coisa só: o CI e a máquina de quem
+// desenvolve rodarem A MESMA lista. Se o workflow chamar as suítes por conta
+// própria, os dois divergem no primeiro dia em que alguém acrescentar uma — e
+// a divergência aparece como "passa aqui, quebra lá".
+{
+  const wf = path.join(RAIZ, '.github', 'workflows', 'verificacao.yml');
+  const entrada = path.join(RAIZ, 'ferramentas', 'verificar-tudo.mjs');
+
+  const casos = [];
+
+  if (!fs.existsSync(wf)) {
+    casos.push({ nome: 'o workflow de verificação existe', ok: false });
+  } else {
+    const y = fs.readFileSync(wf, 'utf8');
+    casos.push(
+      { nome: 'o workflow existe e roda em pull_request',
+        ok: /^on:/m.test(y) && /pull_request/.test(y) },
+      { nome: 'o workflow chama verificar-tudo.mjs',
+        ok: /node ferramentas\/verificar-tudo\.mjs/.test(y) },
+      // Chamar uma suíte direto no YAML é justamente a divergência que a
+      // Fase 0 existe para impedir.
+      { nome: 'o workflow NÃO chama suíte direto, contornando a entrada',
+        ok: !/node ferramentas\/(conta-mensagens|prova-verificador|valida-flow|provar-dominio-filtro)/.test(y) },
+      // Sem segredo: nenhuma suíte fala com Odoo, WhatsApp ou Apps Script, e
+      // um workflow que pede segredo sem precisar amplia superfície à toa.
+      { nome: 'o workflow não recebe segredo nenhum',
+        ok: !/secrets\./.test(y) },
+    );
+  }
+
+  if (!fs.existsSync(entrada)) {
+    casos.push({ nome: 'o ponto de entrada existe', ok: false });
+  } else {
+    const e = fs.readFileSync(entrada, 'utf8');
+    const listadas = [...e.matchAll(/arquivo: '([^']+)'/g)].map((m) => m[1]);
+    const faltando = listadas.filter((f) => !fs.existsSync(path.join(RAIZ, f)));
+    casos.push({
+      nome: `as ${listadas.length} suítes listadas existem no disco`,
+      ok: listadas.length > 0 && !faltando.length,
+      detalhe: faltando.join(', '),
+    });
+  }
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.detalhe ? ' — falta: ' + c.detalhe : ''}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');

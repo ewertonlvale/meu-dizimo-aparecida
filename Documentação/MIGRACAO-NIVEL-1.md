@@ -88,16 +88,46 @@ durante toda a transição.
 
 Cada fase termina num estado publicável e reversível. Produção fica no Apps Script até a Fase 5.
 
-### Fase 0 — CI (1 dia) · fecha BL-43
+### Fase 0 — CI ✅ **FEITA (24/09)** · fecha BL-43
 
-`.github/workflows/verificacao.yml`: em todo PR e todo push para `staging`, roda
-`node ferramentas/conta-mensagens.js`. Branch protection exigindo o check verde.
+`.github/workflows/verificacao.yml` roda em **todo pull request** e em todo push para `staging` e
+`main`. Um comando só:
 
-**Critério de aceite:** um PR com o harness vermelho não entra em `staging`.
+```yaml
+- run: node ferramentas/verificar-tudo.mjs
+```
 
-Isto é independente da migração e vale por si só. Se o plano parar aqui, já valeu — e ele é o
-que torna todas as fases seguintes verificáveis, porque **o harness passa a ser o contrato**:
-o critério de "a migração não quebrou nada" é ele continuar verde.
+**Por que um ponto de entrada único.** Se o workflow listasse as suítes por conta própria, o CI e
+a máquina de quem desenvolve divergiriam no primeiro dia em que alguém acrescentasse uma — e a
+divergência aparece como *"passa aqui, quebra lá"*, o jeito mais caro de descobrir. A lista mora
+em `ferramentas/verificar-tudo.mjs`, e o harness **reprova** se o YAML chamar uma suíte direto.
+
+**As quatro suítes** (nenhuma toca em Odoo, WhatsApp ou Apps Script; nenhum segredo envolvido):
+
+| Suíte | O que prova | Rede |
+|---|---|---|
+| `conta-mensagens.js` | o contrato: mensagens, fluxos, views e guardas — 272 verificações | não |
+| `prova-verificador.mjs` | o verificador de permissões, em 12 cenários contra um Odoo de mentira | não |
+| `valida-flow.js` | os Flows do WhatsApp contra as regras da Meta | não |
+| `provar-dominio-filtro.mjs` | os domínios das views avaliados pelo py_js real do Odoo | **sim** |
+
+A quarta baixa o py_js do GitHub, e é a única que depende de rede. Por isso o `verificar-tudo`
+**rotula a falha dela à parte**: quando só ela reprova, a saída diz para conferir o GitHub antes
+de procurar bug no código. O workflow também guarda o download em cache, então a rede só é tocada
+quando a ferramenta muda.
+
+Tempo total: **~3 segundos**.
+
+#### ⚠️ Falta um passo, e ele é seu
+
+O workflow **avisa**, não impede. Para o critério de aceite valer — *"um PR com o harness
+vermelho não entra em `staging`"* — é preciso exigir o check:
+
+> **Settings → Branches → Add branch ruleset** (ou *Add rule*) para `staging`
+> → marcar **Require status checks to pass before merging**
+> → escolher **Harness** na lista (ele aparece depois da primeira execução do workflow)
+
+Enquanto isso não for feito, a Fase 0 está metade pronta: o sinal existe e é ignorável.
 
 ### Fase 1 — Camada `Plataforma`, ainda 100% no Apps Script (2–3 dias)
 
@@ -407,8 +437,8 @@ Build, Vision e Logging cabem nas franquias neste volume.
 
 ## Ordem de execução recomendada
 
-Fase 0 primeiro e sozinha — ela vale independente do resto e é o que torna tudo o mais
-verificável. Depois 1 e 2 juntas, que é onde está o risco técnico e nenhum risco de produção.
+~~Fase 0 primeiro e sozinha~~ — **feita em 24/09**. Depois 1 e 2 juntas, que é onde está o risco
+técnico e nenhum risco de produção.
 Só então 3, 4 e 5, que é quando a produção começa a se mover.
 
 Se o plano precisar parar no meio, os pontos seguros de parada são o fim da Fase 0 e o fim da

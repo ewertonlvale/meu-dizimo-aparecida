@@ -71,7 +71,7 @@
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
 | BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
-| BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
+| BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | ✅ **Concluído (24/09)** — CI em todo PR pela Fase 0 do BL-74 |
 | BL-44 | Cadastro e membro por conversa desligados: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
 | BL-45 | O botão "Corrigir" cancelava o cadastro e apagava os 7 campos | 🔴 | P | ✅ Concluído (19/09) — o formulário volta preenchido. ⚠️ **Exige republicar o Flow na Meta** |
 | BL-46 | Conferir o comprovante contra o cadastro: nome, chave e banco | 🟠 | M | ✅ Concluído (19/09) — extração ancorada em quem RECEBEU; alerta só no totalmente divergente |
@@ -102,7 +102,7 @@
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
-| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 📋 **Plano fechado (24/09)** — `MIGRACAO-NIVEL-1.md` (como) + `EVOLUCAO-ARQUITETURA.md` (porquê). 6 fases, continuidade de serviço e limites gratuitos verificados. Fecha BL-20/21/43 e parte do BL-29 |
+| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 🔶 **Fase 0 feita (24/09)** — CI rodando em todo PR. Falta ligar o branch protection. Fases 1–6 em `MIGRACAO-NIVEL-1.md` |
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
