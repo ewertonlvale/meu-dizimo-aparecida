@@ -2531,3 +2531,60 @@ bot sobram e os de administrador estão limpos —, mais 3 casos no `conta-mensa
 passou de 5 para 6 cenários, e a contagem na mensagem final passou a sair da lista em vez de um
 literal, que já estava desatualizado.
 
+---
+
+### BL-17 — nota de 24/09 (6): `groups_id` não existe mais
+
+O `--explicar` estourou na primeira consulta:
+
+```
+Error: Invalid field 'groups_id' on 'res.users'   (builtins.ValueError)
+```
+
+Conferido no código-fonte da versão fixada (`odoo/addons/base/models/res_users.py:248-250`,
+tag `saas-19.3`):
+
+```python
+group_ids     = fields.Many2many('res.groups', ..., help="Groups explicitly assigned")
+all_group_ids = fields.Many2many('res.groups', string="Groups and implied groups",
+                                 compute='_compute_all_group_ids')
+```
+
+`groups_id` virou **`group_ids`**, e ganhou um irmão: **`all_group_ids`**, com os grupos
+implicados.
+
+**A distinção não é cosmética.** Grupos do Odoo implicam outros. Quem está num grupo que implica
+`base.group_system` é administrador **sem ter `group_system` na lista explícita** — e uma
+`ir.model.access` num grupo implicado também alcança o usuário. Olhar só os explícitos deixaria
+passar exatamente os casos que interessam. Então:
+
+| Uso | Campo |
+|---|---|
+| "é administrador?" | `all_group_ids` |
+| "esta ACL alcança o bot?" | `all_group_ids` |
+| "pôr no grupo" | `group_ids` (o gravável; o outro é computed) |
+
+**Sétimo uso, dois modos quebrados.** O campo morto aparecia 7 vezes, em `--explicar` **e** em
+`--aplicar --login=`. O segundo é o que põe o bot no grupo — o que explica por que o usuário
+precisou fazer isso à mão na tela do Odoo.
+
+**Por que a prova não pegou: ela cobria só `--verificar`.** Um terço do script. Duas correções
+estruturais:
+
+1. **O mock passou a validar nomes de campo** contra os que existem de verdade na `saas-19.3`, e
+   devolve `ValueError: Invalid field 'x' on 'y'` como o Odoo. Revertendo para `groups_id`, a
+   prova agora reprova em 2 cenários.
+2. **Dois cenários novos para `--explicar`** — `explicar-limpo` (nenhuma regra concede a mais,
+   exit 0) e `explicar-culpado` (a regra sem grupo, do Studio, exit 1 nomeando-a). O mock
+   devolve `model_id` com um rótulo **propositalmente diferente** do nome técnico, para que a
+   resolução via `ir.model` seja realmente exercitada.
+
+**A sexta falha desta família, e a primeira com defesa automática.** As seis foram todas a mesma
+coisa: nome de API do Odoo escrito de memória em vez de conferido na versão fixada —
+`check_access_rights`, grupo por nome traduzido, `res.partner` do piso, a forma de `has_access`,
+o exit code, e agora `groups_id`. O padrão é claro, e o antídoto é o que já existe para o py_js
+(`provar-dominio-filtro.mjs`): **baixar a fonte da tag e conferir, em vez de lembrar.**
+
+**Cobertura:** a prova foi de 6 para **8 cenários** e passou a exercitar dois modos em vez de um;
+mais 4 casos no `conta-mensagens.js`.
+

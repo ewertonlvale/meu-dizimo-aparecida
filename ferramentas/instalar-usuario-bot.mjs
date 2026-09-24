@@ -337,12 +337,13 @@ if (CONFIG.explicar) {
   }
 
   const [u] = await buscar('res.users', [['login', '=', CONFIG.login]],
-    ['id', 'name', 'groups_id'], { limit: 1 });
+    ['id', 'name', 'group_ids', 'all_group_ids'], { limit: 1 });
   if (!u) {
     console.error(`❌ não achei usuário com login "${CONFIG.login}".\n`);
     process.exit(1);
   }
-  console.log(`   bot: ${u.name} (uid ${u.id}), em ${u.groups_id.length} grupo(s)\n`);
+  console.log(`   bot: ${u.name} (uid ${u.id}), em ${u.group_ids.length} grupo(s) `
+    + `(${u.all_group_ids.length} contando os implicados)\n`);
 
   const modelos = MATRIZ.map((m) => m.model);
   const acls = await buscar('ir.model.access',
@@ -377,7 +378,9 @@ if (CONFIG.explicar) {
       // Só é culpada se o BOT estiver no grupo dela. Regra sem grupo vale
       // para todo mundo, inclusive ele.
       const semGrupo = !a.group_id;
-      const doBot    = semGrupo || u.groups_id.includes(a.group_id[0]);
+      // `all_group_ids`, não `group_ids`: uma ACL num grupo IMPLICADO também
+      // alcança o usuário. Olhar só os explícitos deixaria passar.
+      const doBot    = semGrupo || u.all_group_ids.includes(a.group_id[0]);
       const problema = demais.length && doBot;
       if (problema) culpadas++;
 
@@ -476,7 +479,7 @@ if (!CONFIG.login) {
   console.log('   com --login=<email> para eu pô-lo no grupo e conferir.');
 } else {
   const [u] = await buscar('res.users', [['login', '=', CONFIG.login]],
-    ['id', 'name', 'groups_id'], { limit: 1 });
+    ['id', 'name', 'group_ids', 'all_group_ids'], { limit: 1 });
   if (!u) {
     console.log(`   ⚠️  não achei usuário com login "${CONFIG.login}".`);
     console.log('      Crie-o em Definições → Usuários e Empresas → Usuários.');
@@ -501,7 +504,9 @@ if (!CONFIG.login) {
        ['name', 'in', ['group_system', 'group_erp_manager']]],
       ['name', 'res_id']);
 
-    const idsAdmin = dados.map((d) => d.res_id).filter((id) => u.groups_id.includes(id));
+    // Pelos IMPLICADOS: quem está num grupo que implica base.group_system é
+    // administrador sem ter group_system na lista explícita.
+    const idsAdmin = dados.map((d) => d.res_id).filter((id) => u.all_group_ids.includes(id));
 
     if (!dados.length) {
       // Não achar os XML IDs é anormal e não pode passar como "sem problema".
@@ -519,12 +524,13 @@ if (!CONFIG.login) {
       console.log('   · não está em nenhum grupo de administrador');
     }
 
-    if (grupoId && u.groups_id.includes(grupoId)) {
+    if (grupoId && u.all_group_ids.includes(grupoId)) {
       console.log(`   · já está em "${NOME_GRUPO}"`);
     } else if (!CONFIG.aplicar || !grupoId) {
       console.log(`   ~ entraria em "${NOME_GRUPO}"`);
     } else {
-      await rpc('res.users', 'write', [[u.id], { groups_id: [[4, grupoId]] }]);
+      // Grava no EXPLÍCITO. `all_group_ids` é computed (all_implied_ids).
+      await rpc('res.users', 'write', [[u.id], { group_ids: [[4, grupoId]] }]);
       console.log(`   ✓ adicionado a "${NOME_GRUPO}"`);
     }
 

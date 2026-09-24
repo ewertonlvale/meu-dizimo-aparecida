@@ -3524,10 +3524,31 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // O call_kw do Odoo consome args[0] como lista de ids em todo método que
     // não é @api.model. Chamando `[op]`, a operação virava os ids e o Odoo
     // recusava as 39 perguntas. Tem de ser `[[], op]`.
+    // res.users.groups_id virou group_ids na saas-19.3 (e all_group_ids para
+    // os implicados). Conferido em odoo/addons/base/models/res_users.py:248.
+    { nome: 'usa group_ids, não o groups_id que sumiu na saas-19.3',
+      ok: !/\bgroups_id\b/.test(fonte) && /all_group_ids/.test(fonte) },
+    // Grupo do Odoo IMPLICA outros: quem está num grupo que implica
+    // base.group_system é admin sem ter group_system na lista explícita, e
+    // uma ACL num grupo implicado também alcança o usuário.
+    { nome: 'pertencimento a grupo olha os implicados',
+      ok: /u\.all_group_ids\.includes/.test(fonte) },
+    // Mas a GRAVAÇÃO tem de ir no explícito — all_group_ids é computed.
+    { nome: 'entra no grupo gravando o campo explícito',
+      ok: /group_ids: \[\[4, grupoId\]\]/.test(fonte) },
     { nome: "has_access é chamado como [[], op], não [op]",
       ok: /has_access',\s*\[\[\],\s*op\]/.test(fonte) },
     // O mock lia args[0] como operação — repetia o engano de quem chamava e
     // por isso o abençoava. Tem de reproduzir o despacho para servir de prova.
+    // A prova cobria só --verificar; o groups_id quebrou em --explicar e em
+    // --aplicar --login=, modos que ela nem exercitava.
+    { nome: 'a prova recusa campo inexistente, como o Odoo',
+      ok: (() => {
+        const pv = fs.readFileSync(
+          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'), 'utf8');
+        return /Invalid field/.test(pv) && /const CAMPOS = \{/.test(pv)
+            && /modo: 'explicar'/.test(pv);
+      })() },
     { nome: 'o Odoo de mentira reproduz o despacho do call_kw',
       ok: (() => {
         const pv = fs.readFileSync(
