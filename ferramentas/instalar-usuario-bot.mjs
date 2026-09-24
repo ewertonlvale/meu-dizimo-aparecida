@@ -42,7 +42,7 @@ if (env?.carregadas.length) console.log(`🔑 ${env.caminho}: ${env.carregadas.j
 
 const argv = process.argv.slice(2);
 {
-  const CONHECIDOS = new Set(['--aplicar', '--simular', '--verificar']);
+  const CONHECIDOS = new Set(['--aplicar', '--simular', '--verificar', '--explicar']);
   const estranhos = argv.filter((a) => a.startsWith('--') && !CONHECIDOS.has(a) && !a.startsWith('--login='));
   if (estranhos.length) {
     console.error(`❌ Não conheço: ${estranhos.join(', ')}`);
@@ -58,6 +58,7 @@ const CONFIG = {
   apiKey: process.env.ODOO_API_KEY || '',
   aplicar: argv.includes('--aplicar'),
   verificar: argv.includes('--verificar'),
+  explicar: argv.includes('--explicar'),
   login: (argv.find((a) => a.startsWith('--login=')) || '').slice(8),
 };
 if (!CONFIG.url || !CONFIG.db || !CONFIG.uid || !CONFIG.apiKey) {
@@ -213,7 +214,20 @@ if (CONFIG.verificar) {
 
   const marca = (v) => (v === true ? '✓' : v === false ? '·' : '?');
 
-  let faltando = 0, sobrando = 0, indeterminado = 0;
+  // DUAS SOBRAS DIFERENTES, e confundi-las já produziu diagnóstico errado.
+  //
+  //   sobraNoBot    escrita a mais nos modelos x_*. Vem de OUTRA regra de
+  //                 ir.model.access — as ACLs do Odoo são ADITIVAS, então o
+  //                 grupo restritivo não anula uma regra permissiva que já
+  //                 exista (tipicamente a que o Studio cria junto com o
+  //                 modelo, valendo para todo usuário interno).
+  //   sobraDeAdmin  escrita em ir.ui.view / ir.cron / res.groups. ISSO sim é
+  //                 poder de administrador.
+  //
+  // Dizer "ainda é administrador" por causa da primeira contradiz a própria
+  // saída do comando, que mostra os três de admin como `· ok`. E manda a
+  // pessoa procurar no lugar errado.
+  let faltando = 0, sobraNoBot = 0, sobraDeAdmin = 0, indeterminado = 0;
 
   for (const m of MATRIZ) {
     const linha = [];
@@ -224,8 +238,8 @@ if (CONFIG.verificar) {
       let nota = '';
       if (tem === null)      { indeterminado++; nota = ' ?'; }
       else if (tem === quer) { nota = ''; }
-      else if (quer)         { faltando++;  nota = ' FALTA'; }
-      else                   { sobrando++;  nota = ' SOBRA'; }
+      else if (quer)         { faltando++;   nota = ' FALTA'; }
+      else                   { sobraNoBot++; nota = ' SOBRA'; }
 
       linha.push(`${op}:${marca(tem)}${nota}`);
     }
@@ -245,7 +259,7 @@ if (CONFIG.verificar) {
   console.log('\n   Escrita que só administrador deveria ter:');
   for (const m of ['ir.ui.view', 'ir.cron', 'res.groups']) {
     const w = await pode(m, 'write');
-    if (w === true)  sobrando++;
+    if (w === true)  sobraDeAdmin++;
     if (w === null)  indeterminado++;
     const veredito = w === false ? '· ok' : w === true ? '✓ SOBRA' : '? NÃO SEI';
     console.log(`   ${m.padEnd(24)} write:${veredito}`);
@@ -268,11 +282,30 @@ if (CONFIG.verificar) {
   }
 
   console.log('');
-  if (faltando)      console.log(`❌ ${faltando} permissão(ões) FALTANDO — o bot vai quebrar nelas.`);
-  if (sobrando)      console.log(`⚠️  ${sobrando} permissão(ões) SOBRANDO — o usuário ainda tem poder de administrador.`);
+  if (faltando) console.log(`❌ ${faltando} permissão(ões) FALTANDO — o bot vai quebrar nelas.`);
+
+  if (sobraDeAdmin) {
+    console.log(`🚨 ${sobraDeAdmin} permissão(ões) de ADMINISTRADOR — o usuário ainda é admin.`);
+    console.log('   Tire-o de Administração na tela do Odoo. Enquanto for admin, o');
+    console.log('   grupo restritivo não limita nada.');
+  }
+
+  if (sobraNoBot) {
+    console.log(`⚠️  ${sobraNoBot} permissão(ões) SOBRANDO nos modelos do bot.`);
+    if (!sobraDeAdmin) {
+      console.log('   NÃO é poder de administrador — os três acima deram `ok`.');
+      console.log('   É outra regra de ir.model.access concedendo isto: as ACLs do');
+      console.log('   Odoo SOMAM, então o grupo restritivo não anula uma regra');
+      console.log('   permissiva que já exista (em geral a que o Studio cria junto');
+      console.log('   com o modelo, valendo para todo usuário interno).');
+    }
+    console.log('   Para ver QUAL regra, com a chave do ADMINISTRADOR em .odoo-env:');
+    console.log('     node ferramentas/instalar-usuario-bot.mjs --explicar --login=<email do bot>');
+  }
+
   if (indeterminado) console.log(`❓ ${indeterminado} resposta(s) INDETERMINADA(S) — isto NÃO é aprovação.`);
 
-  if (!faltando && !sobrando && !indeterminado) {
+  if (!faltando && !sobraNoBot && !sobraDeAdmin && !indeterminado) {
     console.log('✅ Exatamente o que o código usa nos modelos do bot, e nada de administrador.');
     console.log('   Residual conhecido: o piso de `base.group_user` acima. Baixar disso');
     console.log('   exigiria regras de registro (record rules) por modelo — fora do BL-17.');
@@ -280,7 +313,100 @@ if (CONFIG.verificar) {
   console.log('');
   // Indeterminado sai diferente de zero: "não sei" não passa em CI nem em
   // conferência humana apressada.
-  process.exit(faltando || sobrando || indeterminado ? 1 : 0);
+  process.exit(faltando || sobraNoBot || sobraDeAdmin || indeterminado ? 1 : 0);
+}
+
+// ===========================================================================
+// MODO EXPLICAR — de ONDE vem a permissão que sobra
+// ===========================================================================
+//
+// O `--verificar` diz QUE sobra. Este diz DE ONDE, que é a pergunta seguinte
+// e a que não dá para responder olhando o grupo do bot: as ACLs do Odoo são
+// ADITIVAS. Criar um grupo restritivo não anula uma regra permissiva que já
+// exista — e o Studio cria uma, valendo para todo usuário interno, junto com
+// cada modelo `x_*`.
+//
+// Roda com a chave do ADMINISTRADOR: ler `ir.model.access` e `res.groups` não
+// é coisa que o bot deva poder fazer.
+if (CONFIG.explicar) {
+  console.log('🔍 modo: EXPLICAR — de onde vem cada permissão nos modelos do bot\n');
+
+  if (!CONFIG.login) {
+    console.error('❌ preciso de --login=<email do bot> para saber a quais grupos ele pertence.\n');
+    process.exit(1);
+  }
+
+  const [u] = await buscar('res.users', [['login', '=', CONFIG.login]],
+    ['id', 'name', 'groups_id'], { limit: 1 });
+  if (!u) {
+    console.error(`❌ não achei usuário com login "${CONFIG.login}".\n`);
+    process.exit(1);
+  }
+  console.log(`   bot: ${u.name} (uid ${u.id}), em ${u.groups_id.length} grupo(s)\n`);
+
+  const modelos = MATRIZ.map((m) => m.model);
+  const acls = await buscar('ir.model.access',
+    [['model_id.model', 'in', modelos]],
+    ['name', 'model_id', 'group_id', 'perm_read', 'perm_write', 'perm_create', 'perm_unlink']);
+
+  const querido = Object.fromEntries(MATRIZ.map((m) => [m.model, m]));
+  const OPS = ['read', 'write', 'create', 'unlink'];
+  let culpadas = 0;
+
+  // O `model_id` do search_read vem como [id, rótulo], e o rótulo é o nome
+  // AMIGÁVEL do modelo ("Devolução"), não o técnico. Sem resolver isto, o
+  // agrupamento por modelo casaria com nada — mesma armadilha do grupo de
+  // administrador buscado por nome.
+  const ids = [...new Set(acls.map((a) => a.model_id[0]))];
+  const nomes = await buscar('ir.model', [['id', 'in', ids]], ['model']);
+  const tecnico = Object.fromEntries(nomes.map((n) => [n.id, n.model]));
+
+  for (const model of modelos) {
+    const linhas = acls.filter((a) => tecnico[a.model_id[0]] === model);
+    const quer = querido[model];
+
+    console.log(`   ${model}`);
+    if (!linhas.length) {
+      console.log('      (nenhuma regra — o acesso vem de outro lugar)');
+      continue;
+    }
+
+    for (const a of linhas) {
+      const concede = OPS.filter((o) => a[`perm_${o}`]);
+      const demais  = OPS.filter((o) => a[`perm_${o}`] && !quer[o]);
+      // Só é culpada se o BOT estiver no grupo dela. Regra sem grupo vale
+      // para todo mundo, inclusive ele.
+      const semGrupo = !a.group_id;
+      const doBot    = semGrupo || u.groups_id.includes(a.group_id[0]);
+      const problema = demais.length && doBot;
+      if (problema) culpadas++;
+
+      const grupo = semGrupo ? '(SEM GRUPO — vale para todos)' : a.group_id[1];
+      console.log(`      ${problema ? '🚨' : '· '} ${a.name}`);
+      console.log(`         grupo: ${grupo}`);
+      console.log(`         concede: ${concede.join(', ') || '(nada)'}`
+        + (problema ? `  →  A MAIS: ${demais.join(', ')}` : ''));
+    }
+  }
+
+  console.log('');
+  if (!culpadas) {
+    console.log('✅ Nenhuma regra concede ao bot mais do que a matriz pede.\n');
+    process.exit(0);
+  }
+
+  console.log(`🚨 ${culpadas} regra(s) concedem ao bot mais do que a matriz pede.`);
+  console.log('');
+  console.log('   NÃO saia apagando: essas regras provavelmente existem para os');
+  console.log('   agentes da pastoral, que precisam editar comunidade e parâmetros');
+  console.log('   pela tela. Apagá-las tranca as pessoas para fora.');
+  console.log('');
+  console.log('   O caminho é restringir a regra a um grupo de quem USA a tela e');
+  console.log('   deixar o bot fora dele — em Definições → Técnico → Direitos de');
+  console.log('   Acesso. Isto é decisão sobre quem pode o quê na paróquia, então');
+  console.log('   não faço por script.');
+  console.log('');
+  process.exit(1);
 }
 
 // ===========================================================================
