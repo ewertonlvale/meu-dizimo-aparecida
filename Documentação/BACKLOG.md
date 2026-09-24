@@ -2363,3 +2363,62 @@ exigiria regras de registro por modelo, que é outro item.
 
 **Cobertura:** mais 2 casos no `conta-mensagens.js`, ambos reprovando contra a versão anterior.
 
+---
+
+### BL-17 — nota de 24/09 (3): o verificador aprovava quando não sabia
+
+O usuário rodou `--verificar` com **um uid que não existe, de propósito**, e o script devolveu um
+relatório completo — matriz, FALTA, SOBRA, veredito — contra credencial que nem autenticava. Pior,
+na seção de segurança:
+
+```
+   res.partner              write:· ok
+   ir.ui.view               write:· ok
+   ir.cron                  write:· ok
+   res.groups               write:· ok
+```
+
+**Falha total de autenticação lida como aprovação.** Um dígito errado na chave e a conclusão seria
+"o bot está trancado".
+
+O driver de prova mostrou que era pior do que o log sugeria. Quatro defeitos:
+
+| Cenário | Comportamento anterior | Correto |
+|---|---|---|
+| uid inexistente | **exit 0, ✅ "nada de administrador"** | falhar |
+| credencial recusada | exit 1 com diagnóstico falso ("ainda é administrador") | falhar dizendo que é credencial |
+| erro de rede | inventava 3 FALTA e 1 SOBRA | dizer "não sei" |
+| **usuário ainda administrador** | **exit 0** | falhar |
+
+O último é o mais grave: `process.exit(faltando ? 1 : 0)` **ignorava `sobrando`**. A condição
+exata que o BL-17 existe para detectar saía com código zero e passaria em qualquer CI.
+
+**As causas, todas da mesma família:**
+
+1. `rpc()` descartava `error.data.name`, que é onde o Odoo distingue `AccessDenied` (credencial)
+   de `AccessError` (permissão). Sem isso, o script adivinhava pelo texto da mensagem — que muda
+   com o idioma.
+2. `pode()` devolvia a **string** do erro quando não era permissão. String comparada com booleano
+   é sempre diferente, então todo "não sei" virava FALTA ou SOBRA.
+3. Na lista de administrador, `ok = w !== true` — uma string é `!== true`, logo **"ok"**. A
+   checagem de segurança aprovava justamente quando não sabia.
+4. O código de saída só olhava `faltando`.
+
+**O que passou a valer:** `rpc()` preserva `odooName`; uma **conferência de credencial** roda
+antes de qualquer outra coisa e aborta dizendo se o uid não existe ou se a chave foi recusada,
+imprimindo **nome e login de quem conectou** (verificar o usuário errado devolve um relatório
+coerente e inútil); `pode()` tem **três estados** — `true`, `false`, `null` —, e `null` nunca é
+achado; só `false` aprova na lista de administrador; e o exit code cai com falta, sobra **ou**
+indeterminado.
+
+**A lição, que é a quarta repetição da mesma:** este script já errou quatro vezes, sempre para o
+lado do "está tudo certo" — `check_access_rights`, o grupo por nome em inglês, o `res.partner` do
+piso, e agora estas quatro. **Ler o código não pegou nenhuma delas**; três passaram por revisão.
+Por isso agora existe `ferramentas/prova-verificador.mjs`: sobe um Odoo de mentira em localhost,
+um por cenário, e roda o verificador de verdade contra ele. Sai 1 se qualquer cenário responder
+diferente do esperado. Nada vai para a rede e nenhuma credencial é usada.
+
+**Cobertura:** 5 cenários executáveis na prova, mais 5 casos novos no `conta-mensagens.js` (que
+também exige que a prova não seja apagada). Os cinco cenários reprovam contra a versão anterior —
+dois deles com exit 0 onde deveria ser 1.
+

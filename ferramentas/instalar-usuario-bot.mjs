@@ -80,7 +80,16 @@ async function rpc(model, method, args = [], kwargs = {}) {
     process.exit(1);
   }
   const json = await res.json();
-  if (json.error) throw new Error(json.error.data?.message || json.error.message);
+  if (json.error) {
+    const erro = new Error(json.error.data?.message || json.error.message);
+    // O Odoo diz em `data.name` QUAL exceção foi, e isso distingue duas coisas
+    // que não podem ser confundidas:
+    //   odoo.exceptions.AccessDenied  → credencial errada (uid/chave)
+    //   odoo.exceptions.AccessError   → autenticou, mas não tem permissão
+    // Adivinhar isso pelo texto da mensagem é frágil e muda com o idioma.
+    erro.odooName = json.error.data?.name || '';
+    throw erro;
+  }
   return json.result;
 }
 const buscar = (m, d, c, o = {}) => rpc(m, 'search_read', [d], { fields: c, ...o });
@@ -125,7 +134,42 @@ console.log(`\n🔌 ${CONFIG.url} (db=${CONFIG.db}, uid=${CONFIG.uid})`);
 // ===========================================================================
 if (CONFIG.verificar) {
   console.log('🔎 modo: VERIFICAR — perguntando ao Odoo, operação por operação\n');
-  console.log('   Rode isto com a chave do usuário NOVO para valer.\n');
+
+  // ── ANTES DE TUDO: esta credencial autentica? ──────────────────────────
+  //
+  // Sem isto, um uid inexistente produzia o relatório COMPLETO — matriz,
+  // FALTA, SOBRA, veredito — contra credencial que nem logava. E a parte
+  // pior: as checagens de segurança apareciam como "· ok", porque um erro
+  // não é `true`. Falha total de autenticação lida como aprovação.
+  //
+  // Foi encontrado com um uid digitado errado de propósito. Um comando que
+  // responde "está tudo trancado" quando nem conectou é pior que comando
+  // nenhum: ele encerra a investigação.
+  let euSou = null;
+  try {
+    const eu = await rpc('res.users', 'read', [[CONFIG.uid], ['login', 'name']]);
+    if (!eu || !eu.length) {
+      console.error(`\n❌ uid ${CONFIG.uid} NÃO EXISTE neste banco.`);
+      console.error('   Confira ODOO_UID em ferramentas/.odoo-env.\n');
+      process.exit(1);
+    }
+    euSou = eu[0];
+  } catch (e) {
+    if (/AccessDenied/.test(e.odooName)) {
+      console.error(`\n❌ credencial recusada (uid ${CONFIG.uid}).`);
+      console.error('   O par ODOO_UID + ODOO_API_KEY não autentica neste banco.');
+      console.error('   Nada foi verificado — o relatório abaixo não existiria.\n');
+      process.exit(1);
+    }
+    console.error(`\n❌ não consegui nem me identificar: ${e.message}`);
+    console.error('   Sem isso, qualquer resposta abaixo seria indistinguível de');
+    console.error('   "sem permissão". Abortando em vez de adivinhar.\n');
+    process.exit(1);
+  }
+
+  console.log(`   conectado como: ${euSou.name} <${euSou.login}> (uid ${CONFIG.uid})`);
+  console.log('   ⚠️  confira se é MESMO o usuário do bot — verificar o usuário');
+  console.log('       errado devolve um relatório perfeitamente coerente e inútil.\n');
 
   // `has_access` devolve booleano e não executa nada. Num recordset VAZIO —
   // que é o que o execute_kw entrega quando não se passam ids — ele responde
@@ -133,31 +177,42 @@ if (CONFIG.verificar) {
   //
   // Eu tinha escrito `check_access_rights`, que é o nome antigo e NÃO EXISTE
   // MAIS nesta versão: em odoo/orm/models.py da saas-19.3 há `check_access`,
-  // que levanta exceção, e `has_access`, que devolve o booleano. O verificador
-  // teria estourado no primeiro modelo — e este é o script cujo trabalho é
-  // provar que o resto ficou certo.
+  // que levanta exceção, e `has_access`, que devolve o booleano.
+  //
+  // TRÊS ESTADOS, não dois: true, false e null. `null` é "não sei", e não sei
+  // NUNCA é achado — nem falta, nem sobra. Antes isto devolvia a string do
+  // erro, que comparada com booleano dava sempre diferente e virava veredito.
+  const porQue = {};
   const pode = async (model, op) => {
     try {
-      return await rpc(model, 'has_access', [op]);
+      const r = await rpc(model, 'has_access', [op]);
+      return typeof r === 'boolean' ? r : null;
     } catch (e) {
-      const msg = e.message.split('\n')[0];
-      // Sem permissão de leitura, o próprio has_access pode ser recusado —
-      // e isso já é a resposta.
-      if (/AccessError|not allowed|permiss/i.test(msg)) return false;
-      return `erro: ${msg}`;
+      // AccessError é resposta: autenticou e não pode. Qualquer outra coisa
+      // é ignorância nossa, e ignorância não vira conclusão.
+      if (/AccessError/.test(e.odooName)) return false;
+      porQue[`${model}.${op}`] = e.message.split('\n')[0];
+      return null;
     }
   };
 
-  let faltando = 0, sobrando = 0;
+  const marca = (v) => (v === true ? '✓' : v === false ? '·' : '?');
+
+  let faltando = 0, sobrando = 0, indeterminado = 0;
+
   for (const m of MATRIZ) {
     const linha = [];
     for (const op of ['read', 'write', 'create', 'unlink']) {
-      const tem = await pode(m.model, op);
+      const tem  = await pode(m.model, op);
       const quer = !!m[op];
-      const ok = tem === quer;
-      if (!ok && quer)  faltando++;
-      if (!ok && !quer) sobrando++;
-      linha.push(`${op}:${tem === true ? '✓' : tem === false ? '·' : '?'}${ok ? '' : (quer ? ' FALTA' : ' SOBRA')}`);
+
+      let nota = '';
+      if (tem === null)      { indeterminado++; nota = ' ?'; }
+      else if (tem === quer) { nota = ''; }
+      else if (quer)         { faltando++;  nota = ' FALTA'; }
+      else                   { sobrando++;  nota = ' SOBRA'; }
+
+      linha.push(`${op}:${marca(tem)}${nota}`);
     }
     console.log(`   ${m.model.padEnd(24)} ${linha.join('  ')}`);
   }
@@ -169,12 +224,16 @@ if (CONFIG.verificar) {
   //
   // `ir.model.fields` NÃO entra aqui: já está na MATRIZ com write:0, e
   // repetir fazia a mesma falha ser contada duas vezes no total.
+  //
+  // SÓ `false` É APROVAÇÃO. Era `w !== true`, e por isso um erro passava como
+  // "ok": a checagem de segurança aprovava justamente quando não sabia.
   console.log('\n   Escrita que só administrador deveria ter:');
   for (const m of ['ir.ui.view', 'ir.cron', 'res.groups']) {
     const w = await pode(m, 'write');
-    const ok = w !== true;
-    if (!ok) sobrando++;
-    console.log(`   ${m.padEnd(24)} write:${w === true ? '✓ SOBRA' : '· ok'}`);
+    if (w === true)  sobrando++;
+    if (w === null)  indeterminado++;
+    const veredito = w === false ? '· ok' : w === true ? '✓ SOBRA' : '? NÃO SEI';
+    console.log(`   ${m.padEnd(24)} write:${veredito}`);
   }
 
   // ── O piso do Odoo, que não dá para baixar ────────────────────────────
@@ -182,27 +241,31 @@ if (CONFIG.verificar) {
   // escrita em res.partner, mail.message, ir.attachment e companhia. Não é
   // sinal de administrador e NÃO conta como sobra — é o mínimo que o Odoo
   // dá a quem não é portal.
-  //
-  // Isto estava junto com os de cima, e teria acusado "provavelmente ainda é
-  // administrador" em cima de um usuário corretamente limitado. Errar para o
-  // lado do alarme falso desgasta o alarme: na próxima sobra de verdade,
-  // ninguém olha.
   console.log('\n   Piso do usuário interno (informativo, não é sobra):');
   for (const m of ['res.partner', 'ir.attachment', 'mail.message']) {
     const w = await pode(m, 'write');
-    console.log(`   ${m.padEnd(24)} write:${w === true ? '✓ (esperado)' : '·'}`);
+    console.log(`   ${m.padEnd(24)} write:${w === true ? '✓ (esperado)' : marca(w)}`);
+  }
+
+  if (Object.keys(porQue).length) {
+    console.log('\n   Por que não soube:');
+    for (const [k, v] of Object.entries(porQue)) console.log(`   ${k.padEnd(24)} ${v}`);
   }
 
   console.log('');
-  if (faltando) console.log(`❌ ${faltando} permissão(ões) FALTANDO — o bot vai quebrar nelas.`);
-  if (sobrando) console.log(`⚠️  ${sobrando} permissão(ões) SOBRANDO — o usuário ainda tem poder de administrador.`);
-  if (!faltando && !sobrando) {
+  if (faltando)      console.log(`❌ ${faltando} permissão(ões) FALTANDO — o bot vai quebrar nelas.`);
+  if (sobrando)      console.log(`⚠️  ${sobrando} permissão(ões) SOBRANDO — o usuário ainda tem poder de administrador.`);
+  if (indeterminado) console.log(`❓ ${indeterminado} resposta(s) INDETERMINADA(S) — isto NÃO é aprovação.`);
+
+  if (!faltando && !sobrando && !indeterminado) {
     console.log('✅ Exatamente o que o código usa nos modelos do bot, e nada de administrador.');
     console.log('   Residual conhecido: o piso de `base.group_user` acima. Baixar disso');
     console.log('   exigiria regras de registro (record rules) por modelo — fora do BL-17.');
   }
   console.log('');
-  process.exit(faltando ? 1 : 0);
+  // Indeterminado sai diferente de zero: "não sei" não passa em CI nem em
+  // conferência humana apressada.
+  process.exit(faltando || sobrando || indeterminado ? 1 : 0);
 }
 
 // ===========================================================================
