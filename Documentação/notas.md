@@ -29,8 +29,8 @@ espera. E os outros `instalar-*.mjs`, `baixar-views.mjs` e `odoo-dump.mjs` têm 
 (`process.exit` depois de `fetch`); estão fora do harness, mas podem sair com código de erro
 falso no Windows.
 
-⚠️ **Continua pendente o passo manual da Fase 0:** exigir o check *Harness* no ruleset da
-`staging` (Settings → Branches).
+✅ **Passo manual da Fase 0 feito:** o check *Harness* é exigido no ruleset da
+`staging`.
 
 ---
 
@@ -166,8 +166,8 @@ continua sendo o primeiro dado real.
 
 ## 4. Próximos passos sugeridos
 
-1. ~~Corrigir o harness no Windows~~ — feito (branch `fix/harness-windows`, não commitado).
-2. Ligar o *required check* do Harness na `staging`.
-3. Corrigir os bugs de alta da seção 2 — oferta/dízimo e reações são poucas linhas.
-4. Atualizar o `MIGRACAO-NIVEL-1.md` com a seção 3 e pôr `Webhook.gs`/`StateManager.gs` no
+1. ~~Corrigir o harness no Windows~~ — feito, PR #145.
+2. ~~Ligar o *required check* do Harness na `staging`~~ — feito (ruleset "staging protegida").
+3. Corrigir os bugs de alta da seção 2 — registrados no BACKLOG como BL-77 a BL-84.
+4. ~~Atualizar o `MIGRACAO-NIVEL-1.md` com a seção 3~~ — feito. Falta pôr `Webhook.gs`/`StateManager.gs` no
    harness antes da Fase 1.

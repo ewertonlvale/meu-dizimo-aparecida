@@ -82,6 +82,32 @@ os arquivos na ordem, roda num contexto que tem os globais da Plataforma. Os `.g
 sendo scripts de escopo global, como o Apps Script espera, e o mesmo código roda nos dois lugares
 durante toda a transição.
 
+### Correções a este plano (revisão de 24/09)
+
+Uma revisão do código contra este documento (detalhes em `notas.md`) confirmou a tabela de APIs
+e a decisão da worker thread, mas achou erros e omissões. Os que mudam trabalho:
+
+- **O carregamento está provado pela metade.** O harness concatena os `.gs` num script só — por
+  causa do `const` léxico, que não vira propriedade do contexto — e **nunca carrega**
+  `Webhook.gs`, `StateManager.gs` nem `TriggerSessoes.gs`: justamente a entrada e o estado.
+- **Estado de módulo vaza entre requisições.** No GAS cada execução começa do zero; numa worker de
+  vida longa, não. `Utils._mensagemAtualId` nunca é limpo (o "digitando…" pode ir para a mensagem
+  de **outra pessoa**); `OdooService._camposGravaveis`/`_camposConhecidos` guardam `false` sem TTL
+  depois de um erro passageiro. **É o risco mais sério da migração, e é silencioso.**
+- **Fuso fora do `formatDate`.** ~33 usos de `getMonth`/`getDate`/`setHours` dependem do
+  `timeZone` do `appsscript.json`. No container: `TZ=America/Sao_Paulo` e um teste que confirme.
+- **`PropertiesService` não é "25 de config + 5 mutáveis".** Há famílias dinâmicas lidas por
+  varredura de prefixo (`sessao_ativa_*`, `bloqueado_*`, `suspeito_*`, `media_id_*`,
+  `uso_urlfetch_*`, `msgs_*`). Em Redis, isso é `SCAN`.
+- **Os três locks têm políticas diferentes** (seguir sem trava / desistir), e a fachada tem de
+  carregá-las — `comTrava` sozinho não basta.
+- **Multipart.** O `MediaService` passa objeto com `Blob` e o `UrlFetchApp` monta o
+  `multipart/form-data` sozinho; `sync-fetch` não.
+- **Números:** 17.626 linhas (15.189 de produção); `RegistrarNumero.gs` chama `UrlFetchApp`
+  direto; a trigger de sessões roda a cada **5** min, não 20.
+
+**Estimativa revisada: 16–21 dias** (era 12–15). Palpite, como o original.
+
 ---
 
 ## As fases
@@ -118,16 +144,16 @@ quando a ferramenta muda.
 
 Tempo total: **~3 segundos**.
 
-#### ⚠️ Falta um passo, e ele é seu
+#### ✅ O check é exigido (24/09)
 
-O workflow **avisa**, não impede. Para o critério de aceite valer — *"um PR com o harness
-vermelho não entra em `staging`"* — é preciso exigir o check:
+O ruleset **"staging protegida"** exige o check **Harness** para entrar na `staging` (além de
+bloquear force push e exclusão). Conferido pela API do GitHub. A partir daqui, um PR com o
+harness vermelho não entra.
 
-> **Settings → Branches → Add branch ruleset** (ou *Add rule*) para `staging`
-> → marcar **Require status checks to pass before merging**
-> → escolher **Harness** na lista (ele aparece depois da primeira execução do workflow)
-
-Enquanto isso não for feito, a Fase 0 está metade pronta: o sinal existe e é ignorável.
+E o harness passa **nos dois lugares**: até o #145 ele era verde no CI (Linux) e reprovava 3 de 4
+suítes no Windows de quem desenvolve — CRLF nas regex, caminho `C:\` no `import()`, e o Node 24
+caindo com `0xC0000409` num `process.exit` logo depois de `fetch`. Exatamente a divergência que o
+ponto de entrada único existe para impedir, só que vinda da plataforma, não da lista de suítes.
 
 ### Fase 1 — Camada `Plataforma`, ainda 100% no Apps Script (2–3 dias)
 
