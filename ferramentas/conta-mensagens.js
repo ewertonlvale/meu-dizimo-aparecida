@@ -3508,6 +3508,20 @@ console.log('🔐 O verificador do usuário do bot (BL-17)\n');
     // ADMINISTRADOR saía com zero, e passaria em qualquer CI.
     { nome: 'sobra e indeterminado também derrubam o código de saída',
       ok: /process\.exit\(faltando \|\| sobrando \|\| indeterminado/.test(fonte) },
+    // O call_kw do Odoo consome args[0] como lista de ids em todo método que
+    // não é @api.model. Chamando `[op]`, a operação virava os ids e o Odoo
+    // recusava as 39 perguntas. Tem de ser `[[], op]`.
+    { nome: "has_access é chamado como [[], op], não [op]",
+      ok: /has_access',\s*\[\[\],\s*op\]/.test(fonte) },
+    // O mock lia args[0] como operação — repetia o engano de quem chamava e
+    // por isso o abençoava. Tem de reproduzir o despacho para servir de prova.
+    { nome: 'o Odoo de mentira reproduz o despacho do call_kw',
+      ok: (() => {
+        const pv = fs.readFileSync(
+          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'), 'utf8');
+        return /const \[ids, operacao\] = args/.test(pv)
+            && /missing 1 required positional argument/.test(pv);
+      })() },
   ];
 
   for (const c of casos) {

@@ -171,9 +171,24 @@ if (CONFIG.verificar) {
   console.log('   ⚠️  confira se é MESMO o usuário do bot — verificar o usuário');
   console.log('       errado devolve um relatório perfeitamente coerente e inútil.\n');
 
-  // `has_access` devolve booleano e não executa nada. Num recordset VAZIO —
-  // que é o que o execute_kw entrega quando não se passam ids — ele responde
-  // pelo acesso ao MODELO, que é justamente a pergunta aqui.
+  // `has_access` devolve booleano e não executa nada.
+  //
+  // A CHAMADA É `[[], op]`, NÃO `[op]`. Eu tinha escrito `[op]` acreditando que
+  // "sem ids" bastava — e o Odoo respondeu, 39 vezes:
+  //
+  //     BaseModel.has_access() missing 1 required positional argument: 'operation'
+  //
+  // O motivo está em `odoo/api.py`. Para método que NÃO é `@api.model`, o
+  // despacho é `_call_kw_multi`:
+  //
+  //     ids, args = args[0], args[1:]
+  //     recs = model.browse(ids)
+  //     result = method(recs, *args, **kwargs)
+  //
+  // Ou seja, `args[0]` é SEMPRE consumido como a lista de ids. Mandando
+  // `['read']`, o Odoo leu `'read'` como ids e chamou `has_access(recs)` sem
+  // operação. O recordset vazio que se quer vem de passar `[]` explicitamente
+  // como primeiro argumento, e aí `has_access` responde pelo MODELO.
   //
   // Eu tinha escrito `check_access_rights`, que é o nome antigo e NÃO EXISTE
   // MAIS nesta versão: em odoo/orm/models.py da saas-19.3 há `check_access`,
@@ -185,7 +200,7 @@ if (CONFIG.verificar) {
   const porQue = {};
   const pode = async (model, op) => {
     try {
-      const r = await rpc(model, 'has_access', [op]);
+      const r = await rpc(model, 'has_access', [[], op]);
       return typeof r === 'boolean' ? r : null;
     } catch (e) {
       // AccessError é resposta: autenticou e não pode. Qualquer outra coisa

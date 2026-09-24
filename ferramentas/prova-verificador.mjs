@@ -12,6 +12,11 @@
  *     3. `res.partner` contado como sobra, sendo o piso do usuário interno
  *     4. uid inexistente devolvendo ✅ e exit 0; e usuário AINDA ADMINISTRADOR
  *        também saindo com exit 0, porque o código de saída só olhava `faltando`
+ *     5. `has_access` chamado como `[op]` em vez de `[[], op]` — o `call_kw`
+ *        do Odoo consome `args[0]` como lista de ids. Esta prova NÃO pegou,
+ *        porque o mock lia `args[0]` como a operação: repetia o engano de quem
+ *        chamava e portanto o abençoava. Corrigido: o mock agora reproduz o
+ *        despacho `_call_kw_multi` e recusa a forma errada.
  *
  *   Um verificador que aprova quando não sabe é pior que verificador nenhum:
  *   ele encerra a investigação. Ler o código não pegou nenhuma das quatro —
@@ -76,12 +81,33 @@ function subir(cenario, porta) {
         }
 
         if (method === 'has_access') {
+          // ── O despacho de verdade do Odoo, e não o que eu supunha ────────
+          //
+          // Este mock lia `args[0]` como a operação — o MESMO engano de quem
+          // chamava. Resultado: a prova passava com a chamada errada, e só o
+          // Odoo real acusou, 39 vezes seguidas:
+          //
+          //   BaseModel.has_access() missing 1 required positional argument
+          //
+          // Em `odoo/api.py`, método que não é `@api.model` vai por
+          // `_call_kw_multi`, que faz `ids, args = args[0], args[1:]`. O
+          // primeiro argumento é SEMPRE consumido como lista de ids.
+          //
+          // Um mock que repete o engano de quem chama valida o engano. Aqui
+          // ele passou a reproduzir o despacho — e a recusar a forma errada
+          // com a mensagem que o Odoo dá.
+          const [ids, operacao] = args;
+          if (!Array.isArray(ids) || operacao === undefined) {
+            return erro('builtins.TypeError',
+              "BaseModel.has_access() missing 1 required positional argument: 'operation'");
+          }
+
           // Erro que NÃO é de permissão: o verificador tem de dizer "não sei".
           if (cenario === 'rede-instavel' && model === 'x_dizimista') return erro('', 'ECONNRESET');
           if (cenario === 'ainda-admin' && SO_ADMIN.includes(model)) {
             return res.end(JSON.stringify({ result: true }));
           }
-          return res.end(JSON.stringify({ result: !!(PERMISSOES[model] || {})[args[0]] }));
+          return res.end(JSON.stringify({ result: !!(PERMISSOES[model] || {})[operacao] }));
         }
 
         res.end(JSON.stringify({ result: [] }));
