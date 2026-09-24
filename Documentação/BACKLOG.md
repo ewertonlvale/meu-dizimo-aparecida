@@ -2724,3 +2724,37 @@ passa a ser o resultado desejado.
 titular, endereço) e continua com a regra dela. `x_devolucao` e `x_dizimista` idem — são o
 trabalho diário da pastoral.
 
+---
+
+### BL-17 — nota de 24/09 (9): "Nada foi alterado" era promessa por sorte
+
+O `--restringir --aplicar` morreu em `UND_ERR_CONNECT_TIMEOUT` e imprimiu *"Isso é CONEXÃO, não
+credencial. Nada foi alterado."* **Desta vez era verdade** — a queda veio na primeira chamada,
+antes de qualquer gravação, e o `--verificar` seguinte confirmou as mesmas 7 sobras.
+
+Mas a frase saía do tratador de erro do `rpc()`, ou seja **de qualquer ponto do código**. O
+`--restringir --aplicar` grava num laço, uma regra por vez. Um timeout na terceira de quatro
+deixaria duas regras já gravadas — e o script juraria que nada mudou, mandando a pessoa confiar
+num estado pela metade.
+
+Promessa que só vale por sorte não é promessa.
+
+**Agora o `rpc()` registra o que já gravou** (`create`, `write`, `unlink`) e a mensagem de queda
+diz a verdade dos dois lados: "nada foi alterado, a falha veio antes de qualquer gravação" ou
+"⚠️ N gravações JÁ FORAM FEITAS", listando-as.
+
+**Não tenta desfazer, de propósito.** Reverter exigiria conhecer o valor anterior de cada campo,
+e tentar isso pela mesma rede que acabou de cair transforma um problema em dois. Em vez disso
+aponta a saída real: **os modos são idempotentes** — rodar de novo mostra o que já foi aplicado
+como "já está certo" e grava só o que falta.
+
+**Cobertura:** cenário `queda-no-meio` na prova, com o mock derrubando o socket **depois** da
+primeira gravação e o cenário exigindo que a saída **não** contenha "Nada foi alterado". Com a
+mensagem antiga, reprova. A prova foi de 11 para **12 cenários**.
+
+**De passagem, duas coisas que o log confirmou funcionando:** o aviso *"confira se é MESMO o
+usuário do bot"* pegou uma execução feita com a chave do administrador ainda no `.odoo-env` — o
+relatório saiu coerente e completamente inútil, e a linha com nome e login foi o que denunciou.
+E `res.users write` aparece como `~ piso` em vez de achado, conforme a nota (7): as sobras caíram
+de 8 para 7 sem que nada no Odoo mudasse.
+
