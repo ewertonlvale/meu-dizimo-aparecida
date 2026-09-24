@@ -37,6 +37,20 @@
 
 import { carregarEnv } from './odoo-env.mjs';
 
+// Toda saída passa por aqui, e sempre com `await`. No Windows (Node 24),
+// `process.exit()` logo depois de uns poucos `fetch` derruba o processo com
+// 0xC0000409 — o código de saída vira lixo e a saída pode sumir. Um `--verificar`
+// cujo veredito É o código de saída não pode depender disso. Esperar 50 ms antes
+// de sair deixa o `fetch` fechar o que tem aberto. Medido em 24/09: sem a
+// espera, 3 a 5 dos 12 cenários da prova-verificador caíam por rodada; com
+// `setImmediate` ainda caíam 3; com 50 ms, 13 rodadas seguidas verdes. É
+// mitigação de tempo, não correção de causa — se voltar a cair, aumente aqui.
+// Em Linux não acontece, e por isso o CI não via.
+async function sair(codigo) {
+  await new Promise((r) => setTimeout(r, 50));
+  process.exit(codigo);
+}
+
 const env = carregarEnv(process.env.ODOO_ENV_FILE || 'ferramentas/.odoo-env');
 if (env?.carregadas.length) console.log(`🔑 ${env.caminho}: ${env.carregadas.join(', ')}`);
 
@@ -47,7 +61,7 @@ const argv = process.argv.slice(2);
   if (estranhos.length) {
     console.error(`❌ Não conheço: ${estranhos.join(', ')}`);
     console.error(`   Conhecidos: ${[...CONHECIDOS].join(' ')} --login=<email>`);
-    process.exit(1);
+    await sair(1);
   }
 }
 
@@ -64,7 +78,7 @@ const CONFIG = {
 };
 if (!CONFIG.url || !CONFIG.db || !CONFIG.uid || !CONFIG.apiKey) {
   console.error('❌ Faltam credenciais. Veja ferramentas/.odoo-env.exemplo.');
-  process.exit(1);
+  await sair(1);
 }
 
 // O que já foi GRAVADO nesta execução. Existe por causa de uma mentira:
@@ -102,7 +116,7 @@ async function rpc(model, method, args = [], kwargs = {}) {
       console.error('   ele é idempotente — o que já foi aplicado aparece como');
       console.error('   "já está certo" e só o que falta é gravado.');
     }
-    process.exit(1);
+    await sair(1);
   }
   const json = await res.json();
   if (json.error) {
@@ -187,7 +201,7 @@ if (CONFIG.verificar) {
     if (!eu || !eu.length) {
       console.error(`\n❌ uid ${CONFIG.uid} NÃO EXISTE neste banco.`);
       console.error('   Confira ODOO_UID em ferramentas/.odoo-env.\n');
-      process.exit(1);
+      await sair(1);
     }
     euSou = eu[0];
   } catch (e) {
@@ -195,12 +209,12 @@ if (CONFIG.verificar) {
       console.error(`\n❌ credencial recusada (uid ${CONFIG.uid}).`);
       console.error('   O par ODOO_UID + ODOO_API_KEY não autentica neste banco.');
       console.error('   Nada foi verificado — o relatório abaixo não existiria.\n');
-      process.exit(1);
+      await sair(1);
     }
     console.error(`\n❌ não consegui nem me identificar: ${e.message}`);
     console.error('   Sem isso, qualquer resposta abaixo seria indistinguível de');
     console.error('   "sem permissão". Abortando em vez de adivinhar.\n');
-    process.exit(1);
+    await sair(1);
   }
 
   console.log(`   conectado como: ${euSou.name} <${euSou.login}> (uid ${CONFIG.uid})`);
@@ -352,7 +366,7 @@ if (CONFIG.verificar) {
   console.log('');
   // Indeterminado sai diferente de zero: "não sei" não passa em CI nem em
   // conferência humana apressada.
-  process.exit(faltando || sobraNoBot || sobraDeAdmin || indeterminado ? 1 : 0);
+  await sair(faltando || sobraNoBot || sobraDeAdmin || indeterminado ? 1 : 0);
 }
 
 // ===========================================================================
@@ -372,14 +386,14 @@ if (CONFIG.explicar) {
 
   if (!CONFIG.login) {
     console.error('❌ preciso de --login=<email do bot> para saber a quais grupos ele pertence.\n');
-    process.exit(1);
+    await sair(1);
   }
 
   const [u] = await buscar('res.users', [['login', '=', CONFIG.login]],
     ['id', 'name', 'group_ids', 'all_group_ids'], { limit: 1 });
   if (!u) {
     console.error(`❌ não achei usuário com login "${CONFIG.login}".\n`);
-    process.exit(1);
+    await sair(1);
   }
   console.log(`   bot: ${u.name} (uid ${u.id}), em ${u.group_ids.length} grupo(s) `
     + `(${u.all_group_ids.length} contando os implicados)\n`);
@@ -434,7 +448,7 @@ if (CONFIG.explicar) {
   console.log('');
   if (!culpadas) {
     console.log('✅ Nenhuma regra concede ao bot mais do que a matriz pede.\n');
-    process.exit(0);
+    await sair(0);
   }
 
   console.log(`🚨 ${culpadas} regra(s) concedem ao bot mais do que a matriz pede.`);
@@ -448,7 +462,7 @@ if (CONFIG.explicar) {
   console.log('   Acesso. Isto é decisão sobre quem pode o quê na paróquia, então');
   console.log('   não faço por script.');
   console.log('');
-  process.exit(1);
+  await sair(1);
 }
 
 // ===========================================================================
@@ -488,7 +502,7 @@ if (CONFIG.restringir) {
   if (!gu) {
     console.error('❌ não resolvi base.group_user. Abortando — sem isso eu não sei');
     console.error('   quais regras são do grupo de usuário interno.\n');
-    process.exit(1);
+    await sair(1);
   }
 
   // Só os x_*. Os modelos do Odoo ficam de fora por construção.
@@ -575,18 +589,18 @@ if (CONFIG.restringir) {
   console.log('');
   if (!mexidas) {
     console.log('✅ Nada a restringir — as regras de base.group_user já batem com a matriz.\n');
-    process.exit(0);
+    await sair(0);
   }
   if (!CONFIG.aplicar) {
     console.log(`👀 ${mexidas} regra(s) seriam alteradas. Nada foi gravado.`);
     console.log('   Repita com --aplicar quando quiser valer, e confira depois com');
     console.log('   --verificar usando a chave do bot.\n');
-    process.exit(0);
+    await sair(0);
   }
   console.log(`✅ ${mexidas} regra(s) restringidas.`);
   console.log('   Confira com a chave do BOT: --verificar');
   console.log('   E confira com uma pessoa da Secretaria que a tela dela ainda edita.\n');
-  process.exit(0);
+  await sair(0);
 }
 
 // ===========================================================================

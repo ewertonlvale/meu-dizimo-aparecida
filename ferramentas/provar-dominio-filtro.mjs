@@ -37,7 +37,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const VIEWS = join(AQUI, 'views-odoo');
@@ -98,7 +98,9 @@ async function garantirPyJs() {
 }
 
 await garantirPyJs();
-const { evaluateExpr } = await import(join(CACHE, 'py.js'));
+// `import()` quer URL: um caminho `C:\...` do Windows é lido como esquema "c:"
+// e recusado. Em Linux o caminho cru passa, e por isso o CI não via o erro.
+const { evaluateExpr } = await import(pathToFileURL(join(CACHE, 'py.js')).href);
 
 // `context_today()` chama `new Date()`. Para provar a virada de ano e o 29/02
 // é preciso mandar no relógio.
