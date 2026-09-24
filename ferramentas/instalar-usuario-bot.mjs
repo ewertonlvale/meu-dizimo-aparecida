@@ -477,8 +477,29 @@ if (CONFIG.restringir) {
   const tecnico = Object.fromEntries(
     (await buscar('ir.model', [['id', 'in', ids]], ['model'])).map((n) => [n.id, n.model]));
 
+  // ── Quem mais escreve nestes modelos, além do grupo que vamos restringir?
+  //
+  // A pergunta que o script NÃO fazia, e que quase custou caro: tirar write de
+  // `base.group_user` só é inócuo se OUTRA regra ainda der write a alguém que
+  // não seja administrador. No caso real, `x_parametros` tinha a regra da
+  // Secretaria e `x_parametros_line_c498a` NÃO — então restringir deixaria as
+  // linhas de parâmetro editáveis só pelo Administrador, e a Secretaria
+  // descobriria isso ao tentar salvar.
+  //
+  // Administrador não conta como saída: se a resposta for "só o admin", é
+  // exatamente isso que precisa ser dito antes, não depois.
+  const [adm] = await buscar('ir.model.data',
+    [['model', '=', 'res.groups'], ['module', '=', 'base'], ['name', '=', 'group_system']],
+    ['res_id'], { limit: 1 });
+
+  const outras = await buscar('ir.model.access',
+    [['model_id.model', 'in', alvos.map((m) => m.model)],
+     ['group_id', '!=', gu.res_id], ['perm_write', '=', true]],
+    ['model_id', 'group_id']);
+
   const OPS = ['read', 'write', 'create', 'unlink'];
   let mexidas = 0;
+  const orfaos = [];
 
   for (const a of acls) {
     const model = tecnico[a.model_id[0]];
@@ -497,12 +518,34 @@ if (CONFIG.restringir) {
     if (!tirar.length) { console.log(`   · ${a.name.padEnd(36)} já está certo`); continue; }
 
     mexidas++;
+
+    // Sobrou alguém que não seja o administrador nem o próprio bot?
+    if (tirar.includes('write')) {
+      const restam = outras.filter((o) => tecnico[o.model_id[0]] === model
+        && o.group_id && o.group_id[0] !== (adm && adm.res_id)
+        && o.group_id[1] !== NOME_GRUPO);
+      if (!restam.length) orfaos.push(model);
+    }
+
     if (!CONFIG.aplicar) {
       console.log(`   ~ ${a.name.padEnd(36)} perderia: ${tirar.join(', ')}`);
     } else {
       await rpc('ir.model.access', 'write', [[a.id], vals]);
       console.log(`   ✓ ${a.name.padEnd(36)} tirado: ${tirar.join(', ')}`);
     }
+  }
+
+  if (orfaos.length) {
+    console.log('');
+    console.log('⚠️  ATENÇÃO — depois disto, SÓ O ADMINISTRADOR escreve em:');
+    orfaos.forEach((m) => console.log(`      ${m}`));
+    console.log('');
+    console.log('   Nenhum outro grupo (Secretaria, Pastoral) tem regra de escrita');
+    console.log('   nesses modelos. Se alguém edita isso pela tela hoje, vai parar');
+    console.log('   de conseguir — e o sintoma aparece na hora de salvar, não agora.');
+    console.log('');
+    console.log('   Se for o caso, crie antes a regra para o grupo de quem usa a tela');
+    console.log('   (espelhando a que já existe no modelo "pai"), e rode isto de novo.');
   }
 
   console.log('');

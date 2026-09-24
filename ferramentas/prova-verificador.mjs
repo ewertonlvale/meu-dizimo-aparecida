@@ -110,11 +110,25 @@ function subir(cenario, porta, gravado = []) {
           if (mau) return erro('builtins.ValueError', `Invalid field '${mau}' on '${model}'`);
         }
 
+        // Qual XML ID está sendo pedido? group_user e group_system têm ids
+        // diferentes, e trocá-los faria a checagem de órfão olhar o grupo
+        // errado — em silêncio.
+        const dm = JSON.stringify(params.args[5] || '').includes('group_system')
+          ? 'group_system' : 'group_user';
+
         if (method === 'search_read') {
-          if (model === 'ir.model.access')  return res.end(JSON.stringify({ result: ACLS[cenario] || [] }));
+          if (model === 'ir.model.access') {
+            // A segunda consulta pede as regras de OUTROS grupos com write.
+            const cru = JSON.stringify(params.args[5] || '');
+            if (cru.includes('perm_write')) {
+              return res.end(JSON.stringify({ result: OUTRAS[cenario] || [] }));
+            }
+            return res.end(JSON.stringify({ result: ACLS[cenario] || [] }));
+          }
           if (model === 'ir.model')         return res.end(JSON.stringify({ result: [{ id: 9, model: 'x_comunidade' }] }));
           if (model === 'ir.model.data')    return res.end(JSON.stringify({
-            result: cenario.startsWith('restringir') ? [{ id: 1, name: 'group_user', res_id: 1 }] : [] }));
+            result: cenario.startsWith('restringir')
+              ? [{ id: 1, name: dm, res_id: dm === 'group_user' ? 1 : 2 }] : [] }));
           if (model === 'res.users')        return res.end(JSON.stringify({
             result: [{ id: 13, name: 'Bot de Mentira', login: 'bot@exemplo.org',
                        group_ids: [1, 7], all_group_ids: [1, 7, 12] }] }));
@@ -201,6 +215,26 @@ ACLS['restringir-com-excesso'] = [
     group_id: [1, 'Role / User'],
     perm_read: true, perm_write: true, perm_create: true, perm_unlink: false },
 ];
+// Quem MAIS escreve nos x_*, além de base.group_user. É o que decide se
+// restringir deixa o modelo só nas mãos do administrador.
+const OUTRAS = {
+  // Tem a Secretaria: restringir é inócuo para as pessoas.
+  'restringir-com-excesso': [
+    { model_id: [9, 'Comunidade'], group_id: [5, 'Secretaria Paroquial'] },
+  ],
+  // NÃO tem ninguém além do admin: é o caso do x_parametros_line_c498a real,
+  // e o script tem de avisar ANTES.
+  'restringir-orfao': [
+    { model_id: [9, 'Comunidade'], group_id: [2, 'Role / Administrator'] },
+  ],
+  'restringir-ja-certo': [],
+};
+
+ACLS['restringir-orfao'] = [
+  { id: 11, name: 'Comunidade group_user', model_id: [9, 'Comunidade'],
+    group_id: [1, 'Role / User'],
+    perm_read: true, perm_write: true, perm_create: true, perm_unlink: false },
+];
 ACLS['restringir-ja-certo'] = [
   { id: 11, name: 'Comunidade group_user', model_id: [9, 'Comunidade'],
     group_id: [1, 'Role / User'],
@@ -229,10 +263,15 @@ const CENARIOS = [
   // --restringir mexe na permissão de TODOS os usuários internos. Simular por
   // padrão não é gentileza, é a diferença entre revisável e irreversível.
   { nome: 'restringir-com-excesso', modo: 'restringir', saida: 0, espera: /Nada foi gravado/,
-    porque: 'sem --aplicar não pode gravar nada, por mais óbvia que a mudança pareça',
+    // Sem esta NEGATIVA, um aviso que dispara sempre passaria nos dois casos:
+    // o cenário órfão só prova que ele aparece, não que ele discrimina.
+    naoEspera: /SÓ O ADMINISTRADOR escreve/,
+    porque: 'sem --aplicar não pode gravar nada, e havendo Secretaria não se avisa de órfão',
     confere: (g) => (g.length === 0 ? null : `gravou ${g.length} vez(es) em modo simulação`) },
   { nome: 'restringir-ja-certo', modo: 'restringir', saida: 0, espera: /Nada a restringir/,
     porque: 'rodar de novo depois de aplicado não pode inventar mudança' },
+  { nome: 'restringir-orfao', modo: 'restringir', saida: 0, espera: /SÓ O ADMINISTRADOR escreve/,
+    porque: 'sem outra regra de escrita, restringir tranca a Secretaria — e o sintoma só aparece ao salvar' },
 ];
 
 let porta = 8900;
@@ -262,11 +301,14 @@ for (const c of CENARIOS) {
   const codeOk = r.code === c.saida;
   const txtOk  = c.espera.test(r.txt);
   const extra = c.confere ? c.confere(gravado) : null;
-  const ok = codeOk && txtOk && !extra;
+  const naoOk = c.naoEspera ? !c.naoEspera.test(r.txt) : true;
+  const ok = codeOk && txtOk && naoOk && !extra;
   if (!ok) falhas++;
 
   console.log(`${ok ? '✅' : '❌'} ${c.nome.padEnd(17)} exit ${r.code} (esperado ${c.saida})`
-    + (ok ? '' : `\n     ${txtOk ? '' : 'não disse ' + c.espera}${extra ? ' ' + extra : ''}`));
+    + (ok ? '' : `\n     ${txtOk ? '' : 'não disse ' + c.espera}`
+              + `${naoOk ? '' : ' disse o que não devia: ' + c.naoEspera}`
+              + `${extra ? ' ' + extra : ''}`));
   console.log(`   ${c.porque}`);
 }
 

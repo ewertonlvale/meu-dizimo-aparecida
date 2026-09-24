@@ -2642,3 +2642,38 @@ usuário interno passa a ler e não escrever nos modelos do dízimo; o bot fica 
 **Cobertura:** a prova foi de 8 para **10 cenários**, cobrindo agora três modos (`--verificar`,
 `--explicar`, `--restringir`); mais 5 casos no `conta-mensagens.js`.
 
+---
+
+### BL-17 — nota de 24/09 (8): restringir podia trancar a Secretaria
+
+A simulação do `--restringir` saiu correta — 4 regras a alterar, as 3 que o bot legitimamente
+precisa intocadas, e `res_users all` **ausente da lista**, provando que a trava de "só modelo
+`x_*`" funcionou.
+
+Mas comparando com o relatório do `--explicar`, faltava uma pergunta:
+
+| Modelo | Regra de escrita fora de `group_user` |
+|---|---|
+| `x_comunidade` | ✅ `Secretaria - Comunidade` |
+| `x_parametros` | ✅ `Secretaria - Parâmetros` |
+| **`x_parametros_line_c498a`** | ❌ **nenhuma** |
+| `x_notificacao_log` | ❌ nenhuma (mas ninguém edita log à mão) |
+
+**A Secretaria edita as linhas de parâmetro hoje pela regra de `base.group_user`.** Tirando-a,
+só o Administrador escreve nelas — e o sintoma aparece quando alguém tenta salvar, não na hora
+de aplicar. Um script que faz uma mudança de permissão sem dizer isso empurra o custo para a
+pessoa errada, num momento pior.
+
+**O `--restringir` passou a avisar.** Para cada regra que perde `write`, ele pergunta se resta
+alguma outra regra de escrita **que não seja do administrador nem do próprio grupo do bot**. Se
+não restar, lista o modelo sob um aviso explícito e sugere criar antes a regra do grupo de quem
+usa a tela, espelhando a do modelo "pai".
+
+**A verificação que faltava na prova, e que quase passou despercebida:** o cenário órfão prova
+que o aviso *aparece*, mas não que ele *discrimina*. Um aviso disparando sempre passaria nos
+dois. Por isso o cenário com Secretaria ganhou uma **assertiva negativa** — ele reprova se o
+aviso aparecer. Conferido forçando `orfaos.push(model)` incondicional: reprova, como deve.
+
+**Cobertura:** a prova foi de 10 para **11 cenários**; mais 2 casos no `conta-mensagens.js`, que
+chegou a 265 verificações.
+
