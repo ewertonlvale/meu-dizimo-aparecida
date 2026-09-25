@@ -141,7 +141,8 @@ const Utils = {
         else                             this._mensagensServico++;
       }
 
-      const repetir = code === 429 || ((excecao || code >= 500) && idempotente);
+      const repetir = code === 429 || this._limiteDeTaxaDaMeta(resposta) ||
+                      ((excecao || code >= 500) && idempotente);
 
       if (!repetir) break;
 
@@ -167,6 +168,29 @@ const Utils = {
 
     if (excecao) throw excecao;
     return resposta;
+  },
+
+  /**
+   * A Meta disse "devagar"? (BL-84)
+   *
+   * O WhatsApp quase nunca responde 429: o limite de taxa vem como HTTP 400,
+   * com o motivo no corpo. Sem isto, o único caso em que repetir um ENVIO é
+   * seguro — a recusa acontece antes de processar, então nada duplica — virava
+   * perda silenciosa de mensagem.
+   *   4       muitas chamadas do app
+   *   80007   limite da conta (WABA)
+   *   130429  limite de vazão do número
+   *   131056  muitas mensagens para o mesmo destinatário
+   * @private
+   */
+  _limiteDeTaxaDaMeta(resposta) {
+    if (!resposta || resposta.getResponseCode() !== 400) return false;
+    try {
+      const codigo = (JSON.parse(resposta.getContentText()).error || {}).code;
+      return [4, 80007, 130429, 131056].indexOf(codigo) >= 0;
+    } catch (e) {
+      return false;   // corpo que não é JSON não é o limite da Meta
+    }
   },
 
   /**
@@ -666,18 +690,29 @@ const Utils = {
    * sem vírgula, ponto seguido de 3 dígitos também é milhar ("1.000"); ponto
    * isolado é decimal ("50.00").
    *
+   * BL-84: só UM número por texto, e com teto. A versão anterior apagava tudo
+   * que não fosse dígito e colava o resto: "100 ou 200" virava 100200 e
+   * "entre 50 e 100" virava 50100 — e esse valor ia para o cadastro, o card
+   * PIX e o lembrete mensal. Dois números é ambiguidade: devolve null e o
+   * chamador pede de novo, que é o que ele já faz para texto inválido.
+   *
    * @param {string|number} texto
    * @returns {number|null} null se não for um valor positivo válido.
    */
   parseValorBR(texto) {
-    let t = String(texto == null ? '' : texto).replace(/[^\d.,]/g, '');
+    const numeros = String(texto == null ? '' : texto).match(/\d(?:[\d.,]*\d)?/g) || [];
+    if (numeros.length !== 1) return null;
+
+    let t = numeros[0];
     if (t.indexOf(',') >= 0) {
       t = t.replace(/\./g, '').replace(',', '.');
     } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
       t = t.replace(/\./g, '');
     }
     const valor = parseFloat(t);
-    return (isNaN(valor) || valor <= 0) ? null : valor;
+    // Acima de R$ 100 mil é quase certamente digitação ("5000000" por
+    // "50,00"). Um valor real desse tamanho a secretaria registra à mão.
+    return (isNaN(valor) || valor <= 0 || valor > 100000) ? null : valor;
   },
 
   /**

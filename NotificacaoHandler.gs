@@ -19,7 +19,7 @@ const NotificacaoHandler = {
     const config = getConfig();  // ✅ CORRIGido: buscar config dinamicamente
 
     console.log(`📤 [Notif] Enviando template "${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}" ` +
-                `para dizimista id=${dizimista.id} (${dizimista.x_name}) fone=${dizimista.x_studio_partner_phone}`);
+                `para dizimista id=${dizimista.id} (${dizimista.x_name})`);   // BL-84: sem o telefone
 
     const payload = {
       messaging_product: "whatsapp",
@@ -295,13 +295,28 @@ function executarNotificacoesDiarias() {
     let erros    = 0;
     const falhas = [];
 
-    dizimistasParaNotificar.forEach((dizimista, index) => {
+    for (let index = 0; index < dizimistasParaNotificar.length; index++) {
+      const dizimista = dizimistasParaNotificar[index];
+
+      if (index > 0) Plataforma.relogio.dormir(2000);  // Delay de 2s entre envios (rate limit)
+
+      // BL-84: para antes do teto de 6 min do Apps Script — conferido DEPOIS
+      // da pausa, que é quando o envio aconteceria. O resto do lote não se
+      // perde: a repescagem o pega no próximo degrau.
+      if (Date.now() - t0 > NOTIFICACAO_ORCAMENTO_MS) {
+        console.warn(`⏱️ [Notif] Orçamento de tempo esgotado após ${index} envio(s) — ` +
+                     `${dizimistasParaNotificar.length - index} ficam para o próximo degrau.`);
+        break;
+      }
+
       console.log(`➡️ [Notif] (${index + 1}/${dizimistasParaNotificar.length}) ` +
                   `id=${dizimista.id} ${dizimista.x_name}`);
       try {
-        if (index > 0) Plataforma.relogio.dormir(2000);  // Delay de 2s entre envios (rate limit)
-
         NotificacaoHandler.enviarLembreteSimples(dizimista);
+        // BL-84: a marca vem ANTES do log. Se a gravação no Odoo falhar, o
+        // log não existe e o próximo degrau lembraria a pessoa de novo — a
+        // marca local segura o dia (6 h, o máximo do cache).
+        Plataforma.cache.put(_chaveNotificado(dizimista.id), '1', 21600);
         registrarLogNotificacao(dizimista.id, 'sucesso', null);
         sucessos++;
       } catch (erro) {
@@ -310,7 +325,7 @@ function executarNotificacoesDiarias() {
         falhas.push(`${dizimista.id}:${dizimista.x_name}`);
         erros++;
       }
-    });
+    }
 
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
     // Lote cheio quer dizer que provavelmente sobrou gente para o próximo
@@ -453,28 +468,58 @@ function calcularDiaNotificacao(diaVencimento) {
   return diaNotificacao;
 }
 
-function jaFoiNotificadoEsteMes(dizimistaId, mes, ano) {
-  const mesReferencia = `${ano}-${mes.toString().padStart(2, '0')}`;
-  
-  const logs = OdooService.count('x_notificacao_log', [
-    ['x_studio_dizimista', '=', dizimistaId],
-    ['x_studio_mes_referencia', '=', mesReferencia],
-    ['x_studio_tipo', '=', 'lembrete'],
-    ['x_studio_status_envio', '=', 'sucesso']
-  ]);
-
-  return logs > 0;
+/** Marca local de "lembrete enviado", por pessoa e mês (BL-84). @private */
+function _chaveNotificado(dizimistaId) {
+  return `notif_ok_${dizimistaId}_${getMesReferenciaAtual()}`;
 }
 
+/**
+ * Já foi tratado este mês? Sim se houve um envio com sucesso — ou se já
+ * falhou NOTIFICACAO_MAX_FALHAS_MES vezes (BL-84: o número com erro
+ * permanente não pode ocupar o lote para sempre).
+ *
+ * A marca do cache vem primeiro: cobre o envio que saiu mas cujo log não
+ * chegou ao Odoo, e não custa RPC.
+ */
+function jaFoiNotificadoEsteMes(dizimistaId, mes, ano) {
+  const mesReferencia = `${ano}-${mes.toString().padStart(2, '0')}`;
+  if (Plataforma.cache.get(`notif_ok_${dizimistaId}_${mesReferencia}`)) return true;
+
+  const logs = OdooService.searchRead('x_notificacao_log', ['x_studio_status_envio'], [
+    ['x_studio_dizimista', '=', dizimistaId],
+    ['x_studio_mes_referencia', '=', mesReferencia],
+    ['x_studio_tipo', '=', 'lembrete']
+  ], { limit: 20 }) || [];
+
+  if (logs.some(l => l.x_studio_status_envio === 'sucesso')) return true;
+
+  const falhas = logs.filter(l => l.x_studio_status_envio === 'erro').length;
+  if (falhas >= NOTIFICACAO_MAX_FALHAS_MES) {
+    console.warn(`⚠️ [Notif] id=${dizimistaId}: ${falhas} falha(s) de envio este mês — ` +
+                 `não tento mais. Confira o telefone no cadastro.`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Já devolveu o DÍZIMO este mês? (BL-84)
+ *
+ * Contava qualquer x_devolucao: uma OFERTA no mês calava o lembrete do dízimo,
+ * e uma devolução REJEITADA — que é dinheiro que não chegou à paróquia, por
+ * exemplo chave errada — também. É o mesmo filtro de tipo do
+ * `OdooService.devolucoesDoMes`.
+ */
 function jaDevolveueEsteMes(dizimistaId, mes, ano) {
   const primeiroDia = new Date(ano, mes - 1, 1).toISOString().split('T')[0];
   const ultimoDia = new Date(ano, mes, 0).toISOString().split('T')[0];
-  
-  const devolucoes = OdooService.count('x_devolucao', [
+
+  const devolucoes = OdooService.count('x_devolucao', OdooService._comTipo([
     ['x_studio_dizimista', '=', dizimistaId],
     ['x_studio_data_da_devolucao', '>=', primeiroDia],
-    ['x_studio_data_da_devolucao', '<=', ultimoDia]
-  ]);
+    ['x_studio_data_da_devolucao', '<=', ultimoDia],
+    ['x_studio_status', '!=', 'Rejeitado']
+  ], 'dizimo'));
 
   return devolucoes > 0;
 }
@@ -497,13 +542,23 @@ function registrarLogNotificacao(dizimistaId, status, mensagemErro) {
     x_studio_mensagem_erro: mensagemErro || false
   };
   
-  try {
-    const logId = OdooService.create('x_notificacao_log', payload);
-    console.log(`🗒️ [Notif] Log gravado no Odoo (id=${logId}) — dizimista=${dizimistaId} status=${status} ref=${mesReferencia}`);
-  } catch (erro) {
-    // Não relança: a falha em registrar o log não deve derrubar o envio.
-    console.error(`❌ [Notif] Falha ao gravar log no Odoo (dizimista=${dizimistaId} status=${status}): ${erro.message}`);
+  // BL-84: três tentativas. O log é a deduplicação do mês — sem ele, a pessoa
+  // é lembrada de novo. O `create` não se repete sozinho (não é idempotente),
+  // e aqui repetir é seguro: um log duplicado não faz mal nenhum; um log
+  // ausente manda uma mensagem a mais.
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const logId = OdooService.create('x_notificacao_log', payload);
+      console.log(`🗒️ [Notif] Log gravado no Odoo (id=${logId}) — dizimista=${dizimistaId} status=${status} ref=${mesReferencia}`);
+      return true;
+    } catch (erro) {
+      // Não relança: a falha em registrar o log não deve derrubar o envio.
+      console.error(`❌ [Notif] Falha ao gravar log no Odoo (tentativa ${tentativa}/3, ` +
+                    `dizimista=${dizimistaId} status=${status}): ${erro.message}`);
+      if (tentativa < 3) Plataforma.relogio.dormir(1000);
+    }
   }
+  return false;
 }
 
 function getMesReferenciaAtual() {

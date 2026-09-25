@@ -443,9 +443,14 @@ const RelatorioHandler = {
         ? todosDizimistas
         : todosDizimistas.filter(d => this._comunidadeId(d) === acesso.comunidadeId);
 
+      // BL-84: devolução REJEITADA não entra em total nenhum — é dinheiro que
+      // não chegou à paróquia (chave errada, comprovante que não confere). O
+      // "Total devolvido" as somava, e o comparativo mensal também.
       const idsEscopo   = new Set(dizimistas.map(d => d.id));
-      const devolucoes  = todasDevolucoes.filter(dev => idsEscopo.has(this._dizimistaId(dev)));
-      const devAnt      = devolucoesAnt.filter(dev => idsEscopo.has(this._dizimistaId(dev)));
+      const conta       = dev => idsEscopo.has(this._dizimistaId(dev)) &&
+                                 dev.x_studio_status !== 'Rejeitado';
+      const devolucoes  = todasDevolucoes.filter(conta);
+      const devAnt      = devolucoesAnt.filter(conta);
 
       // ── Mensagem 1: Cabeçalho ──────────────────────────────────────────────
       const agora = Plataforma.relogio.formatar(new Date(), TIMEZONE, 'dd/MM/yyyy HH:mm');
@@ -529,6 +534,7 @@ const RelatorioHandler = {
       `❌ Sem devolução: ${semDevolucao}\n` +
       `📊 Participação: ${participacao}%\n` +
       `💵 Total devolvido: ${this._reais(totalValor)}\n` +
+      this._linhaAValidar(devolucoes) +
       `💰 Ticket médio: ${this._reais(ticketMedio)}\n`;
 
     if (crescimento !== null) {
@@ -551,6 +557,20 @@ const RelatorioHandler = {
    * Retorna a string completa (pode ser dividida por _enviarComLimite).
    * @private
    */
+  /**
+   * BL-84: quanto do total ainda espera validação da secretaria. Fica no
+   * total — boa parte das devoluções passa um tempo Pendente, e tirá-las
+   * faria o número despencar sem motivo —, mas não pode parecer validado.
+   * Vazio quando não há pendente, para não poluir o relatório.
+   * @private
+   */
+  _linhaAValidar(devolucoes, recuo = '') {
+    const pend = devolucoes.filter(d => d.x_studio_status === 'Pendente');
+    if (!pend.length) return '';
+    const valor = pend.reduce((s, d) => s + (d.x_studio_value || 0), 0);
+    return `${recuo}⏳ Desse total, a validar: ${this._reais(valor)} (${pend.length})\n`;
+  },
+
   _blocoDetalhesComunidades(comunidades, dizimistas, devolucoes) {
     let msg = `📍 *DETALHE POR COMUNIDADE*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -569,6 +589,7 @@ const RelatorioHandler = {
         `${icon} *${com.x_name}*\n` +
         `   👥 Devoluções: ${totalDev}\n` +
         `   💵 Devolvido: ${this._reais(totalVal)}\n` +
+        this._linhaAValidar(devCom, '   ') +
         `   💰 Ticket médio: ${this._reais(ticket)}\n` +
         `   📊 Participação: ${partic}%\n\n`;
     }
@@ -587,7 +608,7 @@ const RelatorioHandler = {
    * Chamado pelo Router (btn_relatorio_lista).
    * @param {string} from
    */
-  iniciarListaDizimistas(from) {
+  iniciarListaDizimistas(from, pagina = 0) {
     const acesso = StateManager.getCampo(from, 'relatorio_acesso');
     if (!acesso) return this._sessaoExpirada(from);
 
@@ -606,12 +627,8 @@ const RelatorioHandler = {
         return;
       }
 
-      // WhatsApp permite no máximo 10 rows por seção na lista interativa
-      const rows = comunidades.slice(0, 10).map(com => ({
-        id:          `com_${com.id}`,
-        title:       com.x_name.substring(0, 24),
-        description: ''
-      }));
+      // WhatsApp permite no máximo 10 linhas na lista interativa (BL-84: paginada)
+      const rows = this._linhasDeComunidades(comunidades, 'com_', pagina);
 
       StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMUNIDADE_RELATORIO);
 
@@ -628,6 +645,25 @@ const RelatorioHandler = {
   },
 
   /**
+   * As linhas da lista de comunidades, paginada. (BL-84)
+   *
+   * A lista interativa do WhatsApp tem teto de 10 linhas, e o `slice(0, 10)`
+   * fazia a 11ª comunidade sumir para o admin — sem aviso. Até 10, cabem todas.
+   * Acima disso: 9 por página e a décima leva à próxima.
+   * @private
+   */
+  _linhasDeComunidades(comunidades, prefixo, pagina) {
+    const resto = comunidades.slice(pagina * 9);
+    const linha = com => ({ id: `${prefixo}${com.id}`, title: com.x_name.substring(0, 24), description: '' });
+    if (resto.length <= 10) return resto.map(linha);
+    return resto.slice(0, 9).map(linha).concat([{
+      id:          `${prefixo}pag_${pagina + 1}`,
+      title:       '➡️ Mais comunidades',
+      description: `Mais ${resto.length - 9}`
+    }]);
+  },
+
+  /**
    * Processa a seleção de comunidade pelo admin.
    * Chamado pelo Router (list_reply no estado AGUARDANDO_COMUNIDADE_RELATORIO).
    * @param {string} from
@@ -637,6 +673,11 @@ const RelatorioHandler = {
   processarComunidadeLista(from, itemId, itemTitle) {
     const acesso = StateManager.getCampo(from, 'relatorio_acesso');
     if (!acesso) return this._sessaoExpirada(from);
+
+    // BL-84: a linha "Mais comunidades" da lista paginada.
+    if (itemId.indexOf('com_pag_') === 0) {
+      return this.iniciarListaDizimistas(from, parseInt(itemId.replace('com_pag_', ''), 10) || 0);
+    }
 
     // Extrair ID numérico do prefixo "com_"
     const comunidadeId = parseInt(itemId.replace('com_', ''), 10);
@@ -720,7 +761,7 @@ const RelatorioHandler = {
    * Coordenador: vai direto para a listagem.
    * @param {string} from
    */
-  iniciarPendentes(from) {
+  iniciarPendentes(from, pagina = 0) {
     const acesso = StateManager.getCampo(from, 'relatorio_acesso');
     if (!acesso) return this._sessaoExpirada(from);
 
@@ -739,11 +780,7 @@ const RelatorioHandler = {
         return;
       }
 
-      const rows = comunidades.slice(0, 10).map(com => ({
-        id:          `pendcom_${com.id}`,
-        title:       com.x_name.substring(0, 24),
-        description: ''
-      }));
+      const rows = this._linhasDeComunidades(comunidades, 'pendcom_', pagina);
 
       StateManager.setEstado(from, ESTADOS.AGUARDANDO_COMUNIDADE_PENDENTES);
 
@@ -768,6 +805,11 @@ const RelatorioHandler = {
   processarComunidadePendentes(from, itemId, itemTitle) {
     const acesso = StateManager.getCampo(from, 'relatorio_acesso');
     if (!acesso) return this._sessaoExpirada(from);
+
+    // BL-84: a linha "Mais comunidades" da lista paginada.
+    if (itemId.indexOf('pendcom_pag_') === 0) {
+      return this.iniciarPendentes(from, parseInt(itemId.replace('pendcom_pag_', ''), 10) || 0);
+    }
 
     const comunidadeId = parseInt(itemId.replace('pendcom_', ''), 10);
     if (isNaN(comunidadeId)) {

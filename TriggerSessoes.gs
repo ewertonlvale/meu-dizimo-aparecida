@@ -50,6 +50,17 @@ function verificarSessoesAbandonadas() {
         const inicio = cache.get(`sessao_inicio_${from}`);
 
         if (!inicio) {
+          // BL-84: a marca de início vive 2 h (StateManager.SESSAO_INICIO_TTL_S),
+          // o dobro da sessão. Se sumiu e a conversa ainda está de pé, foi o
+          // cache que a despejou antes da hora — e apagar aqui jogava fora o
+          // cadastro de quem estava digitando, sem aviso. Recomeça a contagem.
+          const estado = StateManager.getEstado(from);
+          if (estado && estado !== ESTADOS.MENU) {
+            console.warn(`♻️ [Trigger] Marca de início de ${from} sumiu com a conversa ativa ` +
+                         `(${estado}) — despejo do cache; recomeçando a contagem`);
+            cache.put(`sessao_inicio_${from}`, Date.now().toString(), StateManager.SESSAO_INICIO_TTL_S);
+            return;
+          }
           console.log(`🗑️ [Trigger] Sessão de ${from} já expirou do cache`);
           _tentarPersistir(from, cache);
           StateManager.limparDados(from);

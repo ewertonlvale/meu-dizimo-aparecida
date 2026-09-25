@@ -258,6 +258,7 @@ const FlowHandler = {
       // rótulo do Dropdown junto. O `||` que havia aqui sugeria um atalho que
       // nunca acontecia.
       dados.comunidadeNome = this._nomeDaComunidade(comunidadeId);
+      if (dados.comunidadeNome === null) erros.push('Comunidade não reconhecida.');
     }
 
     // ── Nome e apelido ─────────────────────────────────────────────────────
@@ -357,7 +358,10 @@ const FlowHandler = {
       const achada = OdooService.searchRead(
         'x_comunidade', ['x_name'], [['id', '=', id]], { limit: 1 }
       )[0];
-      return achada ? achada.x_name : `Comunidade ${id}`;
+      // BL-84: o Odoo respondeu e o id NÃO existe → null, e quem chamou recusa.
+      // O id vem do aparelho: a validação do Flow roda no cliente, e um id
+      // inventado virava "Comunidade 999" gravada no cadastro ou na oferta.
+      return achada ? achada.x_name : null;
     } catch (e) {
       console.warn('⚠️ [Flow] Não consegui buscar o nome da comunidade:', e.message);
       return `Comunidade ${id}`;
@@ -484,10 +488,15 @@ const FlowHandler = {
   _processarOferta(from, resposta) {
     const comunidadeId = parseInt(resposta.comunidade, 10);
     const valor        = Utils.parseValorBR(resposta.valor);
-    const nome         = String(resposta.nome || '').trim();
+    // BL-84: o mesmo teto da conversa (OfertaHandler.processarNome). O nome
+    // entra no registro da oferta, e o formulário não tem limite próprio.
+    const nome         = String(resposta.nome || '').trim().substring(0, 60);
+
+    // BL-84: o id vem do aparelho — confere que a comunidade existe.
+    const nomeComunidade = comunidadeId ? this._nomeDaComunidade(comunidadeId) : null;
 
     const erros = [];
-    if (!comunidadeId) erros.push('Comunidade não reconhecida');
+    if (!comunidadeId || nomeComunidade === null) erros.push('Comunidade não reconhecida');
     if (!valor || valor <= 0) erros.push('Valor da oferta inválido');
     if (nome.length < 2) erros.push('Nome não informado');
 
@@ -506,16 +515,7 @@ const FlowHandler = {
     }
 
     // O nome da COMUNIDADE não vem do formulário — o Dropdown devolve só o id —,
-    // e é ele que aparece na mensagem de pagamento.
-    let nomeComunidade = '';
-    try {
-      const c = OdooService.searchRead('x_comunidade', ['x_name'],
-        [['id', '=', comunidadeId]], { limit: 1 });
-      nomeComunidade = (c && c[0] && c[0].x_name) || '';
-    } catch (e) {
-      console.warn('⚠️ [Flow] Não li o nome da comunidade:', e.message);
-    }
-
+    // e é ele que aparece na mensagem de pagamento. Já foi lido acima.
     StateManager.salvarMultiplosCampos(from, {
       ofertaComunidadeId:   comunidadeId,
       ofertaComunidadeNome: nomeComunidade,

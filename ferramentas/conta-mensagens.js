@@ -154,7 +154,7 @@ function montarContexto(cenario) {
         setProperty: () => {}, deleteProperty: () => {}, setProperties: () => {}
       })
     },
-    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
     UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
   };
   vm.createContext(ctx);
@@ -292,6 +292,8 @@ function montarContexto(cenario) {
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
       if (modelo === 'x_devolucao') {
+        // BL-84: a conferência "gravou apesar do erro?" pergunta por create_date.
+        if ((dominio || []).some(d => d[0] === 'create_date')) return cenario.recemGravada || [];
         // BL-62: a busca pelo mês em aberto e a que confere se o mês seguinte
         // já existe. Vêm antes das outras porque as duas citam competência, e
         // cair no ramo do histórico daria resposta errada em silêncio.
@@ -346,6 +348,8 @@ function montarContexto(cenario) {
     // um id e jogava os dados fora.
     create: (modelo, dados) => {
       if (cenario.aoCriar) cenario.aoCriar(modelo, dados);
+      // BL-84: o erro que vem DEPOIS de gravar (timeout, 5xx).
+      if (cenario.createFalha && modelo === 'x_devolucao') throw new Error('timeout (simulado)');
       return 99;
     },
     // BL-62: preencher um "A devolver" é um write, não um create. Sem espiar o
@@ -1122,6 +1126,30 @@ const REGRAS_DE_CONTEUDO = [
       if (!gravado) return 'nada foi gravado no Odoo';
       if (gravado.x_studio_tipo_contribuicao === 'oferta') return 'o Odoo recebeu tipo oferta';
       return null;
+    }
+  },
+  {
+    // O Odoo gravou e o erro veio depois (timeout). Antes: "não foi
+    // registrado, reenvie" — e o reenvio virava segunda devolução.
+    nome: 'Erro DEPOIS de gravar: confere no Odoo e confirma, em vez de pedir reenvio — BL-84',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE',
+               createFalha: true, recemGravada: [{ id: 77 }] },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs.map(m => m.texto).join('\n');
+      if (/reenvie/i.test(t)) return 'pediu reenvio de algo que já foi gravado';
+      return /Comprovante recebido/.test(t) ? null : 'não confirmou o recebimento';
+    }
+  },
+  {
+    nome: 'Erro sem gravação: aí sim avisa e pede reenvio — BL-84',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE', createFalha: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      return /Não consegui registrar/.test(t) ? null : 'não avisou da falha';
     }
   },
   {
@@ -3185,26 +3213,44 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
    * Roda executarNotificacoesDiarias() inteira contra stubs.
    * @returns {{enviados, contagens, ordem}}
    */
-  const rodar = ({ hora, parametros = {}, dizimistas = gente(5), erroParametros = false }) => {
+  // BL-84 acrescentou quatro alavancas, todas opcionais:
+  //   logs        { [idDizimista]: ['erro', 'sucesso', ...] } — o x_notificacao_log do mês
+  //   falhaEnvio  Set de ids cujo envio o WhatsApp recusa
+  //   falhasLog   quantas gravações de log falham antes de funcionar
+  //   cache       o CacheService, para rodar duas vezes com a mesma memória
+  //   msPorPausa  quanto o relógio anda a cada pausa entre envios
+  const rodar = ({ hora, parametros = {}, dizimistas = gente(5), erroParametros = false,
+                   logs = {}, falhaEnvio = new Set(), falhasLog = 0, cache = {},
+                   msPorPausa = 0 }) => {
     const enviados = [];
     const contagens = [];   // toda chamada a OdooService.count
     const criados = [];     // x_notificacao_log gravados
     const buscas = [];      // toda chamada a searchRead
+    let relogio = 0;        // ms somados pelas pausas simuladas
+    class DataSimulada extends Date {
+      static now() { return Date.now() + relogio; }
+    }
 
     const respostaOk = {
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({ messages: [{ id: 'wamid.T' }] })
     };
 
+    const recusada = {
+      getResponseCode: () => 400,
+      getContentText: () => JSON.stringify({ error: { code: 131026, message: 'undeliverable' } })
+    };
+
     const ctx = {
       console: { log() {}, warn() {}, error() {} },
+      Date: DataSimulada,
       TIMEZONE: 'America/Fortaleza',
       Utilities: {
         // A rotina pede 'H' para saber a hora e 'yyyy-MM-dd' para a data do
         // log. Um formatDate que ignora o formato faria o teste de janela
         // passar por acidente.
         formatDate: (_d, _tz, fmt) => (fmt === 'H' ? String(hora) : '2026-09-23'),
-        sleep() {}
+        sleep(ms) { if (ms === 2000) relogio += msPorPausa; }
       },
       PropertiesService: {
         getScriptProperties: () => ({
@@ -3212,10 +3258,19 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
           setProperty() {}, getProperties: () => ({})
         })
       },
-      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; } }) },
       UrlFetchApp: { fetch: () => respostaOk },
       Utils: {
-        _post(payload) { enviados.push(payload); return respostaOk; },
+        // Só envio ACEITO conta em `enviados`: é o que chega ao aparelho.
+        _post(payload) {
+          // Pelo NOME, que vai no template: o telefone sintético se repete.
+          const nome = payload.template.components[0].parameters[0].text;
+          const d = dizimistas.find((x) => x.x_name === nome);
+          if (d && falhaEnvio.has(d.id)) return recusada;
+          enviados.push(payload);
+          return respostaOk;
+        },
         registrarConsumoExterno() {}
       },
       getConfig: () => ({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111' }),
@@ -3224,13 +3279,24 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
           if (erroParametros) throw new Error('Odoo fora do ar');
           return Object.assign({ x_name: 'Padrão' }, parametros);
         },
-        searchRead(modelo, _campos, _dominio, opcoes) {
+        searchRead(modelo, _campos, dominio, opcoes) {
           buscas.push({ modelo, opcoes });
+          if (modelo === 'x_notificacao_log') {
+            const id = (dominio.find((c) => c[0] === 'x_studio_dizimista') || [])[2];
+            return (logs[id] || []).map((s) => ({ x_studio_status_envio: s }));
+          }
           return modelo === 'x_dizimista' ? dizimistas.slice() : [];
         },
+        // O mesmo contrato do OdooService real: acrescenta o filtro de tipo.
+        _comTipo: (dominio, tipo) =>
+          (tipo ? dominio.concat([['x_studio_tipo_contribuicao', '=', tipo]]) : dominio),
         // Ninguém foi notificado nem devolveu — todo candidato é elegível.
         count(modelo, dominio) { contagens.push({ modelo, dominio }); return 0; },
-        create(modelo, dados) { criados.push({ modelo, dados }); return criados.length; }
+        create(modelo, dados) {
+          if (falhasLog > 0) { falhasLog--; throw new Error('Odoo não respondeu (simulado)'); }
+          criados.push({ modelo, dados });
+          return criados.length;
+        }
       }
     };
     vm.createContext(ctx);
@@ -3340,7 +3406,62 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
       confere: ({ criados }) => (criados.length === 3
         ? null
         : `gravou ${criados.length} logs para 3 envios — a deduplicação depende disso`) },
+
+    // ── BL-84: o que travava ou repetia o lembrete ────────────────────────
+    // 20 números que já falharam duas vezes no mês, no começo da fila. Antes,
+    // só "sucesso" contava: eles ocupavam o lote inteiro a cada degrau e os
+    // outros 5 nunca recebiam.
+    { nome: 'BL-84: quem já falhou 2 vezes no mês não ocupa mais o lote',
+      entrada: { hora: 9, dizimistas: gente(25),
+                 logs: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [i + 1, ['erro', 'erro']])) },
+      envios: 5,
+      confere: ({ ordem }) => (ordem[0] === 'Dizimista 21' ? null : `começou por ${ordem[0]}`) },
+    { nome: 'BL-84: uma falha só ainda merece nova tentativa',
+      entrada: { hora: 9, dizimistas: gente(3), logs: { 1: ['erro'] } },
+      envios: 3 },
+    { nome: 'BL-84: envio recusado grava log de erro, e o resto do lote segue',
+      entrada: { hora: 9, dizimistas: gente(4), falhaEnvio: new Set([2]) },
+      envios: 3,
+      confere: ({ criados }) => {
+        const st = criados.map((c) => c.dados.x_studio_status_envio).sort().join();
+        return st === 'erro,sucesso,sucesso,sucesso' ? null : `logs: ${st}`;
+      } },
+    // Sem o orçamento, 20 envios com 2 s de pausa — e aqui cada pausa "dura"
+    // 60 s — passariam do teto de 6 min do Apps Script.
+    { nome: 'BL-84: o laço para antes do teto de 6 min; o resto fica para o degrau seguinte',
+      entrada: { hora: 9, dizimistas: gente(20), msPorPausa: 60000 },
+      envios: 5 },
+    { nome: 'BL-84: a gravação do log é tentada de novo antes de desistir',
+      entrada: { hora: 9, dizimistas: gente(1), falhasLog: 2 },
+      envios: 1,
+      confere: ({ criados }) => (criados.length === 1 ? null : `gravou ${criados.length} log(s)`) },
+    // ── BL-84: o que calava o lembrete do dízimo ──────────────────────────
+    { nome: 'BL-84: "já devolveu" conta só DÍZIMO e ignora devolução rejeitada',
+      entrada: { hora: 9, dizimistas: gente(1) },
+      envios: 1,
+      confere: ({ contagens }) => {
+        const d = (contagens.find((c) => c.modelo === 'x_devolucao') || {}).dominio || [];
+        const txt = JSON.stringify(d);
+        if (!txt.includes('["x_studio_tipo_contribuicao","=","dizimo"]')) return 'não filtrou o tipo';
+        if (!txt.includes('["x_studio_status","!=","Rejeitado"]')) return 'contou rejeitada';
+        return null;
+      } },
   ];
+
+  // BL-84: o envio saiu e o log NÃO foi gravado (Odoo fora nas 3 tentativas).
+  // O degrau seguinte, com a mesma memória, não pode lembrar a pessoa de novo.
+  {
+    let erro = null;
+    try {
+      const cache = {};
+      const primeiro = rodar({ hora: 9, dizimistas: gente(2), falhasLog: 99, cache });
+      const segundo  = rodar({ hora: 11, dizimistas: gente(2), falhasLog: 99, cache });
+      if (primeiro.enviados.length !== 2) erro = `1º degrau enviou ${primeiro.enviados.length}`;
+      else if (segundo.enviados.length !== 0) erro = `2º degrau reenviou ${segundo.enviados.length}`;
+    } catch (e) { erro = `estourou: ${e.message}`; }
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} BL-84: sem log no Odoo, o degrau seguinte não reenvia${erro ? ' — ' + erro : ''}`);
+  }
 
   for (const caso of casos) {
     let erro = null;
@@ -4020,7 +4141,7 @@ console.log('🧱 A fachada da Plataforma não vaza (BL-74, Fase 1)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
-console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
+console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-85)\n');
 
 // Cada caso carrega o ARQUIVO REAL com stubs mínimos e prova o conserto. O
 // critério para entrar aqui: o caso tem de reprovar no código anterior à
@@ -4192,6 +4313,288 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     OS.registrarContatoBot('5511999990000');
     return (gravado && gravado.x_studio_data_primeiro_contato === '[UTC]')
       || `gravou ${gravado && gravado.x_studio_data_primeiro_contato} (fusos pedidos: ${pedidos.join()})`;
+  });
+
+  // ── BL-84 · parseValorBR ────────────────────────────────────────────────
+  caso('BL-84: parseValorBR recusa dois números e valor absurdo; aceita os formatos de sempre', () => {
+    const U = carregar(['Utils.gs'], {}, 'Utils');
+    const esperado = {
+      '50': 50, '50,00': 50, 'R$ 35,50': 35.5, '1.000,50': 1000.5, '1.000': 1000,
+      '50.00': 50, 'R$50': 50, '100 reais': 100, '50.': 50,
+      '100 ou 200': null, 'entre 50 e 100': null, '5000000': null, 'abc': null, '0': null
+    };
+    const erros = Object.entries(esperado)
+      .map(([txt, v]) => [txt, v, U.parseValorBR(txt)])
+      .filter(([, v, veio]) => veio !== v)
+      .map(([txt, v, veio]) => `"${txt}" → ${veio} (esperado ${v})`);
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · o código PIX não sai para serviço de terceiros ─────────────
+  caso('BL-84: a reserva do card PIX não chama serviço externo e entrega o copia e cola', () => {
+    const urls = [], textos = [];
+    const M = carregar(['MediaService.gs'], {
+      UrlFetchApp: { fetch: (u) => { urls.push(u); return { getResponseCode: () => 200, getContent: () => [] }; } },
+      Utilities: { base64Encode: () => '', sleep() {} },
+      Utils: new Proxy({ enviarSimples: (f, t) => textos.push(t),
+                         fetchComRetry: (u) => { urls.push(u); return { getResponseCode: () => 200, getContent: () => [] }; } },
+                       { get: (o, k) => o[k] || (() => {}) })
+    }, 'MediaService');
+    const f = M.enviarPixCopiaECola || M.enviarQrCode;
+    const ok = f.call(M, '55', '794.498.403-34', 50, 'Joseane', undefined, 'DADOS PARA PAGAMENTO');
+    const erros = [];
+    if (urls.length) erros.push(`chamou ${urls[0].slice(0, 40)}`);
+    if (!ok) erros.push('disse que não enviou');
+    if (!textos.some((t) => /^000201/.test(t))) erros.push('o copia e cola não saiu sozinho');
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · listas de comunidades com mais de 10 ────────────────────────
+  caso('BL-84: com 14 comunidades, todas são alcançáveis (relatório, pendentes e oferta)', () => {
+    const coms = Array.from({ length: 14 }, (_, i) => ({ id: i + 1, x_name: `Comunidade ${i + 1}` }));
+    const listas = [];
+    const globais = {
+      StateManager: { getCampo: (f, c) => (c === 'relatorio_acesso' ? { tipoAcesso: 'admin' } : undefined),
+                      setEstado() {}, salvarMultiplosCampos() {} },
+      OdooService: { listarComunidades: () => coms },
+      Utils: new Proxy({ enviarLista: (f, t, secoes) => listas.push(secoes[0].rows) },
+                       { get: (o, k) => o[k] || (() => {}) })
+    };
+    const m = carregar(['RelatorioHandler.gs', 'OfertaHandler.gs'], globais, '{ RelatorioHandler, OfertaHandler }');
+    const alcancaveis = (abrir, pagina, prefixo) => {
+      const ids = new Set();
+      listas.length = 0;
+      abrir(0);
+      for (let p = 0; p < 5 && listas.length; p++) {
+        const rows = listas.shift();
+        if (rows.length > 10) return `lista com ${rows.length} linhas`;
+        rows.forEach((r) => { if (!r.id.includes('pag_')) ids.add(r.id); });
+        const mais = rows.find((r) => r.id.includes('pag_'));
+        if (mais) pagina(mais.id);
+      }
+      return ids.size === 14 || `alcançou ${ids.size} de 14 (${prefixo})`;
+    };
+    const R = m.RelatorioHandler, O = m.OfertaHandler;
+    const erros = [
+      alcancaveis(() => R.iniciarListaDizimistas('55'), (id) => R.processarComunidadeLista('55', id, ''), 'relatório'),
+      alcancaveis(() => R.iniciarPendentes('55'), (id) => R.processarComunidadePendentes('55', id, ''), 'pendentes'),
+      alcancaveis(() => O._pedirComunidade('55'), (id) => O.processarComunidade('55', id, ''), 'oferta')
+    ].filter((r) => r !== true);
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · Flow com comunidade inventada ─────────────────────────────
+  caso('BL-84: formulário com comunidade que não existe é recusado (cadastro e oferta)', () => {
+    const r = { salvou: [], recusas: 0 };
+    const F = carregar(['FlowHandler.gs'], {
+      OdooService: { searchRead: (m, c, d) => (d[0][2] === 1 ? [{ x_name: 'Matriz' }] : []) },
+      Utils: new Proxy({ parseValorBR: (v) => Number(v) || null,
+                         enviarComBotaoMenu: () => r.recusas++ },
+                       { get: (o, k) => o[k] || (() => {}) }),
+      StateManager: { salvarMultiplosCampos: (f, d) => r.salvou.push(d) },
+      OfertaHandler: { iniciar() {}, enviarPagamentoDaSessao() {} }
+    }, 'FlowHandler');
+    const erros = [];
+    const cad = F._normalizar('55', { comunidade_id: '999', nome: 'Maria da Silva' });
+    if (!(cad.erros || []).some((e) => /Comunidade não reconhecida/.test(e)))
+      erros.push('cadastro aceitou a comunidade 999');
+    F._processarOferta('55', { comunidade: '999', valor: '20', nome: 'Ana' });
+    if (r.salvou.length || !r.recusas) erros.push('oferta seguiu com a comunidade 999');
+    F._processarOferta('55', { comunidade: '1', valor: '20', nome: 'A'.repeat(200) });
+    const nome = (r.salvou[0] || {}).ofertaNome || '';
+    if (nome.length !== 60) erros.push(`nome da oferta com ${nome.length} caracteres`);
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · dado pessoal no log ─────────────────────────────────────────
+  caso('BL-84: registrar oferta não leva nome nem telefone de quem oferta para o log', () => {
+    const log = [];
+    const grava = (...a) => log.push(a.map(String).join(' '));
+    const OS = carregar(['OdooService.gs'], {
+      console: { log: grava, warn: grava, error: grava },
+      Utilities: { formatDate: () => '2026-09-24' },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.campoExiste = () => true;
+    OS._temCampoConferenciaPix = () => true;
+    OS.create = () => 1;
+    OS.registrarDevolucao(null, { valor: 20, data: '24/09/2026', tipo: 'PIX' }, 'QkFTRTY0', 'imagem', 'OK',
+      { tipo: 'oferta', comunidadeId: 1, nomeOfertante: 'Fulana Sigilosa', telefoneOfertante: '5586999998888' });
+    const vazou = log.filter((l) => /Fulana Sigilosa|5586999998888/.test(l));
+    return (log.some((l) => /Registrando devolução/.test(l)) && !vazou.length)
+      || `vazou: ${(vazou[0] || '(nada registrado)').slice(0, 120)}`;
+  });
+
+  // ── BL-84 · limite de taxa da Meta ─────────────────────────────────────
+  const resp = (code, corpo) => ({ getResponseCode: () => code, getContentText: () => corpo });
+  const comRespostas = (fila) => {
+    const r = { chamadas: 0 };
+    r.U = carregar(['Utils.gs'], {
+      UrlFetchApp: { fetch: () => { r.chamadas++; return fila.shift(); } },
+      Utilities: { sleep() {} }
+    }, 'Utils');
+    return r;
+  };
+  caso('BL-84: o 400 de limite de taxa da Meta é repetido, mesmo num envio', () => {
+    const r = comRespostas([resp(400, '{"error":{"code":130429,"message":"Rate limit hit"}}'),
+                            resp(200, '{"messages":[{"id":"w"}]}')]);
+    const final = r.U.fetchComRetry('https://graph', {}, { idempotente: false, rotulo: 'teste' });
+    return (r.chamadas === 2 && final.getResponseCode() === 200) || `chamadas=${r.chamadas}`;
+  });
+  caso('BL-84: 400 de outro motivo (ex.: número inválido) não é repetido', () => {
+    const r = comRespostas([resp(400, '{"error":{"code":131026,"message":"undeliverable"}}'),
+                            resp(200, '{}')]);
+    r.U.fetchComRetry('https://graph', {}, { idempotente: false });
+    return r.chamadas === 1 || `chamadas=${r.chamadas}`;
+  });
+
+  // ── BL-84 · "menu" nos estados do relatório ─────────────────────────────
+  caso('BL-84: "menu" no código de acesso sai, sem contar como tentativa errada', () => {
+    const r = { menus: 0, codigos: 0, meses: 0 };
+    for (const estado of ['AGUARDANDO_CODIGO_RELATORIO', 'AGUARDANDO_MES_CUSTOMIZADO']) {
+      const R = carregar(['Router.gs'], {
+        StateManager: { getEstado: () => estado, setEstado() {}, limparDados() {}, getCampo: () => undefined },
+        RelatorioHandler: new Proxy({ handleAuthCode: () => r.codigos++, processarMesCustomizado: () => r.meses++ },
+                                    { get: (o, k) => o[k] || (() => {}) }),
+        MenuHandler: new Proxy({ menuPrincipal: () => r.menus++ }, { get: (o, k) => o[k] || (() => {}) }),
+        Utils: new Proxy({}, { get: () => () => {} })
+      }, 'Router');
+      R.rotear('55', { type: 'text', text: { body: 'Menu' } });
+    }
+    return (r.menus === 2 && !r.codigos && !r.meses) || JSON.stringify(r);
+  });
+
+  // ── BL-84 · aviso de expiração ─────────────────────────────────────────
+  caso('BL-84: o aviso de expiração é marcado antes das chamadas ao Odoo', () => {
+    const ordem = [];
+    const SM = carregar(['StateManager.gs'], {
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k.startsWith('sessao_inicio_') ? String(Date.now() - 55 * 60000) : null),
+        put: (k) => ordem.push(`put ${k.split('_').slice(0, 2).join('_')}`) }) },
+      Utils: { enviarMenu: () => ordem.push('enviou') }
+    }, 'StateManager');
+    SM.persistirLogCadastro = () => ordem.push('odoo');
+    SM.verificarExpiracaoSessao('55', 'AGUARDANDO_NOME');
+    const iAviso = ordem.indexOf('put aviso_sessao'), iOdoo = ordem.indexOf('odoo');
+    return (iAviso >= 0 && iAviso < iOdoo) || ordem.join(' → ');
+  });
+
+  // ── BL-84 · tipo do arquivo ─────────────────────────────────────────────
+  caso('BL-84: documento que não é imagem nem PDF não vai para o OCR', () => {
+    const C = carregar(['ComprovanteHandler.gs'], {}, 'ComprovanteHandler');
+    const t = (a) => C._detectarTipo(a);
+    const erros = [];
+    if (t({ mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'recibo.docx', sha256: 'x' }) !== null) erros.push('.docx virou arquivo aceito');
+    if (t({ sha256: 'x' }) !== 'imagem') erros.push('sem tipo declarado, o sha256 deixou de valer');
+    if (t({ mime_type: 'image/jpeg', sha256: 'x' }) !== 'imagem') erros.push('jpeg recusado');
+    if (t({ mime_type: 'application/pdf', sha256: 'x' }) !== 'pdf') erros.push('pdf recusado');
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · devolução e familiar duplicados ────────────────────────────
+  caso('BL-84: segundo comprovante durante a análise do primeiro não é processado', () => {
+    const cache = {}, enviadas = [];
+    let analisou = 0;
+    const C = carregar(['ComprovanteHandler.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null,
+        put: (k, v) => { cache[k] = v; }, remove: (k) => { delete cache[k]; } }) },
+      Utils: new Proxy({ enviarSimples: (f, t) => enviadas.push(t), sinalizarProcessando: () => true },
+                       { get: (o, k) => o[k] || (() => {}) })
+    }, 'ComprovanteHandler');
+    // O primeiro, no meio da análise, recebe o segundo.
+    C._tratarResultado = () => {};
+    C._processarArquivo = () => {
+      analisou++;
+      if (analisou === 1) C.processar('55', { mime_type: 'image/jpeg' }, 'wamid.2');
+      return {};
+    };
+    C.processar('55', { mime_type: 'image/jpeg' }, 'wamid.1');
+    const erros = [];
+    if (analisou !== 1) erros.push(`analisou ${analisou} arquivos`);
+    if (!enviadas.some((t) => /Ainda estou analisando/.test(t))) erros.push('não avisou');
+    if (cache['comprovante_em_curso_55']) erros.push('a marca ficou presa depois do fim');
+    return !erros.length || erros.join('; ');
+  });
+  caso('BL-84: toque duplo em "Confirmar" não cria o familiar duas vezes', () => {
+    const familia = [];
+    const OS = carregar(['OdooService.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.searchRead = (modelo, campos, dominio) => {
+      const nome = (dominio.find((c) => c[0] === 'x_studio_nome_completo') || [])[2];
+      return familia.filter((m) => m.x_studio_nome_completo === nome);
+    };
+    OS.create = (modelo, dados) => { const id = familia.length + 1; familia.push(Object.assign({ id }, dados)); return id; };
+    const dados = { nome: 'Maria da Silva', nomeUsual: 'Maria', dataNascimento: '01/02/2010',
+                    endereco: 'Rua A', valorMensal: 10, comunidadeId: 1 };
+    const a = OS.criarMembro(dados, 7);
+    const b = OS.criarMembro(dados, 7);
+    return (familia.length === 1 && a === b) || `criou ${familia.length}, ids ${a}/${b}`;
+  });
+
+  // ── BL-84 · sessão de cadastro ─────────────────────────────────────────
+  const trigger = (estado, cacheInicial) => {
+    const r = { limpou: 0, cache: Object.assign({}, cacheInicial), ttls: {} };
+    const T = carregar(['StateManager.gs', 'TriggerSessoes.gs'], {
+      ScriptApp: { getOAuthToken() {} },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k in r.cache ? r.cache[k] : null),
+        put: (k, v, t) => { r.cache[k] = v; r.ttls[k] = t; }, remove: (k) => { delete r.cache[k]; } }) },
+      PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({}) }) },
+      Utils: new Proxy({}, { get: () => () => {} }),
+      OdooService: new Proxy({}, { get: () => () => {} })
+    }, '{ StateManager, verificarSessoesAbandonadas }');
+    T.StateManager.getSessoesAtivas = () => ['5511999990000'];
+    T.StateManager.getEstado = () => estado;
+    T.StateManager.limparDados = () => { r.limpou++; };
+    T.verificarSessoesAbandonadas();
+    r.SM = T.StateManager;
+    return r;
+  };
+  caso('BL-84: marca de início despejada com o cadastro ativo não apaga o cadastro', () => {
+    const r = trigger('AGUARDANDO_ENDERECO', {});
+    return (!r.limpou && !!r.cache['sessao_inicio_5511999990000']) || `limpou ${r.limpou}x`;
+  });
+  caso('BL-84: sessão parada (conversa já de volta ao menu) continua sendo limpa', () => {
+    const r = trigger('MENU', {});
+    return r.limpou === 1 || `limpou ${r.limpou}x`;
+  });
+  caso('BL-84: o limite de 60 min é alcançável — a marca de início vive mais que a sessão', () => {
+    const r = trigger('AGUARDANDO_ENDERECO', {});
+    const ttl = r.SM.SESSAO_INICIO_TTL_S;
+    return (ttl > 3600) || `TTL da marca = ${ttl} s, igual ao limite da sessão`;
+  });
+
+  // ── BL-84 · relatório consolidado ───────────────────────────────────────
+  caso('BL-84: o consolidado não soma rejeitada, e mostra à parte o que falta validar', () => {
+    const textos = [];
+    const R = carregar(['RelatorioHandler.gs'], {
+      StateManager: { setEstado() {}, getCampo: () => undefined },
+      Utilities: { formatDate: () => '24/09/2026 10:00', sleep() {} },
+      Utils: new Proxy({ enviarSimples: (f, t) => textos.push(t), enviarMenu: (f, t) => textos.push(t) },
+                       { get: (o, k) => o[k] || (() => {}) }),
+      OdooService: {
+        listarComunidades: () => [{ id: 1, x_name: 'Matriz' }],
+        listarTodosDizimistas: () => [1, 2, 3].map((id) => ({ id, x_studio_comunidade: [1, 'Matriz'] })),
+        listarDevolucoesPorPeriodo: (ini) => (ini === '2026-09-01' ? [
+          { x_studio_dizimista: [1, 'A'], x_studio_value: 100, x_studio_status: 'Confirmado' },
+          { x_studio_dizimista: [2, 'B'], x_studio_value: 50,  x_studio_status: 'Pendente' },
+          { x_studio_dizimista: [3, 'C'], x_studio_value: 999, x_studio_status: 'Rejeitado' }
+        ] : [])
+      }
+    }, 'RelatorioHandler');
+    R._gerarRelatorioConsolidado('55', { tipoAcesso: 'admin' }, {
+      dataInicio: '2026-09-01', dataFim: '2026-09-30', label: 'Setembro de 2026',
+      mesAnteriorInicio: '2026-08-01', mesAnteriorFim: '2026-08-31', labelAnterior: 'Agosto de 2026' });
+    const tudo = textos.join('\n');
+    const erros = [];
+    if (!/Total devolvido: R\$ 150,00/.test(tudo)) erros.push('total não é R$ 150,00');
+    if (!/Devoluções realizadas: 2\b/.test(tudo)) erros.push('contou a rejeitada como devolução');
+    if (!/a validar: R\$ 50,00 \(1\)/.test(tudo)) erros.push('não mostrou a pendente à parte');
+    return !erros.length || `${erros.join('; ')} — ${tudo.replace(/\n/g, ' | ').slice(0, 300)}`;
   });
 
   // ── BL-85 ──────────────────────────────────────────────────────────────

@@ -66,7 +66,7 @@ BL-22 era "usar chaves por usuário e varrer por prefixo na trigger", o que é
 | `estado_${from}` | 1 h | Estado atual da conversa |
 | `dados_${from}` | 1 h | Dados temporários do cadastro |
 | `log_cadastro_${from}` | 1 h | Transcrição do cadastro (truncada em 90 KB) |
-| `sessao_inicio_${from}` | 1 h | Timestamp de início da sessão |
+| `sessao_inicio_${from}` | 2 h | Timestamp de início da sessão. Vive o dobro da sessão (60 min) de propósito — BL-84 |
 | `aviso_sessao_${from}` | 10 min | Marca que o aviso de expiração já foi enviado |
 | `contato_${from}` | 6 h | Número já conhecido (evita ida ao Odoo por mensagem) |
 | `msg_${messageId}` | 6 h | Idempotência do webhook (BL-78: eram 10 min, e a Meta reentrega por horas) |
@@ -98,7 +98,7 @@ retry (BL-24). A única exceção é `RegistrarNumero.gs`, utilitário manual de
 
 | Situação | Repete? | Por quê |
 |---|---|---|
-| **429** (throttling) | Sempre | Recusada *antes* de executar; repetir nunca duplica |
+| **429** (throttling), e o **400 de limite da Meta** (códigos 4, 80007, 130429, 131056 — BL-84) | Sempre | Recusada *antes* de executar; repetir nunca duplica |
 | **5xx / exceção de rede**, `idempotente: true` | Sim | Leituras, `write`, OCR e downloads não têm efeito colateral |
 | **5xx / exceção de rede**, `idempotente: false` | **Não** | O servidor pode ter processado antes de falhar |
 
@@ -198,7 +198,7 @@ na Meta *antes* de republicar.
 | `CadastroHandler.gs` · `DevolucaoHandler.gs` · `ComprovanteHandler.gs` · `RelatorioHandler.gs` · `MenuHandler.gs` | Fluxos de conversa |
 | `OdooService.gs` | Toda a comunicação JSON-RPC com o Odoo |
 | `VisionService.gs` | OCR de comprovantes e extração de valor/chave/data |
-| `MediaService.gs` | Upload/download de mídia e QR Code PIX |
+| `MediaService.gs` | Upload/download de mídia, card PIX e PIX copia e cola (sem QR desde o BL-84) |
 | `FlowHandler.gs` | Recebe e revalida a resposta de WhatsApp Flow (`nfm_reply`) — ver [FLOW-CADASTRO.md](FLOW-CADASTRO.md) |
 | `AuditoriaNumeros.gs` | Relatório dos números de WhatsApp gravados no Odoo (BL-32) — só lê |
 | `ferramentas/odoo-dump.mjs` | Extrai o schema do Odoo (modelos, campos, regras). Roda fora do Apps Script; **exige `--url`, `--db`, `--uid` e `ODOO_API_KEY`** — nada vem preenchido, porque o repositório é público |
