@@ -374,7 +374,7 @@ teste local percorre o fluxo inteiro contra uma base Odoo descartável.
 
 Nada de tráfego real ainda. A Meta continua apontando para o Apps Script.
 
-### Fase 3 — Fila, estado e trava por usuário (3–4 dias) · fecha BL-20 e BL-21 · 🔶 código pronto (25/09), falta a sessão de nuvem
+### Fase 3 — Fila, estado e trava por usuário (3–4 dias) · fecha BL-20 e BL-21 · ✅ no ar, sem tráfego, provada na nuvem (25/09)
 
 #### Como ficou
 
@@ -403,6 +403,13 @@ camada.
 **Critério de aceite, reinterpretado.** A `simula-carga.js` dispara contra uma URL com Odoo real.
 O cenário dela — o modo `corrida` — está na `prova-runtime.mjs`, parte 4, contra o webhook, uma
 fila falsa com a política de nova tentativa e o worker de verdade.
+
+**Provada na nuvem em 25/09.** Deploy #4 publicou `meu-dizimo-worker` e `meu-dizimo-webhook`; a fila
+`mensagens` (southamerica-east1) tenta de novo por até 15 min, com espera de 1 a 10 s. Um "oi"
+simulado entrou pelo webhook, respondeu `OK` na hora, passou pelo Cloud Tasks e o worker mandou o
+menu pelo WhatsApp. Contas: `meu-dizimo-webhook` (só o segredo do webhook + enfileirar),
+`meu-dizimo-invocador` (`run.invoker` no worker). O serviço `meu-dizimo-runtime` da Fase 2 foi
+apagado.
 
 **O que a Fase 3 NÃO muda:** ninguém é atendido pelo Cloud Run ainda. Os dois serviços nascem
 privados; a Meta segue no Apps Script até a Fase 5.
