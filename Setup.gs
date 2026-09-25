@@ -1104,3 +1104,54 @@ function listarPropriedades() {
     Logger.log('   Rode podarContadores() para voltar a editar.');
   }
 }
+
+// ============================================================================
+// BL-74, FASE 5 — LEVAR AS PROPRIEDADES PARA O RUNTIME NOVO
+// ============================================================================
+
+/**
+ * O que NÃO vai para o Upstash no corte. Tem de ser IGUAL à lista de
+ * `ferramentas/importar-propriedades.mjs` — o harness confere.
+ *
+ * - Segredos: no runtime novo vêm do Secret Manager. E este log é o do editor
+ *   do Apps Script — lugar nenhum para segredo aparecer.
+ * - Configuração fixa: vem das variáveis do deploy.
+ * - NOTIFICACOES_ATIVAS: no runtime novo, o que está gravado VENCE a variável
+ *   de ambiente. Importar um "true" daqui ligaria os lembretes no Cloud Run
+ *   antes do corte — com o Apps Script ainda lembrando. É ligado de propósito,
+ *   num passo próprio do roteiro do corte.
+ */
+const PROPRIEDADES_NAO_MIGRAR = [
+  'WHATSAPP_TOKEN', 'ODOO_API_KEY', 'GOOGLE_VISION_API_KEY', 'WEBHOOK_SECRET', 'WHATSAPP_PIN',
+  'VERIFY_TOKEN', 'WHATSAPP_PHONE_ID', 'ODOO_URL', 'ODOO_DATABASE', 'ODOO_UID',
+  'NOTIFICACOES_ATIVAS'
+];
+
+/**
+ * Imprime, numa linha só de JSON, as propriedades que o runtime novo precisa:
+ * as chaves ligadas/desligadas (FLOW_*, CADASTRO_CONVERSA_ATIVO…), as sessões
+ * de cadastro em andamento, os bloqueios, os contadores do mês e os ids de
+ * mídia já enviados à Meta.
+ *
+ * Rodar NO MOMENTO DO CORTE (é passo do roteiro): sessões e bloqueios mudam
+ * a toda hora. Copie a linha do JSON e siga o roteiro — ela vai para o
+ * `ferramentas/importar-propriedades.mjs`.
+ *
+ * Menu do editor: Executar → exportarPropriedadesParaMigracao
+ */
+function exportarPropriedadesParaMigracao() {
+  const todas = Plataforma.propriedades.getProperties();
+  const migrar = {};
+  const deixadas = [];
+  Object.keys(todas).sort().forEach((k) => {
+    if (PROPRIEDADES_NAO_MIGRAR.indexOf(k) >= 0) deixadas.push(k);
+    else migrar[k] = todas[k];
+  });
+
+  Logger.log('');
+  Logger.log(`📦 ${Object.keys(migrar).length} propriedade(s) para o runtime novo. ` +
+             `Ficam de fora (segredo ou configuração): ${deixadas.join(', ') || 'nenhuma'}.`);
+  Logger.log('Copie a linha abaixo INTEIRA, do { ao }:');
+  Logger.log(JSON.stringify(migrar));
+  Logger.log('');
+}

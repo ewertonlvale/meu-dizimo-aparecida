@@ -502,7 +502,26 @@ verificação desligada de propósito, os quatro passam e duas tarefas forjadas 
 **Validar o App Secret antes do corte** é possível sem a Meta mandar nada: pedir um token de app
 com ele (`oauth/access_token?grant_type=client_credentials`). Segredo certo devolve um token.
 
-#### Preparação 2 de 3: as propriedades do Apps Script no Upstash · a fazer
+#### Preparação 2 de 3: as propriedades do Apps Script no Upstash · ✅ código pronto (25/09)
+
+Duas peças, e o roteiro do corte as usa em sequência:
+
+1. **`exportarPropriedadesParaMigracao()`** (Setup.gs), rodada no editor NO MOMENTO DO CORTE:
+   imprime numa linha de JSON as chaves ligadas/desligadas (`FLOW_*`, `CADASTRO_CONVERSA_ATIVO`…), as
+   sessões de cadastro em andamento, os bloqueios, os contadores do mês e os ids de mídia.
+2. **`ferramentas/importar-propriedades.mjs`**: lê esse JSON e grava no hash `p` do Upstash.
+   **Simula por padrão**; com `--aplicar`, grava e confere lendo de volta.
+
+**O que não migra, nas duas pontas — e o harness confere que as listas são iguais:** os segredos
+(vêm do Secret Manager; e o log do editor não é lugar para eles), a configuração fixa (vem das
+variáveis do deploy) e o **`NOTIFICACOES_ATIVAS`**. No runtime novo, o valor gravado vence a
+variável de ambiente: importar um `true` ligaria os lembretes no Cloud Run antes do corte, com o
+Apps Script ainda lembrando. Ele é ligado num passo próprio do roteiro. A ferramenta **recusa**, sem
+gravar nada, um arquivo que traga qualquer um deles.
+
+**O que não migra de propósito:** o estado das conversas (`estado_*`, `dados_*`) vive no cache do
+Apps Script, que não se lista. Quem estiver no meio de uma conversa na hora do corte volta ao
+menu — por isso o corte é de madrugada.
 
 #### Preparação 3 de 3: o roteiro do corte, com a volta · a fazer
 

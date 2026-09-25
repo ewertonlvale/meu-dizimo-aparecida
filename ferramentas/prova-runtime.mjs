@@ -656,6 +656,49 @@ mostrar(casosLocais.splice(0));
 await webhookSrv.fechar();
 await worker.fechar();
 
+// ════════════════════════════════════════════════════════════════════════════
+// PARTE 5 (Fase 5): levar as propriedades do Apps Script ao Upstash
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\n── 5. A importação das propriedades para o corte ────────────────\n');
+{
+  const { execFile } = await import('node:child_process');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'props-'));
+  const arquivo = (nome, obj) => { const p = path.join(dir, nome); fs.writeFileSync(p, JSON.stringify(obj)); return p; };
+  const rodarImport = (...args) => new Promise((ok) => execFile('node', ['ferramentas/importar-propriedades.mjs', ...args], {
+    cwd: RAIZ, env: { ...process.env, UPSTASH_REDIS_REST_URL: `${FALSOS}/upstash`, UPSTASH_REDIS_REST_TOKEN: 'tok' },
+  }, (e, saida, err) => ok({ codigo: e ? e.code : 0, texto: saida + err })));
+
+  const PROPS = { FLOW_CADASTRO_ATIVO: 'true', FLOW_MODO_CADASTRO: 'flow', sessao_ativa_5586999990033: '1790000000000' };
+  const bom = arquivo('bom.json', PROPS);
+
+  await caso('importação simula por padrão: mostra o que entra e não grava nada', async () => {
+    estado.hash.delete('FLOW_MODO_CADASTRO');
+    const r = await rodarImport(bom);
+    return (r.codigo === 0 && /Simulação/.test(r.texto) && !estado.hash.has('FLOW_MODO_CADASTRO')) || `${r.codigo}: ${r.texto.slice(0, 200)}`;
+  });
+  await caso('importação com --aplicar grava e confere lendo de volta', async () => {
+    const r = await rodarImport(bom, '--aplicar');
+    return (r.codigo === 0 && /gravada\(s\) e conferida\(s\)/.test(r.texto)
+      && estado.hash.get('FLOW_MODO_CADASTRO') === 'flow' && estado.hash.get('sessao_ativa_5586999990033') === '1790000000000')
+      || `${r.codigo}: ${r.texto.slice(0, 200)}`;
+  });
+  await caso('importação recusa arquivo com segredo ou NOTIFICACOES_ATIVAS, sem gravar nada', async () => {
+    const antes = estado.hash.get('FLOW_CADASTRO_ATIVO');
+    const r1 = await rodarImport(arquivo('segredo.json', { ...PROPS, FLOW_CADASTRO_ATIVO: 'false', WHATSAPP_TOKEN: 'x' }), '--aplicar');
+    const r2 = await rodarImport(arquivo('lembretes.json', { NOTIFICACOES_ATIVAS: 'true' }), '--aplicar');
+    return (r1.codigo === 1 && r2.codigo === 1 && estado.hash.get('FLOW_CADASTRO_ATIVO') === antes && !estado.hash.has('NOTIFICACOES_ATIVAS'))
+      || `códigos ${r1.codigo}/${r2.codigo}; FLOW_CADASTRO_ATIVO=${estado.hash.get('FLOW_CADASTRO_ATIVO')}`;
+  });
+  await caso('o importado fica no hash "p", onde a Plataforma Node procura as propriedades', async () => {
+    // É o mesmo HGET que o armazenamento-upstash faz em getProperty.
+    const r = await (await fetch(`${FALSOS}/upstash`, { method: 'POST', body: JSON.stringify(['HGET', 'p', 'FLOW_CADASTRO_ATIVO']) })).json();
+    return r.result === 'true' || JSON.stringify(r);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+mostrar(casosLocais.splice(0));
+
 await servidor.fechar();
 await new Promise((ok) => falsos.close(ok));
 
