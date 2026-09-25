@@ -114,6 +114,7 @@
 | BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | ✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Precisa de `clasp push`** |
 | BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Precisa de `clasp push`** |
 | BL-84 | Achados da revisão de 24/09 ainda não conferidos linha a linha | 🟠 | M | 🔎 A triar — lista em `notas.md` |
+| BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Precisa de `clasp push`** |
 
 ---
 
@@ -2979,3 +2980,19 @@ corrigir. Lista completa em [notas.md](notas.md), seção 2:
 - Menores: aviso de expiração em dobro; 429 da Meta chega como HTTP 400; PII em logs; Flow aceita
   `comunidade_id` sem conferir; "menu" conta como tentativa de PIN; admin vê só 10 comunidades;
   código PIX enviado a `api.qrserver.com`; documento qualquer com `sha256` tratado como imagem.
+
+### BL-85 — Texto enquanto o bot espera o comprovante ✅ (P)
+
+**Arquivo:** `Router.gs` (switch de `_rotearTexto`)
+
+**Achado no teste real de 24/09**, validando o BL-79. Depois dos dados de pagamento, o 👍 foi
+**enviado** como mensagem — não como reação. Um emoji sozinho é **texto** para o WhatsApp, e
+texto em `AGUARDANDO_COMPROVANTE` (ou `_FAMILIA`, `_OFERTA`) caía no `default` do Router →
+menu → estado MENU. O comprovante seguinte ouviu "Não estou esperando uma imagem". O mesmo vale
+para "já paguei", "ok", "enviando".
+
+**Correção.** Nos três estados de espera de comprovante, texto recebe um lembrete com botão Menu,
+e o estado fica onde estava. "menu" continua saindo pelo atalho de sempre.
+
+**Aceite.** Caso no `conta-mensagens.js` (três estados × "👍" e "já paguei") — reprova no código
+anterior.

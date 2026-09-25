@@ -4194,6 +4194,31 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
       || `gravou ${gravado && gravado.x_studio_data_primeiro_contato} (fusos pedidos: ${pedidos.join()})`;
   });
 
+  // ── BL-85 ──────────────────────────────────────────────────────────────
+  // Achado no teste real de 24/09: "👍" MANDADO (não reação) é texto.
+  caso('BL-85: texto enquanto espera o comprovante lembra, e não desfaz a devolução', () => {
+    const erros = [];
+    for (const estado of ['AGUARDANDO_COMPROVANTE', 'AGUARDANDO_COMPROVANTE_FAMILIA',
+                          'AGUARDANDO_COMPROVANTE_OFERTA']) {
+      for (const body of ['👍', 'já paguei']) {
+        const r = { enviadas: [], estados: [], menus: 0 };
+        const R = carregar(['Router.gs'], {
+          StateManager: { getEstado: () => estado, setEstado: (f, e) => r.estados.push(e),
+                          getCampo: () => undefined, limparDados() {} },
+          Utils: new Proxy({ enviarComBotaoMenu: (f, t) => r.enviadas.push(t),
+                             enviarSimples: (f, t) => r.enviadas.push(t) },
+                           { get: (o, k) => o[k] || (() => {}) }),
+          MenuHandler: new Proxy({ menuPrincipal: () => { r.menus++; r.estados.push('MENU'); } },
+                                 { get: (o, k) => o[k] || (() => {}) })
+        }, 'Router');
+        R.rotear('55', { type: 'text', text: { body } });
+        if (r.menus || r.estados.length || !/comprovante/i.test(r.enviadas.join()))
+          erros.push(`${estado} "${body}": menus=${r.menus} estados=[${r.estados}]`);
+      }
+    }
+    return !erros.length || erros.join('; ');
+  });
+
   caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
     const r = roteador('MENU');
     r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });

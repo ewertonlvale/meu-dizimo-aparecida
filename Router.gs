@@ -502,6 +502,22 @@ const Router = {
         CadastroHandler.processarValorMensal(from, texto);     break;
       case ESTADOS.AGUARDANDO_DIA_PREFERIDO:
         CadastroHandler.processarDiaPreferido(from, message);  break;
+
+      // ── BL-85: texto enquanto o bot espera o comprovante ────────────────
+      // Caía no `default` → menu → estado MENU. Um "👍", "já paguei" ou "ok"
+      // logo depois dos dados de pagamento desfazia a devolução, e o
+      // comprovante seguinte ouvia "Não estou esperando uma imagem" — foi
+      // exatamente o que aconteceu no teste de 24/09. Lembra o que falta e
+      // mantém o estado; "menu" continua saindo, pelo atalho lá em cima.
+      case ESTADOS.AGUARDANDO_COMPROVANTE:
+      case ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA:
+      case ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA:
+        Utils.enviarComBotaoMenu(from,
+          '📎 Estou aguardando o *comprovante* do pagamento.\n\n' +
+          'Pode enviar como *foto* ou *PDF*. Se preferir desistir, toque em Menu.'
+        );
+        break;
+
       default:
         MenuHandler.menuPrincipal(from);
     }
