@@ -113,7 +113,7 @@
 | BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | ✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Publicado em 24/09** — publicado — **falta validar** com acesso de coordenador. |
 | BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | ✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Publicado em 24/09** — publicado. |
 | BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Publicado em 24/09** — publicado. |
-| BL-84 | Achados da revisão de 24/09 ainda não conferidos linha a linha | 🟠 | M | 🔎 A triar — lista em `notas.md` |
+| BL-84 | Achados da revisão de 24/09 conferidos e corrigidos (15 itens) | 🟠 | G | ✅ Concluído (24/09) — todos confirmados; 14 corrigidos, 1 adiado para a Fase 3 do BL-74 (trava global). **Precisa de `clasp push`** |
 | BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Publicado em 24/09** — validado no WhatsApp. |
 
 ---
@@ -2962,24 +2962,43 @@ a menos, e contatos depois das 21h aparecem no dia anterior.
 
 **Proposta.** Formatar em `'UTC'`. Mesma família do BL-01 (campo `date` com formato errado).
 
-### BL-84 — Achados da revisão ainda a conferir 🟠 (M)
+### BL-84 — Achados da revisão, conferidos e corrigidos ✅ (G)
 
-Apontados pelos revisores, com arquivo e linha, mas **não conferidos por mim** — triar antes de
-corrigir. Lista completa em [notas.md](notas.md), seção 2:
+Os achados que os revisores apontaram e eu não tinha conferido. **Todos se confirmaram** ao ler o
+código. Cada correção tem caso no `conta-mensagens.js` que **reprova no código anterior**,
+conferido um a um; um commit por grupo na branch `fix/bl-84`.
 
-- `parseValorBR` cola números ("100 ou 200" → 100200), sem teto — `Utils.gs:673`
-- Devolução duplicada em dois comprovantes seguidos, ou em timeout após `create` com mensagem
-  pedindo reenvio — `ComprovanteHandler.gs:866-873`; `criarMembro` sem guarda contra toque duplo
-- Oferta ou devolução Rejeitada impede o lembrete de dízimo — `NotificacaoHandler.gs:469-480`
-- Lote de notificações travável por números com erro permanente; reenvio quando o log falha;
-  `lote` 200 × 2 s passa de 6 min — `NotificacaoHandler.gs:298-313, 456-467, 503-506`
-- Relatório consolidado soma Pendentes e Rejeitadas — `OdooService.gs:1103`
-- Trigger apaga cadastro ativo porque `sessao_inicio_` não é renovado — `TriggerSessoes.gs:50-57`
-- Lock global segurado durante HTTP faz o `_comLock` desistir sob carga —
-  `StateManager.gs:287`, `OdooService.gs:288`
-- Menores: aviso de expiração em dobro; 429 da Meta chega como HTTP 400; PII em logs; Flow aceita
-  `comunidade_id` sem conferir; "menu" conta como tentativa de PIN; admin vê só 10 comunidades;
-  código PIX enviado a `api.qrserver.com`; documento qualquer com `sha256` tratado como imagem.
+| Achado | Correção |
+|---|---|
+| `parseValorBR` colava números ("100 ou 200" → 100200), sem teto | Um número por texto; dois é ambiguidade (pede de novo). Teto de R$ 100 mil |
+| Dois comprovantes seguidos gravavam duas devoluções | Um comprovante por vez, por pessoa (marca no cache, conferida sob a trava); o segundo ouve "ainda estou analisando" |
+| Timeout **depois** do `create` pedia reenvio — e duplicava | Antes de dizer "não foi registrado", pergunta ao Odoo se a devolução acabou de ser criada |
+| `criarMembro` sem guarda contra toque duplo | Sob a trava, confere o familiar pelo nome completo na família; achando, devolve o mesmo id |
+| Oferta ou devolução Rejeitada calava o lembrete de dízimo | "Já devolveu" conta só dízimo e ignora Rejeitado |
+| Número com erro permanente ocupava o lote para sempre | Duas falhas no mês encerram as tentativas daquela pessoa |
+| Envio sem log no Odoo era repetido no degrau seguinte | Marca no cache logo após o envio + gravação do log com 3 tentativas |
+| Lote até 200 × 2 s passava do teto de 6 min | Orçamento de 4,5 min no laço; o resto sai pela repescagem |
+| Consolidado somava devoluções Rejeitadas | Rejeitadas fora de todo total; Pendentes ficam, mas aparecem à parte como "a validar" |
+| Despejo do cache apagava cadastro em andamento | A marca de início vive 2 h (o dobro da sessão); sumiu com a conversa ativa = despejo, recomeça a contagem. O limite de 60 min, com aviso, segue valendo |
+| Aviso de expiração saía em dobro | A marca "já avisei" vai antes das chamadas ao Odoo |
+| Limite de taxa da Meta (HTTP 400) não era repetido | Códigos 4, 80007, 130429 e 131056 repetem como o 429 |
+| Nome e telefone de quem oferta no log | O log da devolução leva só o que serve ao diagnóstico; o do lembrete, sem telefone |
+| Flow aceitava comunidade inexistente | Recusada no cadastro e na oferta; nome da oferta com teto de 60 |
+| "menu" no código de acesso contava como tentativa errada | Sai, sem mexer no contador; vale também no mês personalizado |
+| Admin só via 10 comunidades | Listas paginadas — e a da **oferta** cortava em 9, o que ninguém tinha visto. Hoje são 6: era latente |
+| Código PIX enviado a `api.qrserver.com` | A reserva do card manda dados + copia e cola, sem imagem: a chave pode ser CPF de pessoa física |
+| Documento qualquer com `sha256` virava "imagem" | Só vale como pista sem tipo declarado; o motivo técnico da falha sai da tela |
+
+**Adiado, de propósito:** a trava global do Apps Script, segurada durante chamadas ao Odoo, faz o
+`_comLock` desistir sob carga. É estrutural: o Apps Script só tem uma trava para tudo. Aumentar a
+espera atrasaria todo mundo. A Fase 3 do BL-74 resolve com trava por usuário no Redis — e a
+`Plataforma.trava` já pede as chaves por usuário.
+
+**Conferido e descartado:** o `flow_token` com o número de outra pessoa. Os dados são sempre
+gravados na sessão do remetente autenticado pela Meta, nunca no número do token.
+
+**Fica registrado para depois:** o número do WhatsApp (`from`) continua nos logs. É o
+identificador operacional de tudo, e mascará-lo cegaria o diagnóstico.
 
 ### BL-85 — Texto enquanto o bot espera o comprovante ✅ (P)
 

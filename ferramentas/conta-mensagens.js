@@ -4141,7 +4141,7 @@ console.log('🧱 A fachada da Plataforma não vaza (BL-74, Fase 1)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
-console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
+console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-85)\n');
 
 // Cada caso carrega o ARQUIVO REAL com stubs mínimos e prova o conserto. O
 // critério para entrar aqui: o caso tem de reprovar no código anterior à
