@@ -481,7 +481,30 @@ Com 500 dizimistas isso é mensagem duplicada para muita gente, e não dá para 
 acionadores do Apps Script (`removerTriggerNotificacoes` e o equivalente do `TriggerSessoes`).
 Nunca os dois ligados ao mesmo tempo.
 
-### Fase 5 — Corte (1 dia + uma semana de observação)
+### Fase 5 — Corte (1 dia + uma semana de observação) · 🔶 em preparação
+
+#### Preparação 1 de 3: a assinatura da Meta (HMAC) · ✅ código pronto (25/09)
+
+O webhook público agora aceita **só** o POST com `X-Hub-Signature-256` válido: HMAC-SHA256 dos
+**bytes crus** do corpo com o App Secret (`META_APP_SECRET`), comparado em tempo constante. O
+`?token=` da URL não é mais aceito ali — ele aparecia nos logs de requisição do Cloud Run e já
+tinha vazado. O `WEBHOOK_SECRET` continua existindo **só entre o worker e os `.gs`** (o `doPost`
+ainda o confere), sem trafegar pela internet — e por isso trocá-lo passa a ser trivial.
+
+**401, não 200.** O Apps Script respondia `Forbidden` com 200, e a Meta não reenvia o que recebe
+com 200. Com 401, se o App Secret estiver errado no dia do corte, **nenhuma mensagem se perde**: a
+Meta continua tentando, e elas chegam quando o segredo for corrigido.
+
+**Provado** na `prova-runtime.mjs`: sem assinatura, com segredo errado, com a assinatura de OUTRO
+corpo (adulterado) e só com o `?token=` antigo → os quatro levam 401 e nada entra na fila. Com a
+verificação desligada de propósito, os quatro passam e duas tarefas forjadas entram — o teste pega.
+
+**Validar o App Secret antes do corte** é possível sem a Meta mandar nada: pedir um token de app
+com ele (`oauth/access_token?grant_type=client_credentials`). Segredo certo devolve um token.
+
+#### Preparação 2 de 3: as propriedades do Apps Script no Upstash · a fazer
+
+#### Preparação 3 de 3: o roteiro do corte, com a volta · a fazer
 
 - **Assinatura HMAC de verdade.** Hoje o webhook autentica por segredo na query string
   (`?token=…`) porque **o Apps Script não dá acesso aos headers**. No Cloud Run dá: passa a

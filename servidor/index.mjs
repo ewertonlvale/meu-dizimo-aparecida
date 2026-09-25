@@ -8,9 +8,9 @@
  * dois da Fase 3 são DOIS serviços — porque o acesso público no Cloud Run é
  * por serviço, não por rota.
  *
- *   webhook  PÚBLICO. Autentica o POST da Meta, enfileira no Cloud Tasks e
- *            responde em milissegundos. NÃO roda os `.gs`, NÃO tem os segredos
- *            do Odoo nem do WhatsApp — só o do webhook.
+ *   webhook  PÚBLICO. Confere a ASSINATURA da Meta (HMAC), enfileira no Cloud
+ *            Tasks e responde em milissegundos. NÃO roda os `.gs`, NÃO tem os
+ *            segredos do Odoo nem do WhatsApp — só o App Secret.
  *   worker   PRIVADO. Só o Cloud Tasks e o Cloud Scheduler chegam aqui, com
  *            token OIDC que o próprio Cloud Run verifica. Roda os `.gs`: uma
  *            mensagem por vez POR PESSOA (processador.mjs).
@@ -19,7 +19,7 @@
  *
  * AMBIENTE
  *   PORT / PORTA            porta HTTP (padrão 8080 — o do Cloud Run)
- *   webhook: WEBHOOK_SECRET, VERIFY_TOKEN, FILA_PROJETO, FILA_REGIAO,
+ *   webhook: META_APP_SECRET, VERIFY_TOKEN, FILA_PROJETO, FILA_REGIAO,
  *            FILA_NOME, WORKER_URL, INVOCADOR_SA
  *   worker/local: ARMAZENAMENTO (memoria|upstash), UPSTASH_REDIS_REST_URL/_TOKEN,
  *            PROCESSADORES, e as chaves de CHAVES_DE_CONFIG (plataforma/index.mjs)
@@ -34,14 +34,15 @@
 import http from 'node:http';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, createHmac } from 'node:crypto';
 import { fusoDoProjeto } from './carregador.mjs';
 import { criarFila } from './fila.mjs';
 
 const LIMITE_CORPO = 1024 * 1024;
 const PAPEIS = ['local', 'webhook', 'worker'];
 
-function lerCorpo(req) {
+/** O corpo como BYTES — a assinatura da Meta é sobre os bytes crus, não sobre um texto re-serializado. */
+function lerBytes(req) {
   return new Promise((ok, falha) => {
     const partes = [];
     let tamanho = 0;
@@ -50,15 +51,30 @@ function lerCorpo(req) {
       if (tamanho > LIMITE_CORPO) { falha(Object.assign(new Error('corpo grande demais'), { codigo: 413 })); req.destroy(); return; }
       partes.push(c);
     });
-    req.on('end', () => ok(Buffer.concat(partes).toString('utf8')));
+    req.on('end', () => ok(Buffer.concat(partes)));
     req.on('error', falha);
   });
 }
+const lerCorpo = async (req) => (await lerBytes(req)).toString('utf8');
 
 const iguais = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && timingSafeEqual(x, y);
 };
+
+/**
+ * A assinatura da Meta (BL-74, Fase 5). Todo POST de webhook traz
+ * `X-Hub-Signature-256: sha256=<hex>`, o HMAC-SHA256 do corpo com o App Secret
+ * do app. Só a Meta tem o segredo — e ele nunca viaja: diferente do `?token=`,
+ * que ia na URL, aparecia nos logs de requisição e já tinha vazado uma vez.
+ */
+export function assinaturaValida(bytes, cabecalho, segredo) {
+  const m = /^sha256=([0-9a-f]{64})$/i.exec(String(cabecalho || ''));
+  if (!m || !segredo) return false;
+  const esperado = createHmac('sha256', segredo).update(bytes).digest();
+  const recebido = Buffer.from(m[1], 'hex');
+  return recebido.length === esperado.length && timingSafeEqual(recebido, esperado);
+}
 
 /** Os processadores (worker threads) e a fila interna deles. */
 async function subirProcessadores(env, armazenamento, quantos) {
@@ -119,9 +135,9 @@ export async function iniciar(opcoes = {}) {
   const quantos = Number(env.PROCESSADORES || 1);
 
   if (papel === 'webhook') {
-    // Sem o segredo, todo POST seria recusado — melhor não subir do que subir
-    // recusando mensagem em silêncio.
-    if (!env.WEBHOOK_SECRET) throw new Error('PAPEL=webhook exige WEBHOOK_SECRET.');
+    // Sem o App Secret, toda assinatura seria recusada — melhor não subir do
+    // que subir recusando mensagem.
+    if (!env.META_APP_SECRET) throw new Error('PAPEL=webhook exige META_APP_SECRET.');
     fila = criarFila(env);
   } else {
     if (armazenamento === 'memoria' && quantos !== 1) {
@@ -151,16 +167,20 @@ export async function iniciar(opcoes = {}) {
       texto(res, 200, ok ? String(parameter['hub.challenge'] || '') : 'Forbidden');
       return;
     }
-    const corpo = await lerCorpo(req);
-    // Mesma regra do Webhook.gs: segredo na URL, fail-closed. Sempre 200,
-    // como o Apps Script — trocar por 403 é decisão da Fase 5.
-    if (!iguais(parameter.token || '', env.WEBHOOK_SECRET)) {
-      console.warn('🚫 POST rejeitado: token de webhook inválido ou ausente');
-      texto(res, 200, 'Forbidden');
+    const bytes = await lerBytes(req);
+    // Fase 5: só vale a ASSINATURA. O `?token=` da URL não é mais aceito aqui.
+    //
+    // 401, e não o 200 "Forbidden" do Apps Script — de propósito. A Meta
+    // REENVIA o que não recebe com 200. Se o App Secret estiver errado no dia do
+    // corte, nenhuma mensagem se perde: ela volta quando o segredo for corrigido.
+    // Uma requisição forjada leva o mesmo 401, e não custa nada.
+    if (!assinaturaValida(bytes, req.headers['x-hub-signature-256'], env.META_APP_SECRET)) {
+      console.warn(`🚫 POST recusado: assinatura ${req.headers['x-hub-signature-256'] ? 'inválida' : 'ausente'}`);
+      texto(res, 401, 'Unauthorized');
       return;
     }
     try {
-      const r = await fila.enfileirar(corpo);
+      const r = await fila.enfileirar(bytes.toString('utf8'));
       if (r === 'repetida') console.log('♻️ reentrega da Meta — a fila recusou a tarefa repetida');
       texto(res, 200, 'OK');
     } catch (e) {

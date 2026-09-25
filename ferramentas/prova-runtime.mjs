@@ -521,9 +521,13 @@ const ENV_WORKER = {
   }),
 };
 const worker = await iniciar({ porta: 0, env: ENV_WORKER });
+// O App Secret do app da Meta: é com ele que ela assina cada POST (Fase 5).
+const APP_SECRET = 'app-secret-de-teste';
+const { createHmac } = await import('node:crypto');
+const assinar = (corpo, segredo = APP_SECRET) => 'sha256=' + createHmac('sha256', segredo).update(Buffer.from(corpo, 'utf8')).digest('hex');
 const WORKER = `http://127.0.0.1:${worker.porta}`;
 const webhookSrv = await iniciar({ porta: 0, env: {
-  PAPEL: 'webhook', WEBHOOK_SECRET: SEGREDO, VERIFY_TOKEN: 'verifica',
+  PAPEL: 'webhook', META_APP_SECRET: APP_SECRET, VERIFY_TOKEN: 'verifica',
   FILA_PROJETO: 'projeto', FILA_REGIAO: 'southamerica-east1', FILA_NOME: 'mensagens',
   WORKER_URL: WORKER, INVOCADOR_SA: 'invocador@projeto.iam.gserviceaccount.com',
   TASKS_API: `${FALSOS}/tasks-api`, METADADOS_URL: `${FALSOS}/meta`,
@@ -534,18 +538,27 @@ const WEBHOOK = `http://127.0.0.1:${webhookSrv.porta}`;
 const envelopeDe = (de, mensagem, ts) => JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'W', changes: [{ field: 'messages', value: {
   messaging_product: 'whatsapp', metadata: { display_phone_number: '5586900000000', phone_number_id: '111' },
   contacts: [{ wa_id: de }], messages: [{ from: de, id: `wamid.F${++seq}`, timestamp: String(ts), ...mensagem }] } }] }] });
-const postarFila = (corpo, token = SEGREDO) =>
-  fetch(`${WEBHOOK}/webhook?token=${token}`, { method: 'POST', body: corpo, headers: { 'content-type': 'application/json' } });
+// Como a Meta: assinatura no cabeçalho, nada na URL.
+const postarFila = (corpo, assinatura = assinar(corpo)) =>
+  fetch(`${WEBHOOK}/webhook`, { method: 'POST', body: corpo,
+    headers: { 'content-type': 'application/json', ...(assinatura ? { 'x-hub-signature-256': assinatura } : {}) } });
 
 await caso('webhook: GET da Meta verificado sem os .gs', async () => {
   const r = await (await fetch(`${WEBHOOK}/webhook?hub.mode=subscribe&hub.verify_token=verifica&hub.challenge=77`)).text();
   const errado = await (await fetch(`${WEBHOOK}/webhook?hub.mode=subscribe&hub.verify_token=x&hub.challenge=77`)).text();
   return (r === '77' && errado === 'Forbidden') || `${r} / ${errado}`;
 });
-await caso('webhook: POST sem o segredo não enfileira nada', async () => {
+await caso('webhook: sem assinatura, assinatura errada, corpo adulterado ou só o ?token= antigo → 401, nada enfileirado', async () => {
   const antes = estado.tarefas.size;
-  const r = await (await postarFila(envelopeDe('5586999990002', { type: 'text', text: { body: 'oi' } }, 1790000100), 'errado')).text();
-  return (r === 'Forbidden' && estado.tarefas.size === antes) || `${r}, ${estado.tarefas.size - antes} tarefa(s)`;
+  const corpo = envelopeDe('5586999990002', { type: 'text', text: { body: 'oi' } }, 1790000100);
+  const adulterado = corpo.replace('"oi"', '"transferir tudo"');
+  const r = [
+    await postarFila(corpo, null),                                   // sem cabeçalho
+    await postarFila(corpo, assinar(corpo, 'outro-segredo')),         // segredo errado
+    await postarFila(adulterado, assinar(corpo)),                      // assinatura de OUTRO corpo
+    await fetch(`${WEBHOOK}/webhook?token=${SEGREDO}`, { method: 'POST', body: corpo }), // o jeito antigo
+  ].map((x) => x.status);
+  return (r.every((s) => s === 401) && estado.tarefas.size === antes) || `status ${r.join(',')}; ${estado.tarefas.size - antes} tarefa(s)`;
 });
 await caso('webhook: responde na hora; a tarefa leva token OIDC do invocador para o worker', async () => {
   const antes = estado.enviados.length;
@@ -621,9 +634,16 @@ await caso('worker exige Upstash: memória não seria compartilhada entre instâ
   try { await iniciar({ porta: 0, env: { PAPEL: 'worker', ARMAZENAMENTO: 'memoria' } }); return 'subiu'; }
   catch (e) { return /exige ARMAZENAMENTO=upstash/.test(e.message) || e.message; }
 });
-await caso('webhook sem WEBHOOK_SECRET não sobe (recusaria tudo em silêncio)', async () => {
-  try { await iniciar({ porta: 0, env: { PAPEL: 'webhook', WEBHOOK_SECRET: '' } }); return 'subiu'; }
-  catch (e) { return /exige WEBHOOK_SECRET/.test(e.message) || e.message; }
+await caso('webhook sem META_APP_SECRET não sobe (recusaria toda mensagem)', async () => {
+  try { await iniciar({ porta: 0, env: { PAPEL: 'webhook', META_APP_SECRET: '' } }); return 'subiu'; }
+  catch (e) { return /exige META_APP_SECRET/.test(e.message) || e.message; }
+});
+await caso('assinatura: a comparação é sobre os BYTES, com acento e emoji', async () => {
+  const { assinaturaValida } = await imp('servidor/index.mjs');
+  const corpo = Buffer.from('{"text":{"body":"Olá, paróquia 🙏"}}', 'utf8');
+  const sig = 'sha256=' + createHmac('sha256', 's').update(corpo).digest('hex');
+  return (assinaturaValida(corpo, sig, 's') && assinaturaValida(corpo, sig.toUpperCase().replace('SHA256=', 'sha256='), 's')
+    && !assinaturaValida(corpo, sig, '') && !assinaturaValida(corpo, 'sha1=abc', 's')) || 'falhou';
 });
 await caso('fila: endereço da API ou dos metadados só troca para 127.0.0.1 (o token não sai)', async () => {
   const { criarFila } = await imp('servidor/fila.mjs');
