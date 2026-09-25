@@ -223,7 +223,7 @@ de volta com o tempo.
 
 Produção segue no Apps Script durante toda a fase. Risco perto de zero.
 
-### Fase 2 — Runtime Node em paralelo, sem tráfego (2–3 dias) · 🔶 código pronto (25/09), falta a sessão de nuvem
+### Fase 2 — Runtime Node em paralelo, sem tráfego (2–3 dias) · ✅ no ar, sem tráfego, provada com as APIs reais (25/09)
 
 #### Como ficou
 
@@ -282,13 +282,28 @@ controlar cada cenário, e no Node eles não existem. O equivalente é a `prova-
 exercita o **contrato** da Plataforma Node e o fluxo inteiro. E "base Odoo descartável" não
 existe no plano gratuito — são servidores falsos que falam JSON-RPC.
 
-**O que NÃO está provado ainda, e só a nuvem prova:**
-- o **Dockerfile** — não havia Docker na máquina; prova-se no primeiro `gcloud builds submit`;
-- o **Upstash de verdade** — a prova usa um falso que fala o protocolo REST dela;
-- o **Odoo, o WhatsApp e o Vision de verdade** a partir do Cloud Run.
+**Provado na nuvem em 25/09.** Serviço `meu-dizimo-runtime` no Cloud Run (`southamerica-east1`),
+privado, sem tráfego, publicado pelo workflow `deploy-runtime.yml` (à mão, sem chave, com o harness
+antes). Um "oi" simulado do número do dono entrou pelo `/webhook` e o menu chegou no WhatsApp:
+Cloud Run → Odoo real → Upstash real → WhatsApp real. O Dockerfile construiu na primeira.
 
-**Falta, e é seu:** a sessão de configuração da Google, na lista logo abaixo. Com ela feita, o
-próximo passo é subir o serviço sem tráfego e apontar um número de teste para ele.
+Os tropeços, para a próxima vez:
+- `--set-env-vars` e `--update-env-vars` são mutuamente exclusivos no gcloud (sai com código 2);
+- um segredo criado sem o *binding* de `secretAccessor` derruba o deploy — o `&&` do comando
+  combinado pulou o binding quando o `create` falhou por o segredo já existir;
+- um `WHATSAPP_TOKEN` colado errado no Secret Manager dá **190 / Cannot parse access token**.
+  Conferir cada segredo contra a API dele antes do deploy (comandos na conversa de 25/09);
+- no Brasil, o WhatsApp manda o número **sem o nono dígito** (12 dígitos). O teste com 13 dígitos
+  criou um `x_contato_bot` de lixo no Odoo de produção (id 27) — a apagar à mão;
+- no Cloud Shell, `gcloud run services proxy` foi mais confiável que o `print-identity-token`.
+
+**O que ainda não foi exercitado na nuvem:** o comprovante (Vision + gravação de devolução) e os
+agendamentos. A chave do Vision foi conferida contra a API; o caminho inteiro fica para quando
+houver fila (Fase 3).
+
+**Antes do corte (Fase 5), um passo que nenhuma fase listava:** copiar as propriedades MUTÁVEIS
+do Apps Script (`FLOW_CADASTRO_ATIVO`, `FLOW_MODO_CADASTRO`, `sessao_ativa_*`, bloqueios…) para o
+Upstash. Hoje o runtime Node sobe com elas vazias.
 
 #### O desenho original
 
