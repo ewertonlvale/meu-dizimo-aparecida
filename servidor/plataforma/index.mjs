@@ -73,6 +73,9 @@ export function criarPlataforma({ armazenamento: a, http, env = process.env, log
       setProperties:  (obj) => a.propSetAll(obj),
     },
 
+    // Contadores do BL-25. Atômico no Redis (HINCRBY) — ver Plataforma.gs.
+    contador: { somar: (somas) => a.propSomar(somas) },
+
     http: { fetch: (url, opcoes) => http.fetch(url, opcoes) },
 
     relogio: { formatar: relogio.formatar, dormir: relogio.dormir },

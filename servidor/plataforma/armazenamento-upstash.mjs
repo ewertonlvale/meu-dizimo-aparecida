@@ -79,6 +79,11 @@ export function criarArmazenamentoUpstash({ url, token, http }) {
     propSet: (k, v) => { comando('HSET', 'p', k, v); },
     propSetAll: (obj) => { const pares = Object.entries(obj).flat(); if (pares.length) comando('HSET', 'p', ...pares); },
     propDelete: (k) => { comando('HDEL', 'p', k); },
+    // HINCRBY é atômico no Redis: duas instâncias somando ao mesmo tempo não
+    // perdem incremento — o que o ler-somar-gravar do Apps Script perdia.
+    propSomar(somas) {
+      lote(Object.entries(somas).map(([k, n]) => ['HINCRBY', 'p', k, Math.trunc(Number(n))]));
+    },
 
     travaTentar: (chave, dono, ms) => comando('SET', `t:${chave}`, dono, 'NX', 'PX', ms) === 'OK',
     travaLiberar: (chave, dono) => { comando('EVAL', LIBERAR, 1, `t:${chave}`, dono); },

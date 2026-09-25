@@ -91,6 +91,11 @@ if (!isMainThread) {
     up.propDelete('sessao_ativa_55');
     return (todas.sessao_ativa_55 === '1' && todas.FLOW_CADASTRO_ATIVO === 'true' && up.propGet('sessao_ativa_55') === null) || JSON.stringify(todas);
   });
+  caso('upstash: contador soma com HINCRBY (atômico), não com ler-somar-gravar', () => {
+    up.propSomar({ uso_urlfetch_x_0: 3 }); up.propSomar({ uso_urlfetch_x_0: 4, msgs_x_servico_0: 1 });
+    const todas = up.propGetAll();
+    return (todas.uso_urlfetch_x_0 === '7' && todas.msgs_x_servico_0 === '1') || JSON.stringify(todas);
+  });
   caso('upstash: trava — só um dono, e só o dono libera', () => {
     const a = up.travaTentar('dados_55', 'A', 5000);
     const b = up.travaTentar('dados_55', 'B', 5000);
@@ -271,7 +276,7 @@ mostrar(casosLocais.splice(0));
 // Servidores falsos: eco, Upstash, Odoo, Graph (WhatsApp) e Vision
 // ════════════════════════════════════════════════════════════════════════════
 const PNG = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
-const estado = { enviados: [], criados: [], upstash: new Map(), hash: new Map() };
+const estado = { enviados: [], criados: [], upstash: new Map(), hash: new Map(), comandos: [] };
 
 const DIZIMISTA = { id: 7, x_name: 'Ana', x_studio_nome_completo: 'Ana Souza', x_studio_partner_phone: '5586999990001',
   x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'], x_studio_dia_preferido: 10, x_active: true,
@@ -317,6 +322,7 @@ function upstash(cmd) {
     case 'HGET': return estado.hash.get(a[1]) ?? null;
     case 'HSET': { for (let i = 1; i < a.length; i += 2) estado.hash.set(a[i], a[i + 1]); return 1; }
     case 'HDEL': return estado.hash.delete(a[1]) ? 1 : 0;
+    case 'HINCRBY': { const n = (parseInt(estado.hash.get(a[1]), 10) || 0) + Number(a[2]); estado.hash.set(a[1], String(n)); estado.comandos.push('HINCRBY'); return n; }
     case 'HGETALL': return [...estado.hash].flat();
     case 'EVAL': { const [, , chave, dono] = a; if (u.get(chave) === dono) { u.delete(chave); return 1; } return 0; }
     default: throw new Error(`comando não simulado: ${c}`);

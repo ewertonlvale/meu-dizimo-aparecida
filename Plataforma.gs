@@ -70,6 +70,27 @@ const Plataforma = {
   },
 
   // ==========================================================================
+  // CONTADOR — somar a contadores guardados nas propriedades (BL-74, Fase 3)
+  // ==========================================================================
+  // Os contadores de uso do BL-25 (`uso_urlfetch_*`, `msgs_*`) fazem ler →
+  // somar → gravar. No Apps Script isso é o que dá para fazer, e é o que já se
+  // fazia: uma leitura e uma escrita, em shards para diluir a corrida. No Node
+  // vira HINCRBY no Redis, que é ATÔMICO — com várias instâncias do Cloud Run,
+  // ler-somar-gravar perderia incrementos e a conta sairia sempre para menos.
+  contador: {
+    /** @param {Object<string, number>} somas - chave → quanto somar */
+    somar(somas) {
+      const props = PropertiesService.getScriptProperties();
+      const atuais = props.getProperties();
+      const lote = {};
+      Object.keys(somas).forEach(k => {
+        lote[k] = String((parseInt(atuais[k], 10) || 0) + somas[k]);
+      });
+      props.setProperties(lote);
+    }
+  },
+
+  // ==========================================================================
   // HTTP — síncrono, devolvendo o HTTPResponse do Apps Script
   // ==========================================================================
   // Na Fase 2 vira `sync-fetch` dentro de uma worker thread. Ao portar,
