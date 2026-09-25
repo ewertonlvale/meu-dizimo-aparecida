@@ -1,5 +1,5 @@
 # ============================================================================
-# deploy-runtime.yml — publica o runtime Node no Cloud Run (BL-74, Fase 2)
+# deploy-runtime.yml — publica o runtime Node no Cloud Run (BL-74, Fases 2 e 3)
 # ============================================================================
 #
 # SÓ À MÃO (Actions → "Deploy do runtime Node" → Run workflow), e só da
@@ -10,9 +10,15 @@
 # Federation. Nenhuma credencial de longa duração existe perto deste
 # repositório, que é público. O provedor só aceita ESTE repositório.
 #
-# O SERVIÇO NASCE PRIVADO (--no-allow-unauthenticated) e SEM TRÁFEGO: a Meta
-# continua apontando para o Apps Script. Abrir para a internet é passo da Fase
-# 5, junto com a troca da URL na Meta.
+# DOIS SERVIÇOS, UMA IMAGEM (Fase 3):
+#   meu-dizimo-worker   roda os .gs. PRIVADO para sempre: só o Cloud Tasks e o
+#                       Cloud Scheduler entram, com token OIDC da conta
+#                       meu-dizimo-invocador. Tem os segredos do Odoo e do
+#                       WhatsApp — por isso ninguém de fora chega nele.
+#   meu-dizimo-webhook  autentica o POST da Meta e enfileira. Só tem o segredo
+#                       do webhook. Nasce PRIVADO; vira público na Fase 5, junto
+#                       com a troca da URL na Meta.
+# O worker sobe primeiro: o webhook precisa da URL dele.
 #
 # O QUE VEM DE ONDE
 #   vars.*     Settings → Secrets and variables → Actions → aba Variables.
@@ -36,14 +42,16 @@ concurrency:
 env:
   REGIAO: southamerica-east1
   REPOSITORIO: meu-dizimo
-  SERVICO: meu-dizimo-runtime
+  WORKER: meu-dizimo-worker
+  WEBHOOK: meu-dizimo-webhook
+  FILA: mensagens
 
 jobs:
   deploy:
     name: Deploy
     if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
@@ -82,17 +90,38 @@ jobs:
       # no gcloud, que sai com código 2 — foi o que derrubou o primeiro deploy,
       # em 25/09. O deploy define o ambiente INTEIRO: o que não estiver aqui
       # não existe no serviço.
-      - name: Publicar no Cloud Run
+      #
+      # PROCESSADORES=2 com --concurrency=4: duas mensagens de pessoas diferentes
+      # rodam juntas; as outras esperam na fila interna. Da MESMA pessoa, uma
+      # por vez — a trava por pessoa manda a segunda de volta à fila (503).
+      - name: Publicar o worker (privado)
         run: |
-          gcloud run deploy "$SERVICO" \
+          gcloud run deploy "$WORKER" \
             --image="$IMAGEM" \
             --region="$REGIAO" \
             --service-account="meu-dizimo-bot@${{ vars.GCP_PROJETO }}.iam.gserviceaccount.com" \
             --no-allow-unauthenticated \
-            --min-instances=0 --max-instances=2 \
-            --cpu=1 --memory=512Mi --timeout=300 --concurrency=10 \
-            --set-env-vars="PAPEL=local,ARMAZENAMENTO=upstash,PROCESSADORES=1,NOTIFICACOES_ATIVAS=false,UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }},WHATSAPP_PHONE_ID=${{ vars.WHATSAPP_PHONE_ID }},ODOO_URL=${{ vars.ODOO_URL }},ODOO_DATABASE=${{ vars.ODOO_DATABASE }},ODOO_UID=${{ vars.ODOO_UID }},VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }}" \
-            --set-secrets="WHATSAPP_TOKEN=WHATSAPP_TOKEN:latest,ODOO_API_KEY=ODOO_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest,WEBHOOK_SECRET=WEBHOOK_SECRET:latest,CRON_TOKEN=CRON_TOKEN:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest"
+            --min-instances=0 --max-instances=3 \
+            --cpu=1 --memory=512Mi --timeout=300 --concurrency=4 \
+            --set-env-vars="PAPEL=worker,ARMAZENAMENTO=upstash,PROCESSADORES=2,NOTIFICACOES_ATIVAS=false,UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }},WHATSAPP_PHONE_ID=${{ vars.WHATSAPP_PHONE_ID }},ODOO_URL=${{ vars.ODOO_URL }},ODOO_DATABASE=${{ vars.ODOO_DATABASE }},ODOO_UID=${{ vars.ODOO_UID }},VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }}" \
+            --set-secrets="WHATSAPP_TOKEN=WHATSAPP_TOKEN:latest,ODOO_API_KEY=ODOO_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest,WEBHOOK_SECRET=WEBHOOK_SECRET:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest"
+          echo "WORKER_URL=$(gcloud run services describe "$WORKER" --region="$REGIAO" --format='value(status.url)')" >> "$GITHUB_ENV"
+
+      # O webhook não tem os segredos do Odoo nem do WhatsApp: se o serviço
+      # público for comprometido, o que se leva é a capacidade de enfileirar.
+      - name: Publicar o webhook
+        run: |
+          gcloud run deploy "$WEBHOOK" \
+            --image="$IMAGEM" \
+            --region="$REGIAO" \
+            --service-account="meu-dizimo-webhook@${{ vars.GCP_PROJETO }}.iam.gserviceaccount.com" \
+            --no-allow-unauthenticated \
+            --min-instances=0 --max-instances=3 \
+            --cpu=1 --memory=256Mi --timeout=30 --concurrency=80 \
+            --set-env-vars="PAPEL=webhook,VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }},FILA_PROJETO=${{ vars.GCP_PROJETO }},FILA_REGIAO=${REGIAO},FILA_NOME=${FILA},WORKER_URL=${WORKER_URL},INVOCADOR_SA=meu-dizimo-invocador@${{ vars.GCP_PROJETO }}.iam.gserviceaccount.com" \
+            --set-secrets="WEBHOOK_SECRET=WEBHOOK_SECRET:latest"
 
       - name: Onde ficou
-        run: gcloud run services describe "$SERVICO" --region="$REGIAO" --format="value(status.url)"
+        run: |
+          echo "worker:  $WORKER_URL"
+          echo "webhook: $(gcloud run services describe "$WEBHOOK" --region="$REGIAO" --format='value(status.url)')"

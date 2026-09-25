@@ -374,7 +374,40 @@ teste local percorre o fluxo inteiro contra uma base Odoo descartável.
 
 Nada de tráfego real ainda. A Meta continua apontando para o Apps Script.
 
-### Fase 3 — Fila, estado e trava por usuário (3–4 dias) · fecha BL-20 e BL-21
+### Fase 3 — Fila, estado e trava por usuário (3–4 dias) · fecha BL-20 e BL-21 · 🔶 código pronto (25/09), falta a sessão de nuvem
+
+#### Como ficou
+
+| Peça | Onde |
+|---|---|
+| Webhook público: autentica, enfileira, responde em ms | `PAPEL=webhook` em `servidor/index.mjs` + `servidor/fila.mjs` |
+| Fila: Cloud Tasks pela API REST, token dos metadados, sem biblioteca | `servidor/fila.mjs` |
+| Worker privado: roda os `.gs`, uma mensagem por vez **por pessoa** | `PAPEL=worker` + `servidor/processador.mjs` |
+| Contadores do BL-25 atômicos (HINCRBY) | `Plataforma.contador` — nos dois runtimes |
+| Dois serviços, uma imagem | `.github/workflows/deploy-runtime.yml` |
+
+**A trava por pessoa, e por que ela devolve 503.** O worker pega a trava de cada remetente da
+mensagem antes de rodar o `doPost`. Se outra mensagem da mesma pessoa estiver em processamento,
+responde **503** e o Cloud Tasks tenta de novo com espera crescente — a fila faz a espera, sem
+thread bloqueada. Pessoas diferentes nunca se esperam. **Provado:** duas respostas simultâneas no
+passo do nome, com dois processadores, gravam `nome` e `nomeUsual`; **sem a trava, o mesmo teste
+perde o apelido em 3 de 3 rodadas** — o BL-20 de hoje, reproduzido e fechado.
+
+**Idempotência pela fila.** Nome da tarefa = SHA-256 do corpo do POST. A reentrega da Meta traz o
+mesmo corpo, e o Cloud Tasks recusa (409). A dedup por cache do BL-78 continua de pé, como segunda
+camada.
+
+**Uma melhoria que o plano não previa:** com a fila, se o enfileiramento falhar o webhook responde
+**500** — e a Meta reenvia. No Apps Script, uma falha ali era mensagem perdida.
+
+**Critério de aceite, reinterpretado.** A `simula-carga.js` dispara contra uma URL com Odoo real.
+O cenário dela — o modo `corrida` — está na `prova-runtime.mjs`, parte 4, contra o webhook, uma
+fila falsa com a política de nova tentativa e o worker de verdade.
+
+**O que a Fase 3 NÃO muda:** ninguém é atendido pelo Cloud Run ainda. Os dois serviços nascem
+privados; a Meta segue no Apps Script até a Fase 5.
+
+#### O desenho original
 
 - **Cloud Tasks na frente.** `POST /webhook` valida a assinatura, enfileira e responde 200 em
   milissegundos. `POST /processar` (só Cloud Tasks, autenticado por OIDC) faz o trabalho.
