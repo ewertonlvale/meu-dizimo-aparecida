@@ -343,18 +343,68 @@ const OdooService = {
     const [dia, mes, ano] = dados.dataNascimento.split('/');
     const dataOdoo = `${ano}-${mes}-${dia}`;
 
-    return this.create('x_dizimista', {
-      x_studio_nome_completo:     dados.nome,
-      x_name:                     dados.nomeUsual,
-      x_studio_endereco:          dados.endereco,
-      x_studio_date:              dataOdoo,
-      x_studio_value:             dados.valorMensal,
-      x_studio_comunidade:        dados.comunidadeId,
-      x_studio_responsavel:       responsavelId,
-      x_studio_notificacao_ativa: false,
-      x_studio_dia_preferido:     dados.diaPreferido || 10
-      // sem x_studio_partner_phone: o membro não tem número próprio
+    // BL-84: toque duplo em "Confirmar" chegava como duas execuções, e as duas
+    // criavam o familiar. Mesmo padrão do `criarDizimista`: sob a trava, confere
+    // antes de criar. O membro não tem telefone próprio, então a identidade é
+    // o nome completo dentro da família — e, achando, devolve o MESMO id: para
+    // quem tocou duas vezes, o resultado é o que ele pediu.
+    const guardaECria = () => {
+      const existente = this.searchRead('x_dizimista', ['id'], [
+        ['x_studio_responsavel',   '=', responsavelId],
+        ['x_studio_nome_completo', '=', dados.nome],
+        ['x_active',               '=', true]
+      ], { limit: 1 });
+      if (existente && existente.length) {
+        console.warn(`⚠️ [criarMembro] "${dados.nomeUsual}" já existe na família ` +
+                     `${responsavelId} (id ${existente[0].id}) — não crio de novo`);
+        return existente[0].id;
+      }
+
+      return this.create('x_dizimista', {
+        x_studio_nome_completo:     dados.nome,
+        x_name:                     dados.nomeUsual,
+        x_studio_endereco:          dados.endereco,
+        x_studio_date:              dataOdoo,
+        x_studio_value:             dados.valorMensal,
+        x_studio_comunidade:        dados.comunidadeId,
+        x_studio_responsavel:       responsavelId,
+        x_studio_notificacao_ativa: false,
+        x_studio_dia_preferido:     dados.diaPreferido || 10
+        // sem x_studio_partner_phone: o membro não tem número próprio
+      });
+    };
+
+    return Plataforma.trava.comTrava(`membro_${responsavelId}`, 10000, guardaECria, (e) => {
+      console.warn('⚠️ [criarMembro] Lock não obtido, seguindo sem serializar:', e.message);
+      return guardaECria();
     });
+  },
+
+  /**
+   * A devolução que ACABOU de ser gravada para este dizimista, se houver. (BL-84)
+   *
+   * Existe para o erro ambíguo: um timeout ou 5xx DEPOIS de o Odoo gravar. O
+   * `create` não se repete sozinho (não é idempotente), mas a mensagem ao
+   * usuário dizia "não foi registrado, reenvie" — e o reenvio duplicava.
+   * Perguntar antes de afirmar resolve os dois lados.
+   *
+   * @param {number} dizimistaId
+   * @param {number|null} valor - quando conhecido, precisa bater
+   * @param {number} [minutos=10]
+   * @returns {Object|null} { id }
+   */
+  devolucaoRecemGravada(dizimistaId, valor, minutos = 10) {
+    // create_date é datetime: o Odoo guarda e compara em UTC (ver BL-83).
+    const desde = Plataforma.relogio.formatar(
+      new Date(Date.now() - minutos * 60000), 'UTC', 'yyyy-MM-dd HH:mm:ss');
+    const dominio = [
+      ['x_studio_dizimista', '=', dizimistaId],
+      ['create_date', '>=', desde]
+    ];
+    if (valor) dominio.push(['x_studio_value', '=', valor]);
+    const regs = this.searchRead('x_devolucao', ['id'], dominio,
+      { order: 'create_date desc', limit: 1 });
+    return (regs && regs[0]) || null;
   },
 
   /**

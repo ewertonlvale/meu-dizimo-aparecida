@@ -45,18 +45,42 @@ const ComprovanteHandler = {
       return;
     }
 
-    // BL-37: o "⏳ Analisando comprovante..." era uma mensagem cobrada para
-    // dizer "estou trabalhando". O indicador de digitação diz o mesmo de graça
-    // — e melhor, porque é um balão vivo em vez de uma linha parada. Só quando
-    // ele não sai é que o texto volta: o OCR leva segundos, e silêncio total
-    // parece travamento.
-    if (!Utils.sinalizarProcessando(messageId)) {
+    // BL-84: um comprovante por vez, por pessoa. Duas fotos mandadas em
+    // sequência chegavam como duas execuções, as duas ainda em
+    // AGUARDANDO_COMPROVANTE — e as duas gravavam a devolução. A marca é
+    // conferida e posta sob a trava, para as duas não passarem juntas; sem a
+    // trava, segue como antes (melhor processar que recusar um comprovante).
+    const marca = `comprovante_em_curso_${from}`;
+    const reservou = Plataforma.trava.comTrava(`comprovante_${from}`, 5000, () => {
+      if (Plataforma.cache.get(marca)) return false;
+      Plataforma.cache.put(marca, '1', 300);   // 5 min: se a execução morrer, destrava sozinha
+      return true;
+    }, () => true);
+
+    if (!reservou) {
+      console.warn(`⏸️ [Comprovante] ${from} mandou outro arquivo enquanto o anterior era analisado — ignorado`);
       Utils.enviarSimples(from,
-        `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+        '⏳ Ainda estou analisando o comprovante que você mandou antes.\n\n' +
+        'Aguarde a resposta dele — não precisa enviar de novo. 🙏');
+      return;
     }
 
-    const resultado = this._processarArquivo(from, arquivo, tipo);
-    this._tratarResultado(from, resultado);
+    try {
+      // BL-37: o "⏳ Analisando comprovante..." era uma mensagem cobrada para
+      // dizer "estou trabalhando". O indicador de digitação diz o mesmo de graça
+      // — e melhor, porque é um balão vivo em vez de uma linha parada. Só quando
+      // ele não sai é que o texto volta: o OCR leva segundos, e silêncio total
+      // parece travamento.
+      if (!Utils.sinalizarProcessando(messageId)) {
+        Utils.enviarSimples(from,
+          `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+      }
+
+      const resultado = this._processarArquivo(from, arquivo, tipo);
+      this._tratarResultado(from, resultado);
+    } finally {
+      Plataforma.cache.remove(marca);
+    }
   },
 
   // ==========================================================================
@@ -843,9 +867,26 @@ const ComprovanteHandler = {
         );
         console.log('🎯 [_tratarResultado] ✅ Devolução registrada! ID:', devolucaoId);
       } catch (e) {
-        erroOdoo = true;
         console.error('🎯 [_tratarResultado] ❌ ERRO ao registrar no Odoo:', e.message);
         console.error('🎯 [_tratarResultado] Stack:', e.stack);
+
+        // BL-84: o erro pode ter vindo DEPOIS da gravação (timeout, 5xx). Antes
+        // de dizer "não foi registrado, reenvie" — que duplicava a devolução
+        // —, pergunta ao Odoo. Se a consulta também falhar, vale o aviso de
+        // instabilidade: com o Odoo fora, a gravação quase certamente não
+        // aconteceu.
+        try {
+          const recente = OdooService.devolucaoRecemGravada(
+            dizimista.id, resultado.dados && resultado.dados.valor);
+          if (recente) {
+            devolucaoId = recente.id;
+            console.warn(`♻️ [_tratarResultado] O erro veio depois da gravação — ` +
+                         `devolução ${devolucaoId} existe; tratando como sucesso`);
+          }
+        } catch (eConsulta) {
+          console.warn('⚠️ [_tratarResultado] Não consegui conferir se gravou:', eConsulta.message);
+        }
+        if (!devolucaoId) erroOdoo = true;
       }
     }
 

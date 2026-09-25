@@ -154,7 +154,7 @@ function montarContexto(cenario) {
         setProperty: () => {}, deleteProperty: () => {}, setProperties: () => {}
       })
     },
-    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
     UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
   };
   vm.createContext(ctx);
@@ -292,6 +292,8 @@ function montarContexto(cenario) {
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
       if (modelo === 'x_devolucao') {
+        // BL-84: a conferência "gravou apesar do erro?" pergunta por create_date.
+        if ((dominio || []).some(d => d[0] === 'create_date')) return cenario.recemGravada || [];
         // BL-62: a busca pelo mês em aberto e a que confere se o mês seguinte
         // já existe. Vêm antes das outras porque as duas citam competência, e
         // cair no ramo do histórico daria resposta errada em silêncio.
@@ -346,6 +348,8 @@ function montarContexto(cenario) {
     // um id e jogava os dados fora.
     create: (modelo, dados) => {
       if (cenario.aoCriar) cenario.aoCriar(modelo, dados);
+      // BL-84: o erro que vem DEPOIS de gravar (timeout, 5xx).
+      if (cenario.createFalha && modelo === 'x_devolucao') throw new Error('timeout (simulado)');
       return 99;
     },
     // BL-62: preencher um "A devolver" é um write, não um create. Sem espiar o
@@ -1122,6 +1126,30 @@ const REGRAS_DE_CONTEUDO = [
       if (!gravado) return 'nada foi gravado no Odoo';
       if (gravado.x_studio_tipo_contribuicao === 'oferta') return 'o Odoo recebeu tipo oferta';
       return null;
+    }
+  },
+  {
+    // O Odoo gravou e o erro veio depois (timeout). Antes: "não foi
+    // registrado, reenvie" — e o reenvio virava segunda devolução.
+    nome: 'Erro DEPOIS de gravar: confere no Odoo e confirma, em vez de pedir reenvio — BL-84',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE',
+               createFalha: true, recemGravada: [{ id: 77 }] },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs.map(m => m.texto).join('\n');
+      if (/reenvie/i.test(t)) return 'pediu reenvio de algo que já foi gravado';
+      return /Comprovante recebido/.test(t) ? null : 'não confirmou o recebimento';
+    }
+  },
+  {
+    nome: 'Erro sem gravação: aí sim avisa e pede reenvio — BL-84',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE', createFalha: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      return /Não consegui registrar/.test(t) ? null : 'não avisou da falha';
     }
   },
   {
@@ -4300,6 +4328,49 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
       .filter(([, v, veio]) => veio !== v)
       .map(([txt, v, veio]) => `"${txt}" → ${veio} (esperado ${v})`);
     return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · devolução e familiar duplicados ────────────────────────────
+  caso('BL-84: segundo comprovante durante a análise do primeiro não é processado', () => {
+    const cache = {}, enviadas = [];
+    let analisou = 0;
+    const C = carregar(['ComprovanteHandler.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null,
+        put: (k, v) => { cache[k] = v; }, remove: (k) => { delete cache[k]; } }) },
+      Utils: new Proxy({ enviarSimples: (f, t) => enviadas.push(t), sinalizarProcessando: () => true },
+                       { get: (o, k) => o[k] || (() => {}) })
+    }, 'ComprovanteHandler');
+    // O primeiro, no meio da análise, recebe o segundo.
+    C._tratarResultado = () => {};
+    C._processarArquivo = () => {
+      analisou++;
+      if (analisou === 1) C.processar('55', { mime_type: 'image/jpeg' }, 'wamid.2');
+      return {};
+    };
+    C.processar('55', { mime_type: 'image/jpeg' }, 'wamid.1');
+    const erros = [];
+    if (analisou !== 1) erros.push(`analisou ${analisou} arquivos`);
+    if (!enviadas.some((t) => /Ainda estou analisando/.test(t))) erros.push('não avisou');
+    if (cache['comprovante_em_curso_55']) erros.push('a marca ficou presa depois do fim');
+    return !erros.length || erros.join('; ');
+  });
+  caso('BL-84: toque duplo em "Confirmar" não cria o familiar duas vezes', () => {
+    const familia = [];
+    const OS = carregar(['OdooService.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.searchRead = (modelo, campos, dominio) => {
+      const nome = (dominio.find((c) => c[0] === 'x_studio_nome_completo') || [])[2];
+      return familia.filter((m) => m.x_studio_nome_completo === nome);
+    };
+    OS.create = (modelo, dados) => { const id = familia.length + 1; familia.push(Object.assign({ id }, dados)); return id; };
+    const dados = { nome: 'Maria da Silva', nomeUsual: 'Maria', dataNascimento: '01/02/2010',
+                    endereco: 'Rua A', valorMensal: 10, comunidadeId: 1 };
+    const a = OS.criarMembro(dados, 7);
+    const b = OS.criarMembro(dados, 7);
+    return (familia.length === 1 && a === b) || `criou ${familia.length}, ids ${a}/${b}`;
   });
 
   // ── BL-84 · sessão de cadastro ─────────────────────────────────────────
