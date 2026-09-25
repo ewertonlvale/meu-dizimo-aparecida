@@ -426,7 +426,33 @@ privados; a Meta segue no Apps Script até a Fase 5.
 **Critério de aceite:** o `ferramentas/simula-carga.js` (que já existe e já dispara requisições
 paralelas de verdade) no modo `corrida` não produz lost update. Hoje produz.
 
-### Fase 4 — Agendamentos (1 dia)
+### Fase 4 — Agendamentos (1 dia) · ✅ jobs criados PAUSADOS e caminho provado (25/09)
+
+#### Como ficou
+
+Nenhuma linha de código: o worker já tinha `/cron/<função>` desde a Fase 3 (protegido pelo IAM,
+só as duas funções da lista). Dois jobs no Cloud Scheduler, em `southamerica-east1`, com token OIDC
+da conta `meu-dizimo-invocador`, **sem nova tentativa**:
+
+| Job | Quando | Chama | Por quê |
+|---|---|---|---|
+| `lembretes` | minuto 5 de toda hora | `executarNotificacoesDiarias` | sem retry: a repescagem do degrau seguinte cobre, e repetir poderia duplicar |
+| `sessoes` | **a cada 10 min** (era 5) | `verificarSessoesAbandonadas` | ver abaixo |
+
+**Por que 10 minutos nas sessões.** O aviso "você ainda está aí?" sai quando a sessão tem entre
+50 e 60 min — uma janela de 10. Com o job a cada 10, ele cai nela toda vez; a cada 15, pularia
+1 sessão em cada 3 (ex.: execuções aos 49 e aos 64 min); a cada 5 é gastar sem ganho. E gastar
+importa: esse job era o **maior consumidor de comandos do Upstash** (~45 mil/mês a cada 5 min).
+
+**Os dois nasceram pausados**, e o worker tem `NOTIFICACOES_ATIVAS=false`: proteção dupla contra o
+lembrete em dobro. **Provado em 25/09:** retomar → executar → pausar os `lembretes`; o log do worker
+mostrou `INÍCIO da rotina — 10:55:20 (America/Sao_Paulo)` — o fuso certo no Cloud Run — e
+`Notificações desativadas — encerrando`. Job pausado não aceita `run`: é preciso retomar antes.
+
+**Para a Fase 6:** a conferência da cota de chamadas externas (`UrlFetch`) é um limite do Apps
+Script — no Cloud Run vira ruído no log. A contagem de mensagens da Meta continua útil.
+
+#### O desenho original
 
 Cloud Scheduler para dois endpoints autenticados: notificações (de hora em hora, BL-73) e
 sessões abandonadas (a cada 20 minutos).
