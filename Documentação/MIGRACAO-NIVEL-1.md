@@ -155,7 +155,7 @@ suítes no Windows de quem desenvolve — CRLF nas regex, caminho `C:\` no `impo
 caindo com `0xC0000409` num `process.exit` logo depois de `fetch`. Exatamente a divergência que o
 ponto de entrada único existe para impedir, só que vinda da plataforma, não da lista de suítes.
 
-### Fase 1 — Camada `Plataforma`, ainda 100% no Apps Script (2–3 dias) · 🔶 código pronto (24/09), falta publicar
+### Fase 1 — Camada `Plataforma`, ainda 100% no Apps Script (2–3 dias) · ✅ publicada e testada (24/09)
 
 #### Como ficou (e onde divergiu do desenho abaixo)
 
@@ -192,8 +192,8 @@ trava é acusado. Esses mesmos casos são o critério de aceite da implementaç�
 confirmação por `SpreadsheetApp.getUi()`, que num projeto standalone lança erro antes de
 perguntar — nunca funcionou.
 
-**Falta, e é seu:** `clasp push` + republicar o deployment. É o momento de risco desta fase
-(ver *Continuidade de serviço*): convém ter ensaiado antes o rollback da implantação.
+**Publicada em 24/09**, com `verificarProperties`, `testarConexaoOdoo` e `configurarSegredoWebhook`
+no editor e menu + devolução pelo WhatsApp — todos pela fachada, no Apps Script de verdade.
 
 #### O desenho original
 
@@ -223,7 +223,74 @@ de volta com o tempo.
 
 Produção segue no Apps Script durante toda a fase. Risco perto de zero.
 
-### Fase 2 — Runtime Node em paralelo, sem tráfego (2–3 dias)
+### Fase 2 — Runtime Node em paralelo, sem tráfego (2–3 dias) · 🔶 código pronto (25/09), falta a sessão de nuvem
+
+#### Como ficou
+
+O runtime Node roda os 27 `.gs` de produção **sem mudar uma linha deles**, e a
+`ferramentas/prova-runtime.mjs` (agora no `verificar-tudo`) prova isso de ponta a ponta: uma
+mensagem entra pelo `/webhook`, passa pelo Router, pede o dízimo, manda a foto do comprovante —
+e a devolução de R$ 50 é gravada no Odoo, com a confirmação enviada pelo WhatsApp. Odoo,
+WhatsApp e Vision são falsos, em 127.0.0.1; todo o resto é o de verdade.
+
+```
+servidor/
+  index.mjs                  servidor HTTP (node:http), fila, worker threads; PAPEL=local
+  processador.mjs            a worker thread onde os .gs rodam — aqui bloquear é legítimo
+  es.mjs                     a thread de E/S da ponte síncrona
+  carregador.mjs             quais .gs carregar (os do .claspignore) e o contexto de cada execução
+  plataforma/
+    index.mjs                a Plataforma Node — mesma interface do Plataforma.gs
+    http.mjs                 o UrlFetchApp, síncrono: multipart, binário, muteHttpExceptions
+    relogio.mjs              os padrões Java do formatDate traduzidos; dormir com Atomics.wait
+    bytes.mjs                base64, Blob, uuid
+    armazenamento-memoria.mjs   cache/propriedades/trava para local e teste
+    armazenamento-upstash.mjs   os mesmos, no Redis da Upstash, pela API REST
+Dockerfile · .dockerignore
+```
+
+**Quatro decisões que mudaram o plano, cada uma medida antes de adotada:**
+
+1. **Um contexto `vm` novo por execução.** Custa ~1 ms (medido: 27 arquivos, 1,1 ms). Com isso o
+   runtime reproduz o Apps Script — cada mensagem começa do zero — e o **vazamento de estado entre
+   requisições**, o risco mais sério que a revisão de 24/09 achou, **deixa de existir por
+   construção**: `Utils._mensagemAtualId`, os contadores do BL-25 e os caches do OdooService
+   morrem com a execução. A prova planta o vazamento e confere que ele não passa.
+2. **Sem `sync-fetch`.** A ponte síncrona é própria, com `worker_threads`: o processador manda o
+   pedido a uma thread de E/S e dorme em `Atomics.wait`; ela faz o `fetch` e o acorda. Provado com
+   JSON, **multipart com arquivo** (o upload do MediaService — o risco nº 1 do plano) e resposta
+   binária. **Zero dependências**: não há `package.json`.
+3. **Upstash pela API REST**, pela mesma ponte. Sem cliente Redis, sem conexão para cuidar.
+4. **`node:http` em vez de Fastify**, pelo mesmo motivo: nada para instalar nem auditar.
+
+**Como rodar na sua máquina:**
+
+```bash
+node ferramentas/prova-runtime.mjs
+```
+
+Ou o servidor, com as credenciais em variáveis de ambiente (as de `CHAVES_DE_CONFIG`, em
+`servidor/plataforma/index.mjs`) e `CRON_TOKEN` para os agendamentos:
+
+```bash
+node servidor/index.mjs
+```
+
+**O critério de aceite, reinterpretado.** "O `conta-mensagens.js` roda contra o runtime Node" não
+faz sentido literal: aquele harness *simula* o `CacheService` e o `PropertiesService` para
+controlar cada cenário, e no Node eles não existem. O equivalente é a `prova-runtime.mjs`, que
+exercita o **contrato** da Plataforma Node e o fluxo inteiro. E "base Odoo descartável" não
+existe no plano gratuito — são servidores falsos que falam JSON-RPC.
+
+**O que NÃO está provado ainda, e só a nuvem prova:**
+- o **Dockerfile** — não havia Docker na máquina; prova-se no primeiro `gcloud builds submit`;
+- o **Upstash de verdade** — a prova usa um falso que fala o protocolo REST dela;
+- o **Odoo, o WhatsApp e o Vision de verdade** a partir do Cloud Run.
+
+**Falta, e é seu:** a sessão de configuração da Google, na lista logo abaixo. Com ela feita, o
+próximo passo é subir o serviço sem tráfego e apontar um número de teste para ele.
+
+#### O desenho original
 
 ```
 servidor/

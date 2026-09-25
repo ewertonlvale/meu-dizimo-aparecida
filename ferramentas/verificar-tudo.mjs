@@ -34,6 +34,11 @@ const SUITES = [
   { arquivo: 'ferramentas/valida-flow.js',
     nome: 'Os Flows do WhatsApp contra as regras da Meta',
     rede: false },
+  // BL-74, Fase 2: o runtime Node rodando os .gs de produção de ponta a ponta,
+  // contra Odoo, WhatsApp e Vision falsos em 127.0.0.1. Não sai da máquina.
+  { arquivo: 'ferramentas/prova-runtime.mjs',
+    nome: 'O runtime Node (Fase 2) roda os .gs de ponta a ponta',
+    rede: false },
   // Esta baixa o py_js do Odoo para EXECUTAR os domínios das views. É a única
   // que depende de rede, e por isso a falha dela é rotulada à parte: um
   // GitHub fora do ar não pode ser lido como código quebrado.

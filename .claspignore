@@ -48,6 +48,15 @@ docs/**
 .github/**
 **/.github/**
 
+# ── Runtime Node (BL-74, Fase 2) ────────────────────────────────────────────
+# O servidor que vai rodar os .gs no Cloud Run. Hoje são .mjs, que o clasp não
+# reconhece — a linha é pelo dia em que um .js aparecer ali: subiria para o
+# Apps Script e rodaria a cada carga do script.
+servidor/**
+**/servidor/**
+Dockerfile
+.dockerignore
+
 # ── Documentação do repositório ─────────────────────────────────────────────
 Documentação/**
 **/Documentação/**

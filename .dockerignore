@@ -1,0 +1,12 @@
+# O que não entra na imagem do runtime Node (BL-74).
+.git
+.github
+docs
+Documentação
+ferramentas
+node_modules
+# A suíte de testes do editor do Apps Script: fica fora do deploy lá, e aqui.
+Tests.gs
+TestesComprovantes.gs
+TesteRelatorio.gs
+TesteNotificacao.gs
