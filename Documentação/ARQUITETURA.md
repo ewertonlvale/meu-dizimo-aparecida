@@ -66,7 +66,7 @@ BL-22 era "usar chaves por usuário e varrer por prefixo na trigger", o que é
 | `estado_${from}` | 1 h | Estado atual da conversa |
 | `dados_${from}` | 1 h | Dados temporários do cadastro |
 | `log_cadastro_${from}` | 1 h | Transcrição do cadastro (truncada em 90 KB) |
-| `sessao_inicio_${from}` | 1 h | Timestamp de início da sessão |
+| `sessao_inicio_${from}` | 2 h | Timestamp de início da sessão. Vive o dobro da sessão (60 min) de propósito — BL-84 |
 | `aviso_sessao_${from}` | 10 min | Marca que o aviso de expiração já foi enviado |
 | `contato_${from}` | 6 h | Número já conhecido (evita ida ao Odoo por mensagem) |
 | `msg_${messageId}` | 6 h | Idempotência do webhook (BL-78: eram 10 min, e a Meta reentrega por horas) |

@@ -16,6 +16,14 @@
 
 const StateManager = {
 
+  // BL-84: a marca de início da sessão de cadastro vive MAIS que a sessão.
+  // O limite de 60 min é conferido pela trigger (`minutosDecorridos >= 60`).
+  // Com TTL de exatamente 60 min, a chave sumia no mesmo instante e esse ramo
+  // nunca rodava: quem encerrava a sessão era o ramo "a chave sumiu", o mesmo
+  // de um despejo antecipado do cache — que apagava cadastro em andamento sem
+  // o aviso dos 50 min. Com 2 h, chave ausente passa a significar despejo.
+  SESSAO_INICIO_TTL_S: 7200,
+
   // ==========================================================================
   // ESTADO
   // ==========================================================================
@@ -183,7 +191,7 @@ const StateManager = {
    */
   iniciarSessaoCadastro(from) {
     const agora = Date.now().toString();
-    Plataforma.cache.put(`sessao_inicio_${from}`, agora, 3600);
+    Plataforma.cache.put(`sessao_inicio_${from}`, agora, this.SESSAO_INICIO_TTL_S);
     console.log(`⏱️ Sessão de cadastro iniciada para ${from}`);
   },
   
@@ -237,7 +245,7 @@ const StateManager = {
     const estado = this.getEstado(from);
 
     // Renova o timestamp de início da sessão
-    cache.put(`sessao_inicio_${from}`, Date.now().toString(), 3600);
+    cache.put(`sessao_inicio_${from}`, Date.now().toString(), this.SESSAO_INICIO_TTL_S);
 
     // Remove o flag de aviso para permitir novo aviso no futuro
     cache.remove(`aviso_sessao_${from}`);

@@ -4302,6 +4302,39 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · sessão de cadastro ─────────────────────────────────────────
+  const trigger = (estado, cacheInicial) => {
+    const r = { limpou: 0, cache: Object.assign({}, cacheInicial), ttls: {} };
+    const T = carregar(['StateManager.gs', 'TriggerSessoes.gs'], {
+      ScriptApp: { getOAuthToken() {} },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k in r.cache ? r.cache[k] : null),
+        put: (k, v, t) => { r.cache[k] = v; r.ttls[k] = t; }, remove: (k) => { delete r.cache[k]; } }) },
+      PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({}) }) },
+      Utils: new Proxy({}, { get: () => () => {} }),
+      OdooService: new Proxy({}, { get: () => () => {} })
+    }, '{ StateManager, verificarSessoesAbandonadas }');
+    T.StateManager.getSessoesAtivas = () => ['5511999990000'];
+    T.StateManager.getEstado = () => estado;
+    T.StateManager.limparDados = () => { r.limpou++; };
+    T.verificarSessoesAbandonadas();
+    r.SM = T.StateManager;
+    return r;
+  };
+  caso('BL-84: marca de início despejada com o cadastro ativo não apaga o cadastro', () => {
+    const r = trigger('AGUARDANDO_ENDERECO', {});
+    return (!r.limpou && !!r.cache['sessao_inicio_5511999990000']) || `limpou ${r.limpou}x`;
+  });
+  caso('BL-84: sessão parada (conversa já de volta ao menu) continua sendo limpa', () => {
+    const r = trigger('MENU', {});
+    return r.limpou === 1 || `limpou ${r.limpou}x`;
+  });
+  caso('BL-84: o limite de 60 min é alcançável — a marca de início vive mais que a sessão', () => {
+    const r = trigger('AGUARDANDO_ENDERECO', {});
+    const ttl = r.SM.SESSAO_INICIO_TTL_S;
+    return (ttl > 3600) || `TTL da marca = ${ttl} s, igual ao limite da sessão`;
+  });
+
   // ── BL-84 · relatório consolidado ───────────────────────────────────────
   caso('BL-84: o consolidado não soma rejeitada, e mostra à parte o que falta validar', () => {
     const textos = [];
