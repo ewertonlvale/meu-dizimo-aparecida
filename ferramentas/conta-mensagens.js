@@ -4330,6 +4330,29 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · Flow com comunidade inventada ─────────────────────────────
+  caso('BL-84: formulário com comunidade que não existe é recusado (cadastro e oferta)', () => {
+    const r = { salvou: [], recusas: 0 };
+    const F = carregar(['FlowHandler.gs'], {
+      OdooService: { searchRead: (m, c, d) => (d[0][2] === 1 ? [{ x_name: 'Matriz' }] : []) },
+      Utils: new Proxy({ parseValorBR: (v) => Number(v) || null,
+                         enviarComBotaoMenu: () => r.recusas++ },
+                       { get: (o, k) => o[k] || (() => {}) }),
+      StateManager: { salvarMultiplosCampos: (f, d) => r.salvou.push(d) },
+      OfertaHandler: { iniciar() {}, enviarPagamentoDaSessao() {} }
+    }, 'FlowHandler');
+    const erros = [];
+    const cad = F._normalizar('55', { comunidade_id: '999', nome: 'Maria da Silva' });
+    if (!(cad.erros || []).some((e) => /Comunidade não reconhecida/.test(e)))
+      erros.push('cadastro aceitou a comunidade 999');
+    F._processarOferta('55', { comunidade: '999', valor: '20', nome: 'Ana' });
+    if (r.salvou.length || !r.recusas) erros.push('oferta seguiu com a comunidade 999');
+    F._processarOferta('55', { comunidade: '1', valor: '20', nome: 'A'.repeat(200) });
+    const nome = (r.salvou[0] || {}).ofertaNome || '';
+    if (nome.length !== 60) erros.push(`nome da oferta com ${nome.length} caracteres`);
+    return !erros.length || erros.join('; ');
+  });
+
   // ── BL-84 · dado pessoal no log ─────────────────────────────────────────
   caso('BL-84: registrar oferta não leva nome nem telefone de quem oferta para o log', () => {
     const log = [];
