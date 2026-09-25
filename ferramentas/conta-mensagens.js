@@ -4194,6 +4194,21 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
       || `gravou ${gravado && gravado.x_studio_data_primeiro_contato} (fusos pedidos: ${pedidos.join()})`;
   });
 
+  // ── BL-84 · parseValorBR ────────────────────────────────────────────────
+  caso('BL-84: parseValorBR recusa dois números e valor absurdo; aceita os formatos de sempre', () => {
+    const U = carregar(['Utils.gs'], {}, 'Utils');
+    const esperado = {
+      '50': 50, '50,00': 50, 'R$ 35,50': 35.5, '1.000,50': 1000.5, '1.000': 1000,
+      '50.00': 50, 'R$50': 50, '100 reais': 100, '50.': 50,
+      '100 ou 200': null, 'entre 50 e 100': null, '5000000': null, 'abc': null, '0': null
+    };
+    const erros = Object.entries(esperado)
+      .map(([txt, v]) => [txt, v, U.parseValorBR(txt)])
+      .filter(([, v, veio]) => veio !== v)
+      .map(([txt, v, veio]) => `"${txt}" → ${veio} (esperado ${v})`);
+    return !erros.length || erros.join('; ');
+  });
+
   // ── BL-85 ──────────────────────────────────────────────────────────────
   // Achado no teste real de 24/09: "👍" MANDADO (não reação) é texto.
   caso('BL-85: texto enquanto espera o comprovante lembra, e não desfaz a devolução', () => {

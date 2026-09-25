@@ -666,18 +666,29 @@ const Utils = {
    * sem vírgula, ponto seguido de 3 dígitos também é milhar ("1.000"); ponto
    * isolado é decimal ("50.00").
    *
+   * BL-84: só UM número por texto, e com teto. A versão anterior apagava tudo
+   * que não fosse dígito e colava o resto: "100 ou 200" virava 100200 e
+   * "entre 50 e 100" virava 50100 — e esse valor ia para o cadastro, o card
+   * PIX e o lembrete mensal. Dois números é ambiguidade: devolve null e o
+   * chamador pede de novo, que é o que ele já faz para texto inválido.
+   *
    * @param {string|number} texto
    * @returns {number|null} null se não for um valor positivo válido.
    */
   parseValorBR(texto) {
-    let t = String(texto == null ? '' : texto).replace(/[^\d.,]/g, '');
+    const numeros = String(texto == null ? '' : texto).match(/\d(?:[\d.,]*\d)?/g) || [];
+    if (numeros.length !== 1) return null;
+
+    let t = numeros[0];
     if (t.indexOf(',') >= 0) {
       t = t.replace(/\./g, '').replace(',', '.');
     } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
       t = t.replace(/\./g, '');
     }
     const valor = parseFloat(t);
-    return (isNaN(valor) || valor <= 0) ? null : valor;
+    // Acima de R$ 100 mil é quase certamente digitação ("5000000" por
+    // "50,00"). Um valor real desse tamanho a secretaria registra à mão.
+    return (isNaN(valor) || valor <= 0 || valor > 100000) ? null : valor;
   },
 
   /**
