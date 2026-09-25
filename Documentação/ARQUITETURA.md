@@ -198,7 +198,7 @@ na Meta *antes* de republicar.
 | `CadastroHandler.gs` · `DevolucaoHandler.gs` · `ComprovanteHandler.gs` · `RelatorioHandler.gs` · `MenuHandler.gs` | Fluxos de conversa |
 | `OdooService.gs` | Toda a comunicação JSON-RPC com o Odoo |
 | `VisionService.gs` | OCR de comprovantes e extração de valor/chave/data |
-| `MediaService.gs` | Upload/download de mídia e QR Code PIX |
+| `MediaService.gs` | Upload/download de mídia, card PIX e PIX copia e cola (sem QR desde o BL-84) |
 | `FlowHandler.gs` | Recebe e revalida a resposta de WhatsApp Flow (`nfm_reply`) — ver [FLOW-CADASTRO.md](FLOW-CADASTRO.md) |
 | `AuditoriaNumeros.gs` | Relatório dos números de WhatsApp gravados no Odoo (BL-32) — só lê |
 | `ferramentas/odoo-dump.mjs` | Extrai o schema do Odoo (modelos, campos, regras). Roda fora do Apps Script; **exige `--url`, `--db`, `--uid` e `ODOO_API_KEY`** — nada vem preenchido, porque o repositório é público |

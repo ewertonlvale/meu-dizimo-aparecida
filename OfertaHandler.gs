@@ -274,7 +274,7 @@ const OfertaHandler = {
     msg += `🔑 *Chave PIX:* \`${comunidade.x_studio_chave_pix}\`\n\n`;
     msg += '━━━━━━━━━━━━━━━━━━━━\n\n📸 *Após pagar, envie o comprovante aqui.*\n\nAceito: imagem (foto) ou PDF.';
 
-    // Mesmo caminho do dízimo (BL-40): card nativo, com o QR como reserva.
+    // Mesmo caminho do dízimo (BL-40): card nativo, com o copia e cola como reserva.
     const referencia = `oferta-${comunidadeId}-${Date.now()}`;
     let enviou = false;
     try {
@@ -285,10 +285,10 @@ const OfertaHandler = {
 
     if (!enviou) {
       try {
-        enviou = MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, valor,
+        enviou = MediaService.enviarPixCopiaECola(from, comunidade.x_studio_chave_pix, valor,
           comunidade.x_studio_titular_conta, undefined, msg);
       } catch (e) {
-        console.warn('⚠️ [Oferta] QR também falhou:', e.message);
+        console.warn('⚠️ [Oferta] copia e cola também falhou:', e.message);
       }
     }
     if (!enviou) Utils.enviarSimples(from, msg);

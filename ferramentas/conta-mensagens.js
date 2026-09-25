@@ -4330,6 +4330,25 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · o código PIX não sai para serviço de terceiros ─────────────
+  caso('BL-84: a reserva do card PIX não chama serviço externo e entrega o copia e cola', () => {
+    const urls = [], textos = [];
+    const M = carregar(['MediaService.gs'], {
+      UrlFetchApp: { fetch: (u) => { urls.push(u); return { getResponseCode: () => 200, getContent: () => [] }; } },
+      Utilities: { base64Encode: () => '', sleep() {} },
+      Utils: new Proxy({ enviarSimples: (f, t) => textos.push(t),
+                         fetchComRetry: (u) => { urls.push(u); return { getResponseCode: () => 200, getContent: () => [] }; } },
+                       { get: (o, k) => o[k] || (() => {}) })
+    }, 'MediaService');
+    const f = M.enviarPixCopiaECola || M.enviarQrCode;
+    const ok = f.call(M, '55', '794.498.403-34', 50, 'Joseane', undefined, 'DADOS PARA PAGAMENTO');
+    const erros = [];
+    if (urls.length) erros.push(`chamou ${urls[0].slice(0, 40)}`);
+    if (!ok) erros.push('disse que não enviou');
+    if (!textos.some((t) => /^000201/.test(t))) erros.push('o copia e cola não saiu sozinho');
+    return !erros.length || erros.join('; ');
+  });
+
   // ── BL-84 · listas de comunidades com mais de 10 ────────────────────────
   caso('BL-84: com 14 comunidades, todas são alcançáveis (relatório, pendentes e oferta)', () => {
     const coms = Array.from({ length: 14 }, (_, i) => ({ id: i + 1, x_name: `Comunidade ${i + 1}` }));
