@@ -19,7 +19,7 @@ const NotificacaoHandler = {
     const config = getConfig();  // ✅ CORRIGido: buscar config dinamicamente
 
     console.log(`📤 [Notif] Enviando template "${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}" ` +
-                `para dizimista id=${dizimista.id} (${dizimista.x_name}) fone=${dizimista.x_studio_partner_phone}`);
+                `para dizimista id=${dizimista.id} (${dizimista.x_name})`);   // BL-84: sem o telefone
 
     const payload = {
       messaging_product: "whatsapp",

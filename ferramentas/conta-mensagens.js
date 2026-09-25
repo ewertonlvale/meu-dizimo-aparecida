@@ -4330,6 +4330,25 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · dado pessoal no log ─────────────────────────────────────────
+  caso('BL-84: registrar oferta não leva nome nem telefone de quem oferta para o log', () => {
+    const log = [];
+    const grava = (...a) => log.push(a.map(String).join(' '));
+    const OS = carregar(['OdooService.gs'], {
+      console: { log: grava, warn: grava, error: grava },
+      Utilities: { formatDate: () => '2026-09-24' },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.campoExiste = () => true;
+    OS._temCampoConferenciaPix = () => true;
+    OS.create = () => 1;
+    OS.registrarDevolucao(null, { valor: 20, data: '24/09/2026', tipo: 'PIX' }, 'QkFTRTY0', 'imagem', 'OK',
+      { tipo: 'oferta', comunidadeId: 1, nomeOfertante: 'Fulana Sigilosa', telefoneOfertante: '5586999998888' });
+    const vazou = log.filter((l) => /Fulana Sigilosa|5586999998888/.test(l));
+    return (log.some((l) => /Registrando devolução/.test(l)) && !vazou.length)
+      || `vazou: ${(vazou[0] || '(nada registrado)').slice(0, 120)}`;
+  });
+
   // ── BL-84 · limite de taxa da Meta ─────────────────────────────────────
   const resp = (code, corpo) => ({ getResponseCode: () => code, getContentText: () => corpo });
   const comRespostas = (fila) => {

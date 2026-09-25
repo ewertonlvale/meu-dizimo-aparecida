@@ -1009,8 +1009,16 @@ const OdooService = {
       dados.x_studio_nome_arquivo = `comprovante_${dataOdoo}.${extensao}`;
     }
 
-    console.log(`📊 [OdooService] Registrando devolução (tipo: ${tipoComprovante}):`,
-      JSON.stringify({...dados, x_studio_comprovante: comprovanteBase64 ? `[${comprovanteBase64.length} chars]` : null}, null, 2));
+    // BL-84: o log leva o que serve ao diagnóstico, não a pessoa. O payload
+    // inteiro ia para o log — com nome e telefone de quem faz uma oferta.
+    // `x_name` sai junto: na oferta ele é "Oferta de <nome> - R$ ...".
+    const SEM_DADO_PESSOAL = ['x_name', 'x_studio_nome_ofertante', 'x_studio_telefone_ofertante',
+                              'x_studio_comprovante', 'x_studio_nome_arquivo'];
+    const resumo = Object.keys(dados)
+      .filter(k => SEM_DADO_PESSOAL.indexOf(k) < 0)
+      .reduce((o, k) => { o[k] = dados[k]; return o; }, {});
+    resumo.comprovante = comprovanteBase64 ? `[${comprovanteBase64.length} chars]` : null;
+    console.log(`📊 [OdooService] Registrando devolução (tipo: ${tipoComprovante}):`, JSON.stringify(resumo));
 
     return this.create('x_devolucao', dados);
   },
