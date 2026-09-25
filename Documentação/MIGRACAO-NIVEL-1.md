@@ -523,7 +523,16 @@ gravar nada, um arquivo que traga qualquer um deles.
 Apps Script, que não se lista. Quem estiver no meio de uma conversa na hora do corte volta ao
 menu — por isso o corte é de madrugada.
 
-#### Preparação 3 de 3: o roteiro do corte, com a volta · a fazer
+#### Preparação 3 de 3: o roteiro do corte, com a volta · ✅ pronto (25/09)
+
+Em **[ROTEIRO-CORTE.md](ROTEIRO-CORTE.md)**: véspera, hora H em 5 passos (abrir o webhook, levar
+as propriedades, trocar a URL na Meta, provar com mensagem real, trocar os agendamentos — nunca os
+dois ligados), a semana de observação e a volta em ~2 min.
+
+**Antes de escrever o roteiro, as duas confirmações que decidem se o corte recusa tudo:**
+- **HMAC** pela nuvem: sem assinatura → 401; assinado → `OK` e o menu chegou (25/09).
+- **App Secret** conferido na própria Meta (`oauth/access_token … client_credentials` devolveu
+  token): o segredo guardado é o do app certo (25/09).
 
 - **Assinatura HMAC de verdade.** Hoje o webhook autentica por segredo na query string
   (`?token=…`) porque **o Apps Script não dá acesso aos headers**. No Cloud Run dá: passa a
