@@ -4330,6 +4330,40 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · listas de comunidades com mais de 10 ────────────────────────
+  caso('BL-84: com 14 comunidades, todas são alcançáveis (relatório, pendentes e oferta)', () => {
+    const coms = Array.from({ length: 14 }, (_, i) => ({ id: i + 1, x_name: `Comunidade ${i + 1}` }));
+    const listas = [];
+    const globais = {
+      StateManager: { getCampo: (f, c) => (c === 'relatorio_acesso' ? { tipoAcesso: 'admin' } : undefined),
+                      setEstado() {}, salvarMultiplosCampos() {} },
+      OdooService: { listarComunidades: () => coms },
+      Utils: new Proxy({ enviarLista: (f, t, secoes) => listas.push(secoes[0].rows) },
+                       { get: (o, k) => o[k] || (() => {}) })
+    };
+    const m = carregar(['RelatorioHandler.gs', 'OfertaHandler.gs'], globais, '{ RelatorioHandler, OfertaHandler }');
+    const alcancaveis = (abrir, pagina, prefixo) => {
+      const ids = new Set();
+      listas.length = 0;
+      abrir(0);
+      for (let p = 0; p < 5 && listas.length; p++) {
+        const rows = listas.shift();
+        if (rows.length > 10) return `lista com ${rows.length} linhas`;
+        rows.forEach((r) => { if (!r.id.includes('pag_')) ids.add(r.id); });
+        const mais = rows.find((r) => r.id.includes('pag_'));
+        if (mais) pagina(mais.id);
+      }
+      return ids.size === 14 || `alcançou ${ids.size} de 14 (${prefixo})`;
+    };
+    const R = m.RelatorioHandler, O = m.OfertaHandler;
+    const erros = [
+      alcancaveis(() => R.iniciarListaDizimistas('55'), (id) => R.processarComunidadeLista('55', id, ''), 'relatório'),
+      alcancaveis(() => R.iniciarPendentes('55'), (id) => R.processarComunidadePendentes('55', id, ''), 'pendentes'),
+      alcancaveis(() => O._pedirComunidade('55'), (id) => O.processarComunidade('55', id, ''), 'oferta')
+    ].filter((r) => r !== true);
+    return !erros.length || erros.join('; ');
+  });
+
   // ── BL-84 · Flow com comunidade inventada ─────────────────────────────
   caso('BL-84: formulário com comunidade que não existe é recusado (cadastro e oferta)', () => {
     const r = { salvou: [], recusas: 0 };
