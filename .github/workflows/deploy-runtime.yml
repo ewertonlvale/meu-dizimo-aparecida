@@ -15,8 +15,8 @@
 #                       Cloud Scheduler entram, com token OIDC da conta
 #                       meu-dizimo-invocador. Tem os segredos do Odoo e do
 #                       WhatsApp — por isso ninguém de fora chega nele.
-#   meu-dizimo-webhook  autentica o POST da Meta e enfileira. Só tem o segredo
-#                       do webhook. Nasce PRIVADO; vira público na Fase 5, junto
+#   meu-dizimo-webhook  confere a assinatura da Meta e enfileira. Só tem o App
+#                       Secret. Nasce PRIVADO; vira público na Fase 5, junto
 #                       com a troca da URL na Meta.
 # O worker sobe primeiro: o webhook precisa da URL dele.
 #
@@ -109,6 +109,8 @@ jobs:
 
       # O webhook não tem os segredos do Odoo nem do WhatsApp: se o serviço
       # público for comprometido, o que se leva é a capacidade de enfileirar.
+      # Ele autentica pela ASSINATURA da Meta (Fase 5), com o App Secret — o
+      # WEBHOOK_SECRET ficou só no worker, entre ele e os .gs, sem sair dali.
       - name: Publicar o webhook
         run: |
           gcloud run deploy "$WEBHOOK" \
@@ -119,7 +121,7 @@ jobs:
             --min-instances=0 --max-instances=3 \
             --cpu=1 --memory=256Mi --timeout=30 --concurrency=80 \
             --set-env-vars="PAPEL=webhook,VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }},FILA_PROJETO=${{ vars.GCP_PROJETO }},FILA_REGIAO=${REGIAO},FILA_NOME=${FILA},WORKER_URL=${WORKER_URL},INVOCADOR_SA=meu-dizimo-invocador@${{ vars.GCP_PROJETO }}.iam.gserviceaccount.com" \
-            --set-secrets="WEBHOOK_SECRET=WEBHOOK_SECRET:latest"
+            --set-secrets="META_APP_SECRET=META_APP_SECRET:latest"
 
       - name: Onde ficou
         run: |
