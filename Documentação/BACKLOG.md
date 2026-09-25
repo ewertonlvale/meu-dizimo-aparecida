@@ -1,4 +1,4 @@
-# Backlog — Bot Meu Dízimo (meu-dizimo-aparecida)
+# Backlog — Bot Meu Dízimo (meu-dizimo-aparecida)✅ Concluído (24/09) — o caminho segue o ESTADO da conversa, não a sobra da sessão. **Precisa de `clasp push`** |✅ Concluído (24/09) — TTL de 6 h. A corrida simultânea fica para a Fase 3 do BL-74. **Precisa de `clasp push`** |✅ Concluído (24/09) — reação ignorada; demais tipos recebem aviso sem mexer no estado. **Precisa de `clasp push`** |✅ Concluído (24/09) — log registra tamanho e estado, não o texto. **Precisa de `clasp push`** |✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Precisa de `clasp push`** |✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Precisa de `clasp push`** |✅ Concluído (24/09) — gravado em UTC. **Precisa de `clasp push`** |
 
 **Criado em:** 14/09/2026
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](historico/ANALISE-GERAL.md), arquivada) + análise de concorrência/carga.
@@ -106,13 +106,13 @@
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
-| BL-77 | Dízimo gravado como oferta por campo de oferta que sobra na sessão | 🔴 | P | 📋 Aberto (24/09) — revisão de código |
-| BL-78 | Deduplicação do webhook vale 10 min e não é atômica — reentrega duplica devolução | 🔴 | P | 📋 Aberto (24/09) — revisão de código |
-| BL-79 | Reação, figurinha ou áudio zeram a conversa em andamento | 🟠 | P | 📋 Aberto (24/09) — revisão de código |
-| BL-80 | O código de acesso ao relatório (e dados do cadastro) vão para o log | 🟠 | P | 📋 Aberto (24/09) — revisão de código |
-| BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | 📋 Aberto (24/09) — revisão de código |
-| BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | 📋 Aberto (24/09) — revisão de código |
-| BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | 📋 Aberto (24/09) — revisão de código |
+| BL-77 | Dízimo gravado como oferta por campo de oferta que sobra na sessão | 🔴 | P | ✅ Concluído (24/09) — o caminho segue o ESTADO da conversa, não a sobra da sessão. **Precisa de `clasp push`** |
+| BL-78 | Deduplicação do webhook vale 10 min e não é atômica — reentrega duplica devolução | 🔴 | P | ✅ Concluído (24/09) — TTL de 6 h. A corrida simultânea fica para a Fase 3 do BL-74. **Precisa de `clasp push`** |
+| BL-79 | Reação, figurinha ou áudio zeram a conversa em andamento | 🟠 | P | ✅ Concluído (24/09) — reação ignorada; demais tipos recebem aviso sem mexer no estado. **Precisa de `clasp push`** |
+| BL-80 | O código de acesso ao relatório (e dados do cadastro) vão para o log | 🟠 | P | ✅ Concluído (24/09) — log registra tamanho e estado, não o texto. **Precisa de `clasp push`** |
+| BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | ✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Precisa de `clasp push`** |
+| BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | ✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Precisa de `clasp push`** |
+| BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Precisa de `clasp push`** |
 | BL-84 | Achados da revisão de 24/09 ainda não conferidos linha a linha | 🟠 | M | 🔎 A triar — lista em `notas.md` |
 
 ---
@@ -2862,6 +2862,10 @@ ainda precisa de conferência antes de virar correção. Detalhes e contexto em
 [notas.md](notas.md).
 
 Nenhum depende da migração: valem para o Apps Script de hoje.
+
+**Corrigidos em 24/09** (BL-77 a BL-83), um commit por item. Cada conserto tem caso no
+`conta-mensagens.js` que **reprova no código anterior** — conferido um a um. O BL-82 era pior
+que o registrado: sem rótulo, um valor sem separador de milhar não era lido de jeito nenhum.
 
 ### BL-77 — Dízimo gravado como oferta 🔴 (P)
 

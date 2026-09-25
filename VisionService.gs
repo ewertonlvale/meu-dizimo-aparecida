@@ -225,11 +225,19 @@ const VisionService = {
     const norm   = s => parseFloat(String(s).replace(/\./g, '').replace(',', '.'));
     const valido = v => !isNaN(v) && v > 0;
 
+    // BL-82: o número aceita milhar COM ponto ("1.234,56") ou SEM ("1234,56").
+    // A versão anterior só tinha a primeira forma e não tinha âncora no fim:
+    // "R$ 1234,56" casava só "123". Sem ponto, até 7 dígitos (R$ 9.999.999) —
+    // o teto evita ler um CPF ou um ID de transação como valor.
+    // O `(?!\d)` impede parar no meio do número.
+    const NUM      = '(\\d{1,3}(?:\\.\\d{3})+(?:,\\d{2})?|\\d{1,7}(?:,\\d{2})?)(?!\\d)';
+    const NUM_CENT = '(\\d{1,3}(?:\\.\\d{3})+,\\d{2}|\\d{1,7},\\d{2})(?!\\d)';
+
     // 1) Valor ancorado por rótulo forte — mais confiável que "o primeiro R$"
     //    (o primeiro R$ do comprovante pode ser tarifa, saldo ou limite).
     const rotulos = [
-      /valor\s*(?:pago|da\s*transa[çc][ãa]o|do\s*pix|enviado|total)?\s*[:\-]?\s*R?\$?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/i,
-      /total\s*[:\-]?\s*R?\$?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/i
+      new RegExp('valor\\s*(?:pago|da\\s*transa[çc][ãa]o|do\\s*pix|enviado|total)?\\s*[:\\-]?\\s*R?\\$?\\s*' + NUM, 'i'),
+      new RegExp('total\\s*[:\\-]?\\s*R?\\$?\\s*' + NUM, 'i')
     ];
     for (const padrao of rotulos) {
       const match = texto.match(padrao);
@@ -246,7 +254,7 @@ const VisionService = {
     for (const linha of texto.split(/[\n\r]+/)) {
       if (/saldo|tarifa|limite|dispon[íi]vel/i.test(linha)) continue;
       let m;
-      const reRs = /R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/gi;
+      const reRs = new RegExp('R\\$\\s*' + NUM_CENT, 'gi');
       while ((m = reRs.exec(linha)) !== null) {
         const v = norm(m[1]);
         if (valido(v)) candidatos.push(v);

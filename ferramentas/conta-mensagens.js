@@ -502,6 +502,7 @@ const CENARIOS = [
     nome: 'Comprovante de OFERTA de quem não é cadastrado',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true,
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
     esperado: 1,
@@ -1062,6 +1063,7 @@ const REGRAS_DE_CONTEUDO = [
     nome: 'A oferta grava o valor do COMPROVANTE, não o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: 55 },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1083,6 +1085,7 @@ const REGRAS_DE_CONTEUDO = [
     nome: 'Valor diferente do escolhido é dito, mas não vira acusação — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: 55 },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1103,9 +1106,29 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
+    // O caso real: tocou em Oferta, desistiu, foi para Dízimo e mandou o
+    // comprovante. `ofertaComunidadeId` ficou na sessão desde o toque em
+    // Oferta, e era ele — não o estado — que decidia o caminho.
+    nome: 'Dízimo depois de desistir da oferta é gravado como DÍZIMO — BL-77',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE',
+               sessao: { ofertaComunidadeId: 3, ofertaComunidadeNome: 'Matriz',
+                         ofertaDizimistaId: 7 },
+               aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
+    roda: ctx => { gravado = null; ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'); },
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (/Oferta recebida/i.test(t)) return 'a conversa respondeu "Oferta recebida"';
+      if (!gravado) return 'nada foi gravado no Odoo';
+      if (gravado.x_studio_tipo_contribuicao === 'oferta') return 'o Odoo recebeu tipo oferta';
+      return null;
+    }
+  },
+  {
     nome: 'OCR sem valor: aí sim vale o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: null },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -2218,6 +2241,33 @@ const COMPROVANTES = [
     texto: 'Chave Pix: +55 86 98852-1231\nValor: R$ 25,00\n',
     chave: '+55 86 98852-1231',
     valor: 25
+  },
+  // BL-82: sem o ponto de milhar, a expressão parava no terceiro dígito.
+  // "R$ 1234,56" virava 123, e o valor plausível passava por todas as
+  // conferências.
+  {
+    nome: 'Valor sem separador de milhar, com rótulo — BL-82',
+    texto: 'Valor: R$ 1234,56\n',
+    chave: null,
+    valor: 1234.56
+  },
+  {
+    nome: 'Cinco dígitos sem separador — BL-82',
+    texto: 'Valor pago R$ 10000,00\n',
+    chave: null,
+    valor: 10000
+  },
+  {
+    nome: 'Sem rótulo e sem separador: o maior valor continua valendo — BL-82',
+    texto: 'Pix enviado\nR$ 1500,00\nTarifa: R$ 2,50\n',
+    chave: null,
+    valor: 1500
+  },
+  {
+    nome: 'Com separador de milhar continua certo — BL-82',
+    texto: 'Valor: R$ 1.234,56\n',
+    chave: null,
+    valor: 1234.56
   }
 ];
 
@@ -3961,6 +4011,193 @@ console.log('🧱 A fachada da Plataforma não vaza (BL-74, Fase 1)\n');
     const g = W.doGet({ parameter: { 'hub.mode': 'subscribe', 'hub.verify_token': 'v', 'hub.challenge': '42' } });
     const p = W.doPost({ parameter: {}, postData: { contents: '{}' } });
     return (g.c === '42' && p.c === 'Forbidden' && saidas.length === 2) || JSON.stringify(saidas);
+  });
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.ok ? '' : '\n     ' + c.detalhe}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
+
+// Cada caso carrega o ARQUIVO REAL com stubs mínimos e prova o conserto. O
+// critério para entrar aqui: o caso tem de reprovar no código anterior à
+// correção — foi conferido um a um, com o código antigo, ao escrever.
+{
+  const carregar = (arquivos, globais, devolve) => {
+    const ctx = Object.assign({
+      console: { log() {}, warn() {}, error() {} }, Logger: { log() {} }
+    }, globais);
+    vm.createContext(ctx);
+    return vm.runInContext(
+      [PLATAFORMA, lerTexto(path.join(RAIZ, 'Config.gs'))]
+        .concat(arquivos.map((a) => lerTexto(path.join(RAIZ, a)))).join('\n;\n') +
+      `\n;(${devolve});`, ctx, { filename: 'revisao-24-09.gs' });
+  };
+
+  const casos = [];
+  const caso = (nome, fn) => {
+    let ok = false, detalhe = '';
+    try { const r = fn(); ok = r === true; if (!ok) detalhe = String(r); }
+    catch (e) { detalhe = 'lançou: ' + e.message; }
+    casos.push({ nome, ok, detalhe });
+  };
+
+  // ── BL-78 ──────────────────────────────────────────────────────────────
+  caso('BL-78: a marca de mensagem já vista dura 6 h, e a reentrega é ignorada', () => {
+    const cache = {}, ttls = {};
+    let passou = 0;
+    const W = carregar(['Webhook.gs'], {
+      CacheService: { getScriptCache: () => ({
+        get: (k) => cache[k] || null,
+        put: (k, v, t) => { cache[k] = v; ttls[k] = t; } }) },
+      // Bloqueado: a mensagem para logo depois da deduplicação — é só ela
+      // que interessa aqui, sem arrastar Router, Odoo e WhatsApp.
+      Utils: { estaBloqueado: () => { passou++; return true; } }
+    }, '_processarMensagemWebhook');
+    const msg = { from: '5511999990000', id: 'wamid.REENTREGA', type: 'text', text: { body: 'oi' } };
+    W(msg);
+    W(msg);
+    return (ttls['msg_wamid.REENTREGA'] === 21600 && passou === 1)
+      || `ttl=${ttls['msg_wamid.REENTREGA']} processada ${passou}x`;
+  });
+
+  // ── BL-79 ──────────────────────────────────────────────────────────────
+  // O Router real, com o que ele chama registrando em vez de agir.
+  const roteador = (estado) => {
+    const r = { enviadas: [], estados: [], menus: 0 };
+    r.Router = carregar(['Router.gs'], {
+      StateManager: { getEstado: () => estado, setEstado: (f, e) => r.estados.push(e),
+                      getCampo: () => undefined },
+      Utils: { enviarSimples: (f, t) => r.enviadas.push(t) },
+      MenuHandler: { menuPrincipal: () => { r.menus++; r.estados.push('MENU'); } }
+    }, 'Router');
+    return r;
+  };
+  caso('BL-79: reação no meio da devolução é ignorada — sem mensagem, estado intacto', () => {
+    const r = roteador('AGUARDANDO_COMPROVANTE');
+    r.Router.rotear('55', { type: 'reaction', reaction: { emoji: '👍', message_id: 'wamid.X' } });
+    return (!r.enviadas.length && !r.estados.length && !r.menus)
+      || `enviou ${r.enviadas.length}, estados ${r.estados.join()}`;
+  });
+  caso('BL-79: figurinha ou áudio no cadastro recebem aviso, e o cadastro continua', () => {
+    const erros = [];
+    for (const tipo of ['sticker', 'audio', 'video', 'location', 'contacts', 'unsupported']) {
+      const r = roteador('AGUARDANDO_NOME');
+      r.Router.rotear('55', { type: tipo });
+      if (r.enviadas.length !== 1 || r.estados.length || r.menus) {
+        erros.push(`${tipo}: ${r.enviadas.length} msg, estados [${r.estados.join()}]`);
+      }
+    }
+    return !erros.length || erros.join('; ');
+  });
+  // ── BL-80 ──────────────────────────────────────────────────────────────
+  caso('BL-80: o código de acesso ao relatório não aparece no log', () => {
+    const log = [];
+    const grava = (...a) => log.push(a.map(String).join(' '));
+    const R = carregar(['Router.gs'], {
+      console: { log: grava, warn: grava, error: grava },
+      StateManager: { getEstado: () => 'AGUARDANDO_CODIGO_RELATORIO', setEstado() {},
+                      getCampo: () => undefined },
+      // O destino do código não importa aqui — só o que o Router registrou
+      // antes de despachar.
+      RelatorioHandler: new Proxy({}, { get: () => () => {} }),
+      Utils: new Proxy({}, { get: () => () => {} }),
+      MenuHandler: new Proxy({}, { get: () => () => {} })
+    }, 'Router');
+    R.rotear('55', { type: 'text', text: { body: 'CODIGO-SECRETO-4821' } });
+    const vazou = log.filter((l) => l.includes('CODIGO-SECRETO-4821'));
+    return (log.length > 0 && !vazou.length) || `vazou: ${vazou[0] || '(log vazio)'}`;
+  });
+
+  // ── BL-81 ──────────────────────────────────────────────────────────────
+  // RelatorioHandler e Router reais; o Odoo é um mapa de devoluções.
+  // `naSessao` imita o que o código anterior guardava em `pendente_devolucao_id`
+  // — sem isso os casos passariam no código antigo só por achar a sessão vazia.
+  const baixas = (acesso, devolucoes, naSessao) => {
+    const r = { gravou: [], enviadas: [], botoes: [] };
+    const globais = {
+      StateManager: { getCampo: (f, c) => (c === 'relatorio_acesso' ? acesso
+                        : c === 'pendente_devolucao_id' ? naSessao : undefined),
+                      setEstado() {}, salvarMultiplosCampos() {}, salvarCampoEMudarEstado() {} },
+      OdooService: {
+        buscarDevolucaoDetalhada: (id) => devolucoes[id] || null,
+        atualizarStatusDevolucao: (id, st) => r.gravou.push(`${id}:${st}`),
+        listarPendentes: () => [], listarComunidades: () => []
+      },
+      Utils: new Proxy({
+        enviarSimples: (f, t) => r.enviadas.push(t),
+        enviarMenu: (f, t, b) => { r.enviadas.push(t); r.botoes.push(...(b || []).map((x) => x.id)); }
+      }, { get: (o, k) => o[k] || (() => {}) }),
+      MenuHandler: new Proxy({}, { get: () => () => {} }),
+      // O detalhe espera entre as mensagens; sem isto ele lançaria no
+      // `dormir` e os casos de "não abriu" passariam por acidente.
+      Utilities: { sleep() {} }
+    };
+    const m = carregar(['RelatorioHandler.gs', 'Router.gs'], globais, '{ RelatorioHandler, Router }');
+    r.R = m.RelatorioHandler; r.Router = m.Router;
+    return r;
+  };
+  const COORD_1 = { tipoAcesso: 'coordenador', comunidadeId: 1, comunidadeNome: 'Matriz' };
+  const pend = (id, com, status = 'Pendente') => ({ id, x_studio_status: status,
+    x_studio_comunidade: [com, 'C' + com], x_studio_dizimista: [9, 'Ana'], x_studio_value: 50 });
+
+  caso('BL-81: o botão carrega a devolução — tocar na mensagem antiga baixa a antiga', () => {
+    const r = baixas(COORD_1, { 41: pend(41, 1), 42: pend(42, 1) });
+    // Abriu A (41), depois B (42); tocou "Confirmar" na mensagem de A.
+    r.R.processarSelecaoPendente('55', 'pend_41');
+    r.R.processarSelecaoPendente('55', 'pend_42');
+    const doA = r.botoes.find((b) => b.startsWith('btn_confirmar_baixa_41'));
+    if (!doA) return `botões enviados: ${r.botoes.join()}`;
+    r.Router.rotear('55', { type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: doA } } });
+    return r.gravou.join() === '41:Confirmado' || `gravou ${r.gravou.join() || 'nada'}`;
+  });
+  caso('BL-81: não dá baixa em devolução que já saiu de Pendente', () => {
+    const r = baixas(COORD_1, { 42: pend(42, 1, 'Rejeitado') }, 42);
+    r.R.confirmarBaixa('55', 42);
+    return !r.gravou.length || `gravou ${r.gravou.join()}`;
+  });
+  caso('BL-81: coordenador não abre nem dá baixa em outra comunidade', () => {
+    const r = baixas(COORD_1, { 77: pend(77, 2) }, 77);
+    r.R.processarSelecaoPendente('55', 'pend_77');
+    r.R.rejeitarBaixa('55', 77);
+    return (!r.gravou.length && !r.botoes.some((b) => b.includes('baixa')))
+      || `gravou ${r.gravou.join()} botões ${r.botoes.join()}`;
+  });
+  caso('BL-81: o admin dá baixa em qualquer comunidade', () => {
+    const r = baixas({ tipoAcesso: 'admin' }, { 77: pend(77, 2) });
+    r.R.confirmarBaixa('55', 77);
+    return r.gravou.join() === '77:Confirmado' || `gravou ${r.gravou.join() || 'nada'}`;
+  });
+  caso('BL-81: botão antigo, sem id, não age — reabre a lista', () => {
+    const r = baixas(COORD_1, { 42: pend(42, 1) }, 42);
+    r.Router.rotear('55', { type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: 'btn_confirmar_baixa' } } });
+    return (!r.gravou.length && r.enviadas.some((t) => /mensagem antiga/.test(t)))
+      || `gravou ${r.gravou.join()} · ${r.enviadas[0]}`;
+  });
+
+  // ── BL-83 ──────────────────────────────────────────────────────────────
+  caso('BL-83: o primeiro contato vai ao Odoo em UTC (campo datetime)', () => {
+    const pedidos = [];
+    let gravado = null;
+    const OS = carregar(['OdooService.gs'], {
+      Utilities: { formatDate: (d, fuso, fmt) => { pedidos.push(fuso); return `[${fuso}]`; } },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.create = (modelo, dados) => { gravado = dados; return 1; };
+    OS.registrarContatoBot('5511999990000');
+    return (gravado && gravado.x_studio_data_primeiro_contato === '[UTC]')
+      || `gravou ${gravado && gravado.x_studio_data_primeiro_contato} (fusos pedidos: ${pedidos.join()})`;
+  });
+
+  caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
+    const r = roteador('MENU');
+    r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });
+    return (r.enviadas.length === 1 && !r.estados.length) || `enviou ${r.enviadas.length}`;
   });
 
   for (const c of casos) {

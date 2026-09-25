@@ -1235,7 +1235,12 @@ const OdooService = {
    * @returns {number} ID criado
    */
   registrarContatoBot(from) {
-    const agora = Plataforma.relogio.formatar(new Date(), 'America/Sao_Paulo', "yyyy-MM-dd HH:mm:ss");
+    // BL-83: em UTC. `x_studio_data_primeiro_contato` é `datetime`, e o Odoo
+    // guarda e interpreta datetime SEMPRE em UTC, convertendo para o fuso de
+    // quem olha na tela. Gravado em hora de São Paulo, aparecia 3 h antes — e
+    // contato depois das 21h caía no dia anterior. (Campo `date` é o oposto:
+    // vai no dia LOCAL, como no x_notificacao_log do BL-01.)
+    const agora = Plataforma.relogio.formatar(new Date(), 'UTC', "yyyy-MM-dd HH:mm:ss");
     return this.create('x_contato_bot', {
       x_name:                         from,
       x_studio_data_primeiro_contato: agora,

@@ -767,17 +767,25 @@ const ComprovanteHandler = {
     // antes dele.
     const blocoDados = this._blocoDados(dados);
 
+    // BL-77: o caminho é decidido pelo ESTADO da conversa, não pela presença de
+    // um campo na sessão. `ofertaComunidadeId` é gravado assim que a pessoa
+    // toca em Oferta — antes de escolher qualquer coisa — e nada o apagava.
+    // Quem tocava em Oferta, desistia e ia para Dízimo tinha o dízimo gravado
+    // como oferta: fora do relatório de dízimo, e com "Oferta recebida" na tela.
+    // O estado é trocado a cada passo do menu, então não sobra de fluxo antigo.
+    const estado = StateManager.getEstado(from);
+
     // ===== CONTEXTO DE OFERTA (BL-41) =====
     // Precisa vir ANTES da busca por dizimista: a oferta pode ser de quem o bot
     // nunca viu, e o caminho normal responderia "não encontrei seu cadastro" —
     // depois de a pessoa já ter pagado.
-    if (StateManager.getCampo(from, 'ofertaComunidadeId')) {
+    if (estado === ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA) {
       return this._tratarResultadoOferta(from, resultado, blocoDados);
     }
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
     const lote = StateManager.getCampo(from, 'devolucaoLote');
-    if (lote && lote.length) {
+    if (estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA && lote && lote.length) {
       return this._tratarResultadoFamilia(from, resultado, lote, blocoDados);
     }
 

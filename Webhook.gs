@@ -317,7 +317,17 @@ function _processarMensagemWebhook(message) {
   }
 
   // Marcar ANTES de processar (previne reprocessamento em retry concorrente).
-  cache.put(cacheKey, '1', 600); // TTL 10 minutos
+  //
+  // BL-78: 6 h, o máximo do CacheService. Eram 10 min — mas a Meta reentrega
+  // por HORAS quando não recebe resposta a tempo, e uma execução leva 10–24 s.
+  // Reentrega depois dos 10 min era processada de novo e, se fosse comprovante,
+  // virava uma segunda devolução no Odoo.
+  //
+  // O que isto NÃO fecha: duas entregas no MESMO instante passam juntas pelo
+  // `get` antes de qualquer `put`. Serializar com a trava global atrasaria toda
+  // mensagem atrás de quem segura a trava durante chamadas ao Odoo; a Fase 3 do
+  // BL-74 fecha isso de verdade, com a fila recusando nome de tarefa repetido.
+  cache.put(cacheKey, '1', 21600); // TTL 6 horas
   // ─────────────────────────────────────────────────────────────────────
 
   console.log(`📱 Mensagem de ${from} (id: ${messageId})`);
