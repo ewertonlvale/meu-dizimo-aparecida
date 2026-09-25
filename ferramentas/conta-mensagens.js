@@ -4635,6 +4635,55 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-85)\n');
 }
 
 console.log('\n' + '─'.repeat(64));
+console.log('📦 Exportação das propriedades para o corte (BL-74, Fase 5)\n');
+
+// O log do editor do Apps Script não é lugar de segredo — e o NOTIFICACOES_ATIVAS
+// importado ligaria os lembretes no Cloud Run antes da hora.
+{
+  const fonteSetup = lerTexto(path.join(RAIZ, 'Setup.gs'));
+  const fonteImport = lerTexto(path.join(RAIZ, 'ferramentas', 'importar-propriedades.mjs'));
+  const lista = (fonte, nome) => {
+    const m = fonte.match(new RegExp(`${nome} = \\[([\\s\\S]*?)\\]`));
+    return m ? [...m[1].matchAll(/'([A-Z_]+)'/g)].map((x) => x[1]).sort() : null;
+  };
+  const doSetup = lista(fonteSetup, 'const PROPRIEDADES_NAO_MIGRAR');
+  const doImport = lista(fonteImport, 'export const NAO_MIGRAR');
+
+  const saida = [];
+  const ctx = {
+    console: { log() {}, warn() {}, error() {} },
+    Logger: { log: (t) => saida.push(String(t)) },
+    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({
+      WHATSAPP_TOKEN: 'EAA-SEGREDO-WHATS', ODOO_API_KEY: 'SEGREDO-ODOO', WEBHOOK_SECRET: 'SEGREDO-HOOK',
+      GOOGLE_VISION_API_KEY: 'SEGREDO-VISION', NOTIFICACOES_ATIVAS: 'true',
+      FLOW_CADASTRO_ATIVO: 'true', sessao_ativa_5586999990000: '1790000000000',
+      bloqueado_5586999990001: '{"em":"2026-09-01"}', 'msgs_2026-09_servico_0': '12'
+    }) }) }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(PLATAFORMA + '\n;\n' + fonteSetup + '\n;exportarPropriedadesParaMigracao();', ctx, { filename: 'Setup.gs' });
+  const linhaJson = saida.find((l) => l.startsWith('{')) || '{}';
+  const exportadas = JSON.parse(linhaJson);
+  const tudo = saida.join('\n');
+
+  const casos = [
+    { nome: 'as duas listas do que não migra são iguais (Setup.gs e importar-propriedades.mjs)',
+      ok: !!doSetup && !!doImport && doSetup.join() === doImport.join() },
+    { nome: 'nenhum valor de segredo aparece no log da exportação',
+      ok: !/SEGREDO|EAA-/.test(tudo) },
+    { nome: 'NOTIFICACOES_ATIVAS fica de fora (é ligado no roteiro, não na importação)',
+      ok: !('NOTIFICACOES_ATIVAS' in exportadas) },
+    { nome: 'chaves, sessões, bloqueios e contadores vão no JSON',
+      ok: exportadas.FLOW_CADASTRO_ATIVO === 'true' && 'sessao_ativa_5586999990000' in exportadas
+          && 'bloqueado_5586999990001' in exportadas && 'msgs_2026-09_servico_0' in exportadas },
+  ];
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
 if (falhas) {
   console.log(`❌ ${falhas} verificação(ões) fora do esperado.`);
   console.log('   Ou o código mudou e Documentação/FLUXOS.md precisa acompanhar,');
