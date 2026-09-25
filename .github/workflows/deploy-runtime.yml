@@ -77,6 +77,11 @@ jobs:
       # disparado aqui por engano mandaria o lembrete em dobro para os
       # dizimistas de verdade. Vira "true" só no corte (Fase 5), junto com a
       # remoção do acionador do Apps Script.
+      #
+      # UM --set-env-vars SÓ. Ele e o --update-env-vars são mutuamente exclusivos
+      # no gcloud, que sai com código 2 — foi o que derrubou o primeiro deploy,
+      # em 25/09. O deploy define o ambiente INTEIRO: o que não estiver aqui
+      # não existe no serviço.
       - name: Publicar no Cloud Run
         run: |
           gcloud run deploy "$SERVICO" \
@@ -86,8 +91,7 @@ jobs:
             --no-allow-unauthenticated \
             --min-instances=0 --max-instances=2 \
             --cpu=1 --memory=512Mi --timeout=300 --concurrency=10 \
-            --set-env-vars="PAPEL=local,ARMAZENAMENTO=upstash,PROCESSADORES=1,NOTIFICACOES_ATIVAS=false" \
-            --update-env-vars="UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }},WHATSAPP_PHONE_ID=${{ vars.WHATSAPP_PHONE_ID }},ODOO_URL=${{ vars.ODOO_URL }},ODOO_DATABASE=${{ vars.ODOO_DATABASE }},ODOO_UID=${{ vars.ODOO_UID }},VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }}" \
+            --set-env-vars="PAPEL=local,ARMAZENAMENTO=upstash,PROCESSADORES=1,NOTIFICACOES_ATIVAS=false,UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }},WHATSAPP_PHONE_ID=${{ vars.WHATSAPP_PHONE_ID }},ODOO_URL=${{ vars.ODOO_URL }},ODOO_DATABASE=${{ vars.ODOO_DATABASE }},ODOO_UID=${{ vars.ODOO_UID }},VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }}" \
             --set-secrets="WHATSAPP_TOKEN=WHATSAPP_TOKEN:latest,ODOO_API_KEY=ODOO_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest,WEBHOOK_SECRET=WEBHOOK_SECRET:latest,CRON_TOKEN=CRON_TOKEN:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest"
 
       - name: Onde ficou
