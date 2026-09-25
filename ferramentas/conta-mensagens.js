@@ -3185,26 +3185,44 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
    * Roda executarNotificacoesDiarias() inteira contra stubs.
    * @returns {{enviados, contagens, ordem}}
    */
-  const rodar = ({ hora, parametros = {}, dizimistas = gente(5), erroParametros = false }) => {
+  // BL-84 acrescentou quatro alavancas, todas opcionais:
+  //   logs        { [idDizimista]: ['erro', 'sucesso', ...] } — o x_notificacao_log do mês
+  //   falhaEnvio  Set de ids cujo envio o WhatsApp recusa
+  //   falhasLog   quantas gravações de log falham antes de funcionar
+  //   cache       o CacheService, para rodar duas vezes com a mesma memória
+  //   msPorPausa  quanto o relógio anda a cada pausa entre envios
+  const rodar = ({ hora, parametros = {}, dizimistas = gente(5), erroParametros = false,
+                   logs = {}, falhaEnvio = new Set(), falhasLog = 0, cache = {},
+                   msPorPausa = 0 }) => {
     const enviados = [];
     const contagens = [];   // toda chamada a OdooService.count
     const criados = [];     // x_notificacao_log gravados
     const buscas = [];      // toda chamada a searchRead
+    let relogio = 0;        // ms somados pelas pausas simuladas
+    class DataSimulada extends Date {
+      static now() { return Date.now() + relogio; }
+    }
 
     const respostaOk = {
       getResponseCode: () => 200,
       getContentText: () => JSON.stringify({ messages: [{ id: 'wamid.T' }] })
     };
 
+    const recusada = {
+      getResponseCode: () => 400,
+      getContentText: () => JSON.stringify({ error: { code: 131026, message: 'undeliverable' } })
+    };
+
     const ctx = {
       console: { log() {}, warn() {}, error() {} },
+      Date: DataSimulada,
       TIMEZONE: 'America/Fortaleza',
       Utilities: {
         // A rotina pede 'H' para saber a hora e 'yyyy-MM-dd' para a data do
         // log. Um formatDate que ignora o formato faria o teste de janela
         // passar por acidente.
         formatDate: (_d, _tz, fmt) => (fmt === 'H' ? String(hora) : '2026-09-23'),
-        sleep() {}
+        sleep(ms) { if (ms === 2000) relogio += msPorPausa; }
       },
       PropertiesService: {
         getScriptProperties: () => ({
@@ -3212,10 +3230,19 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
           setProperty() {}, getProperties: () => ({})
         })
       },
-      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; } }) },
       UrlFetchApp: { fetch: () => respostaOk },
       Utils: {
-        _post(payload) { enviados.push(payload); return respostaOk; },
+        // Só envio ACEITO conta em `enviados`: é o que chega ao aparelho.
+        _post(payload) {
+          // Pelo NOME, que vai no template: o telefone sintético se repete.
+          const nome = payload.template.components[0].parameters[0].text;
+          const d = dizimistas.find((x) => x.x_name === nome);
+          if (d && falhaEnvio.has(d.id)) return recusada;
+          enviados.push(payload);
+          return respostaOk;
+        },
         registrarConsumoExterno() {}
       },
       getConfig: () => ({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111' }),
@@ -3224,13 +3251,24 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
           if (erroParametros) throw new Error('Odoo fora do ar');
           return Object.assign({ x_name: 'Padrão' }, parametros);
         },
-        searchRead(modelo, _campos, _dominio, opcoes) {
+        searchRead(modelo, _campos, dominio, opcoes) {
           buscas.push({ modelo, opcoes });
+          if (modelo === 'x_notificacao_log') {
+            const id = (dominio.find((c) => c[0] === 'x_studio_dizimista') || [])[2];
+            return (logs[id] || []).map((s) => ({ x_studio_status_envio: s }));
+          }
           return modelo === 'x_dizimista' ? dizimistas.slice() : [];
         },
+        // O mesmo contrato do OdooService real: acrescenta o filtro de tipo.
+        _comTipo: (dominio, tipo) =>
+          (tipo ? dominio.concat([['x_studio_tipo_contribuicao', '=', tipo]]) : dominio),
         // Ninguém foi notificado nem devolveu — todo candidato é elegível.
         count(modelo, dominio) { contagens.push({ modelo, dominio }); return 0; },
-        create(modelo, dados) { criados.push({ modelo, dados }); return criados.length; }
+        create(modelo, dados) {
+          if (falhasLog > 0) { falhasLog--; throw new Error('Odoo não respondeu (simulado)'); }
+          criados.push({ modelo, dados });
+          return criados.length;
+        }
       }
     };
     vm.createContext(ctx);
@@ -3340,7 +3378,62 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
       confere: ({ criados }) => (criados.length === 3
         ? null
         : `gravou ${criados.length} logs para 3 envios — a deduplicação depende disso`) },
+
+    // ── BL-84: o que travava ou repetia o lembrete ────────────────────────
+    // 20 números que já falharam duas vezes no mês, no começo da fila. Antes,
+    // só "sucesso" contava: eles ocupavam o lote inteiro a cada degrau e os
+    // outros 5 nunca recebiam.
+    { nome: 'BL-84: quem já falhou 2 vezes no mês não ocupa mais o lote',
+      entrada: { hora: 9, dizimistas: gente(25),
+                 logs: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [i + 1, ['erro', 'erro']])) },
+      envios: 5,
+      confere: ({ ordem }) => (ordem[0] === 'Dizimista 21' ? null : `começou por ${ordem[0]}`) },
+    { nome: 'BL-84: uma falha só ainda merece nova tentativa',
+      entrada: { hora: 9, dizimistas: gente(3), logs: { 1: ['erro'] } },
+      envios: 3 },
+    { nome: 'BL-84: envio recusado grava log de erro, e o resto do lote segue',
+      entrada: { hora: 9, dizimistas: gente(4), falhaEnvio: new Set([2]) },
+      envios: 3,
+      confere: ({ criados }) => {
+        const st = criados.map((c) => c.dados.x_studio_status_envio).sort().join();
+        return st === 'erro,sucesso,sucesso,sucesso' ? null : `logs: ${st}`;
+      } },
+    // Sem o orçamento, 20 envios com 2 s de pausa — e aqui cada pausa "dura"
+    // 60 s — passariam do teto de 6 min do Apps Script.
+    { nome: 'BL-84: o laço para antes do teto de 6 min; o resto fica para o degrau seguinte',
+      entrada: { hora: 9, dizimistas: gente(20), msPorPausa: 60000 },
+      envios: 5 },
+    { nome: 'BL-84: a gravação do log é tentada de novo antes de desistir',
+      entrada: { hora: 9, dizimistas: gente(1), falhasLog: 2 },
+      envios: 1,
+      confere: ({ criados }) => (criados.length === 1 ? null : `gravou ${criados.length} log(s)`) },
+    // ── BL-84: o que calava o lembrete do dízimo ──────────────────────────
+    { nome: 'BL-84: "já devolveu" conta só DÍZIMO e ignora devolução rejeitada',
+      entrada: { hora: 9, dizimistas: gente(1) },
+      envios: 1,
+      confere: ({ contagens }) => {
+        const d = (contagens.find((c) => c.modelo === 'x_devolucao') || {}).dominio || [];
+        const txt = JSON.stringify(d);
+        if (!txt.includes('["x_studio_tipo_contribuicao","=","dizimo"]')) return 'não filtrou o tipo';
+        if (!txt.includes('["x_studio_status","!=","Rejeitado"]')) return 'contou rejeitada';
+        return null;
+      } },
   ];
+
+  // BL-84: o envio saiu e o log NÃO foi gravado (Odoo fora nas 3 tentativas).
+  // O degrau seguinte, com a mesma memória, não pode lembrar a pessoa de novo.
+  {
+    let erro = null;
+    try {
+      const cache = {};
+      const primeiro = rodar({ hora: 9, dizimistas: gente(2), falhasLog: 99, cache });
+      const segundo  = rodar({ hora: 11, dizimistas: gente(2), falhasLog: 99, cache });
+      if (primeiro.enviados.length !== 2) erro = `1º degrau enviou ${primeiro.enviados.length}`;
+      else if (segundo.enviados.length !== 0) erro = `2º degrau reenviou ${segundo.enviados.length}`;
+    } catch (e) { erro = `estourou: ${e.message}`; }
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} BL-84: sem log no Odoo, o degrau seguinte não reenvia${erro ? ' — ' + erro : ''}`);
+  }
 
   for (const caso of casos) {
     let erro = null;

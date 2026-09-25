@@ -315,6 +315,27 @@ const NOTIFICACAO_LIMITES = {
 };
 
 /**
+ * BL-84: falhas de envio que encerram as tentativas do mês para uma pessoa.
+ *
+ * Só envio com SUCESSO contava como "já notificado". Um número com erro
+ * permanente (fora do WhatsApp, bloqueado) era tentado de novo a cada degrau,
+ * e — como a ordem é por dia preferido — ocupava sempre o começo do lote. Com
+ * `lote` desses números, ninguém mais recebia lembrete. Duas tentativas dão
+ * margem a uma falha passageira sem deixar o lote travar.
+ */
+const NOTIFICACAO_MAX_FALHAS_MES = 2;
+
+/**
+ * BL-84: tempo máximo do laço de envio, contado do início da rotina.
+ *
+ * O Apps Script mata a execução aos 6 min. Com `lote` até 200 e 2 s de pausa
+ * entre envios, um lote cheio passava disso — e quem já tinha recebido mas
+ * ainda não tinha o log gravado era lembrado de novo no disparo seguinte.
+ * Parando em 4,5 min, o que sobrar sai no próximo degrau pela repescagem.
+ */
+const NOTIFICACAO_ORCAMENTO_MS = 270000;
+
+/**
  * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
  *
  * Bem mais restrito que `exigeConferencia`. Ali o custo de errar é um olhar
