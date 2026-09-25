@@ -1,0 +1,39 @@
+<!-- res.users · kanban combinada (via get_view) · view 169
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<kanban class="o_kanban_mobile" quick_create="true">
+  <field name="active"/>
+  <field name="login_date"/>
+  <templates>
+    <t t-name="card" class="flex-row">
+      <aside class="w-25 p-1">
+        <field name="avatar_128" widget="image" alt="Avatar" on_change="1"/>
+      </aside>
+      <main class="w-100 ps-2 pt-1">
+        <div>
+          <div t-if="record.active.raw_value" class="text-success float-end mb4">
+            <i class="fa fa-circle" role="img" aria-label="Ok" title="Ok"/>
+          </div>
+          <div t-else="" class="text-danger float-end mb4">
+            <i class="fa fa-circle" role="img" aria-label="Invalid" title="Invalid"/>
+          </div>
+          <field class="fw-bold" name="name" on_change="1"/>
+        </div>
+        <div>
+          <span class="mb4 text-truncate" title="Login">
+            <i class="fa fa-envelope me-1" role="img" aria-label="Login"/>
+            <field name="login" on_change="1"/>
+          </span>
+        </div>
+        <div class="mt-1" name="studio_div_7bbe03">
+          <span class="text-muted small d-block">
+            Comunidades
+          </span>
+          <field name="x_studio_comunidades" widget="many2many_tags"/>
+          <div class="text-muted fst-italic small" invisible="x_studio_comunidades" name="studio_div_23642c">
+            todas — sem restrição por comunidade
+          </div>
+        </div>
+      </main>
+    </t>
+  </templates>
+</kanban>

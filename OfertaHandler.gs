@@ -96,7 +96,7 @@ const OfertaHandler = {
   // ==========================================================================
 
   /** @private */
-  _pedirComunidade(from) {
+  _pedirComunidade(from, pagina = 0) {
     let comunidades = [];
     try {
       comunidades = OdooService.listarComunidades() || [];
@@ -120,11 +120,20 @@ const OfertaHandler = {
     // ofertar para outra.
     const daPessoa = StateManager.getCampo(from, 'ofertaComunidadeId');
 
-    const rows = comunidades.slice(0, 9).map(c => ({
+    // BL-84: paginada. O `slice(0, 9)` fazia a 10ª comunidade em diante sumir
+    // da oferta — sem aviso, e sem jeito de ofertar para ela pela conversa.
+    // Até 10 cabem numa lista; acima disso, 9 por página e a décima avança.
+    const resto = comunidades.slice(pagina * 9);
+    const linha = c => ({
       id:          `ofc_${c.id}`,
       title:       String(c.x_name || '').substring(0, 24),
       description: (daPessoa && c.id === daPessoa) ? 'Sua comunidade' : ''
-    }));
+    });
+    const rows = resto.length <= 10
+      ? resto.map(linha)
+      : resto.slice(0, 9).map(linha).concat([{
+          id: `ofc_pag_${pagina + 1}`, title: '➡️ Mais comunidades', description: `Mais ${resto.length - 9}`
+        }]);
 
     Utils.enviarLista(from,
       '🎁 *Oferta*\n\nPara qual comunidade é a sua oferta?',
@@ -135,6 +144,10 @@ const OfertaHandler = {
 
   /** Toque num item da lista de comunidades (`ofc_<id>`). */
   processarComunidade(from, itemId, itemTitle) {
+    // BL-84: a linha "Mais comunidades" da lista paginada.
+    if (String(itemId).indexOf('ofc_pag_') === 0) {
+      return this._pedirComunidade(from, parseInt(String(itemId).replace('ofc_pag_', ''), 10) || 0);
+    }
     const id = parseInt(String(itemId).replace('ofc_', ''), 10);
     if (!id) return this.iniciar(from);
 
@@ -261,7 +274,7 @@ const OfertaHandler = {
     msg += `🔑 *Chave PIX:* \`${comunidade.x_studio_chave_pix}\`\n\n`;
     msg += '━━━━━━━━━━━━━━━━━━━━\n\n📸 *Após pagar, envie o comprovante aqui.*\n\nAceito: imagem (foto) ou PDF.';
 
-    // Mesmo caminho do dízimo (BL-40): card nativo, com o QR como reserva.
+    // Mesmo caminho do dízimo (BL-40): card nativo, com o copia e cola como reserva.
     const referencia = `oferta-${comunidadeId}-${Date.now()}`;
     let enviou = false;
     try {
@@ -272,10 +285,10 @@ const OfertaHandler = {
 
     if (!enviou) {
       try {
-        enviou = MediaService.enviarQrCode(from, comunidade.x_studio_chave_pix, valor,
+        enviou = MediaService.enviarPixCopiaECola(from, comunidade.x_studio_chave_pix, valor,
           comunidade.x_studio_titular_conta, undefined, msg);
       } catch (e) {
-        console.warn('⚠️ [Oferta] QR também falhou:', e.message);
+        console.warn('⚠️ [Oferta] copia e cola também falhou:', e.message);
       }
     }
     if (!enviou) Utils.enviarSimples(from, msg);

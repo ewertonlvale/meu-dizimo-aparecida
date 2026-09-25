@@ -1,0 +1,34 @@
+# ---------------------------------------------------------------------------
+# Credenciais do Odoo para as ferramentas em ferramentas/
+#
+# COMO USAR
+#   cp ferramentas/.odoo-env.exemplo ferramentas/.odoo-env
+#   preencha os valores abaixo
+#
+# Restringir o acesso ao arquivo (opcional, mas recomendado):
+#   Linux/macOS:  chmod 600 ferramentas/.odoo-env
+#   PowerShell:   icacls ferramentas\.odoo-env /inheritance:r /grant:r "$($env:USERNAME):(R,W)"
+#
+# `chmod` NAO existe no PowerShell — se voce rodou e deu erro vermelho, nada
+# quebrou: a copia acima ja funcionou.
+#
+# O arquivo .odoo-env está no .gitignore e NÃO sobe para o repositório.
+# Este .exemplo sobe — por isso ele nasce vazio, e assim deve continuar.
+#
+# A API key é gerada em: Preferências → Segurança da Conta → Nova chave de API.
+# Ela substitui a senha e pode ser revogada sozinha, sem trocar a senha.
+# ---------------------------------------------------------------------------
+
+# Endereço da instância, sem barra no fim
+ODOO_URL=
+
+# Nome do banco (aparece no seletor de base, ou na URL /web/database/selector)
+ODOO_DB=
+
+# ID numérico do usuário de integração.
+# Descubra em: Definições → Usuários → abra o usuário → o id fica na URL.
+ODOO_UID=
+
+# NUNCA passe a chave por argumento de linha de comando: argumento fica no
+# histórico do shell e aparece na lista de processos da máquina.
+ODOO_API_KEY=

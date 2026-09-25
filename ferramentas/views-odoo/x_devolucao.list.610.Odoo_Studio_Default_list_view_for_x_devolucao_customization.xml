@@ -1,0 +1,61 @@
+<!-- x_devolucao · view 610 · Odoo Studio: Default list view for x_devolucao customization · herda de 603 · list · prioridade 99 -->
+<data>
+  <xpath expr="/list//field[@name='x_name']" position="replace">
+    <field name="x_studio_dizimista" optional="show"/>
+    <field name="x_studio_tipo_contribuicao" optional="show"/>
+    <field name="x_studio_comunidade" optional="show"/>
+    <field name="x_studio_competencia" optional="show"/>
+    <field name="x_studio_data_da_devolucao" optional="show"/>
+    <field name="x_studio_forma_de_pagamento" optional="show"/>
+    <!-- BL-61: some do padrão em vez de mostrar `tudo_divergente` numa coluna.
+         Coluna de lista não tem onde traduzir um char — o formulário e o card
+         traduzem com `invisible` por valor, a lista não tem esse recurso.
+         Continua disponível no menu de colunas opcionais para quem quiser o
+         código cru; quem só quer saber se precisa olhar tem o badge de status
+         e o de validação ao lado. -->
+    <field name="x_studio_conferencia_pix" optional="hide" string="Conferência (código)"/>
+  </xpath>
+  <xpath expr="/list//field[@name='x_studio_value']" position="after">
+    <field name="x_studio_status" optional="show" widget="badge" string="Leitura do bot"
+           decoration-success="x_studio_status == 'Confirmado'"
+           decoration-danger="x_studio_status == 'Rejeitado'"
+           decoration-warning="x_studio_status == 'Pendente'"
+           decoration-muted="x_studio_status == 'A devolver'"/>
+    <!-- As duas colunas juntas, de propósito (BL-60). Uma é o que o bot leu no
+         comprovante; a outra é o que o coordenador viu no extrato. É a LINHA em
+         que elas discordam — bot diz Confirmado, coordenador diz Não recebido —
+         que a paróquia precisa achar, e ela só existe se as duas estiverem à
+         vista lado a lado. -->
+    <field name="x_studio_validacao" optional="show" widget="badge" string="Validação"
+           decoration-success="x_studio_validacao == 'validado'"
+           decoration-danger="x_studio_validacao == 'nao_recebido'"
+           decoration-muted="x_studio_validacao == 'a_validar'"/>
+    <field name="write_date" optional="hide" string="Última alteração"/>
+  </xpath>
+  <xpath expr="/list" position="attributes">
+    <attribute name="create">
+      true
+    </attribute>
+    <attribute name="default_order">
+      x_studio_data_da_devolucao desc
+    </attribute>
+    <attribute name="delete">
+      true
+    </attribute>
+    <attribute name="duplicate">
+      false
+    </attribute>
+    <attribute name="multi_edit">
+      false
+    </attribute>
+  </xpath>
+  <xpath expr="/list//field[@name='x_studio_currency_id']" position="attributes">
+    <attribute name="column_invisible">
+      True
+    </attribute>
+    <attribute name="invisible"/>
+    <attribute name="optional">
+      show
+    </attribute>
+  </xpath>
+</data>

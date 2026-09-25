@@ -158,7 +158,7 @@ function _criarDevolucaoTeste(dizimistaId, indiceDizimista, indiceDevolucao, com
   // Espalha as devoluções pelos últimos meses, para os relatórios terem o que mostrar.
   const data = new Date();
   data.setMonth(data.getMonth() - indiceDevolucao);
-  const dataOdoo = Utilities.formatDate(data, 'America/Sao_Paulo', 'yyyy-MM-dd');
+  const dataOdoo = Plataforma.relogio.formatar(data, 'America/Sao_Paulo', 'yyyy-MM-dd');
   const valor    = _valorFicticio(indiceDizimista);
 
   const dados = {
@@ -317,8 +317,8 @@ function resetarAmbienteTeste(usuariosTeto) {
  * @private
  */
 function _limparCacheNumerosTeste(usuariosTeto) {
-  const cache = CacheService.getScriptCache();
-  const props = PropertiesService.getScriptProperties();
+  const cache = Plataforma.cache;
+  const props = Plataforma.propriedades;
 
   // Precisa espelhar o driver: corrida usa 900000001, teto usa 900000100 + i.
   const numeros = [`${MASSA_DDD_TESTE}900000001`];
@@ -374,7 +374,7 @@ function contarMassaTeste() {
  * @private
  */
 function _exigirModoTeste() {
-  const modo = PropertiesService.getScriptProperties().getProperty('MODO_TESTE');
+  const modo = Plataforma.propriedades.getProperty('MODO_TESTE');
   if (modo === 'true') return true;
 
   Logger.log('');

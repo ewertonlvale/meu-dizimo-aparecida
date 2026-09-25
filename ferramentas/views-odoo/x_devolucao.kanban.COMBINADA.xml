@@ -1,0 +1,56 @@
+<!-- x_devolucao · kanban combinada (via get_view) · view 679
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<kanban string="Devolução">
+  <field name="x_studio_status"/>
+  <!-- Declarado para as condições de `invisible` dos botões poderem lê-lo. -->
+  <field name="x_studio_validacao"/>
+  <templates>
+    <t t-name="card">
+      <div class="w-100">
+        <div class="d-flex align-items-start justify-content-between mb-1">
+          <field name="x_studio_value" class="fw-bold fs-4"/>
+          <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_status.raw_value == 'Confirmado' ? 'success' : record.x_studio_status.raw_value == 'Rejeitado' ? 'danger' : 'warning' }}" t-out="record.x_studio_status.value"/>
+        </div>
+        <field name="x_studio_dizimista" class="d-block text-truncate" invisible="not x_studio_dizimista"/>
+        <field name="x_studio_nome_ofertante" class="d-block text-truncate" invisible="x_studio_dizimista or not x_studio_nome_ofertante"/>
+        <div class="text-muted fst-italic small" invisible="x_studio_dizimista or x_studio_nome_ofertante or x_studio_tipo_contribuicao != 'oferta'">
+          Oferta anônima
+        </div>
+        <div class="text-muted fst-italic small" invisible="x_studio_dizimista or x_studio_nome_ofertante or x_studio_tipo_contribuicao == 'oferta'">
+          sem dizimista vinculado
+        </div>
+        <div class="text-muted small mt-1">
+          <field name="x_studio_data_da_devolucao"/>
+          <span invisible="not x_studio_forma_de_pagamento">
+            ·
+            <field name="x_studio_forma_de_pagamento"/>
+          </span>
+          <span invisible="not x_studio_tipo_contribuicao">
+            ·
+            <field name="x_studio_tipo_contribuicao"/>
+          </span>
+        </div>
+        <div class="text-danger small fw-bold mt-1" invisible="x_studio_comprovante">
+          ⚠ sem comprovante
+        </div>
+        <div class="text-warning small mt-1" invisible="not x_studio_conferencia_pix or x_studio_conferencia_pix == 'ok'">
+          ⚠ conferência:
+          <field name="x_studio_conferencia_pix"/>
+        </div>
+        <!-- A validação do coordenador, para varrer com o olho (BL-60). O badge de cima é a leitura do bot; este é o julgamento humano. Cinza enquanto ninguém olhou, verde quando o dinheiro entrou, vermelho quando não entrou. -->
+        <div class="mt-2">
+          <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_validacao.raw_value == 'validado' ? 'success' : record.x_studio_validacao.raw_value == 'nao_recebido' ? 'danger' : 'secondary' }}" t-out="record.x_studio_validacao.value"/>
+        </div>
+        <div class="mt-2 d-flex gap-1">
+          <button name="234" type="action" class="btn btn-sm btn-outline-success" invisible="x_studio_validacao == 'validado'">
+            Validado
+          </button>
+          <button name="235" type="action" class="btn btn-sm btn-outline-danger" invisible="x_studio_validacao == 'nao_recebido'">
+            Não recebido
+          </button>
+        </div>
+      </div>
+    </t>
+  </templates>
+  <field name="x_studio_comprovante" invisible="True" readonly="True" data-used-by="invisible='x_studio_comprovante' (div,None)"/>
+</kanban>

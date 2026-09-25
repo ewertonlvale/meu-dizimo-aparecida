@@ -1,4 +1,4 @@
-# Backlog — Bot Meu Dízimo (meu-dizimo-aparecida)
+# Backlog — Bot Meu Dízimo (meu-dizimo-aparecida)✅ Concluído (24/09) — o caminho segue o ESTADO da conversa, não a sobra da sessão. **Precisa de `clasp push`** |✅ Concluído (24/09) — TTL de 6 h. A corrida simultânea fica para a Fase 3 do BL-74. **Precisa de `clasp push`** |✅ Concluído (24/09) — reação ignorada; demais tipos recebem aviso sem mexer no estado. **Precisa de `clasp push`** |✅ Concluído (24/09) — log registra tamanho e estado, não o texto. **Precisa de `clasp push`** |✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Precisa de `clasp push`** |✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Precisa de `clasp push`** |✅ Concluído (24/09) — gravado em UTC. **Precisa de `clasp push`** |
 
 **Criado em:** 14/09/2026
 **Base:** revisão do código-fonte `.gs` (ver [ANALISE-GERAL.md](historico/ANALISE-GERAL.md), arquivada) + análise de concorrência/carga.
@@ -71,7 +71,7 @@
 | BL-40 | Card de pagamento nativo do WhatsApp (botão "Copiar código Pix") | 🟠 | M | ✅ **Implementado (19/09)** — devolução 3 → 2; código validado no app do banco. `order_status` ainda por medir |
 | BL-42 | `Utils._mesAtual` chamada em 4 lugares e nunca definida | 🔴 | P | ✅ Corrigido (19/09) — a medição de consumo (BL-25) nunca funcionou em produção |
 | BL-41 | Oferta como contribuição própria, aberta a não cadastrados | 🟠 | G | ✅ **Concluído (19/09)** — testado em produção de ponta a ponta. Migração feita, formulário publicado |
-| BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | 📋 Aberto — **adiado por decisão do usuário em 19/09.** Falta uma GitHub Action |
+| BL-43 | O arnês de testes só roda quando o Claude está no meio do caminho | 🟡 | P | ✅ **Concluído (24/09)** — CI em todo PR pela Fase 0 do BL-74 |
 | BL-44 | Cadastro e membro por conversa desligados: o formulário vira o único caminho | 🟠 | P | ✅ Concluído (19/09) — interruptor `CADASTRO_CONVERSA_ATIVO`, desligado por padrão. **Fecha o BL-34** |
 | BL-45 | O botão "Corrigir" cancelava o cadastro e apagava os 7 campos | 🔴 | P | ✅ Concluído (19/09) — o formulário volta preenchido. ⚠️ **Exige republicar o Flow na Meta** |
 | BL-46 | Conferir o comprovante contra o cadastro: nome, chave e banco | 🟠 | M | ✅ Concluído (19/09) — extração ancorada em quem RECEBEU; alerta só no totalmente divergente |
@@ -82,6 +82,900 @@
 | BL-51 | Devolução nascia sempre Pendente, mesmo quando o bot já sabia | 🟠 | P | ✅ Concluído (19/09) — Confirmado, Rejeitado ou Pendente conforme a conferência |
 | BL-52 | A data só era lida em dd/mm/aaaa — Nubank e Google Pay passavam em branco | 🟠 | P | ✅ Concluído (20/09) — mês por extenso, ISO, ano de 2 dígitos e o ano vindo do E2E. Saída sempre normalizada |
 | BL-53 | A oferta gravava o valor DIGITADO, nunca o do comprovante | 🔴 | P | ✅ Concluído (20/09) — vale o comprovante; oferta de R$ 10 paga com R$ 55 registrava R$ 10 |
+| BL-54 | Endereço e mapa da comunidade | 🟡 | M | ✅ **Instalado** (21/09) — campos e view de mapa no ar. Os endereços das 6 comunidades seguem por preencher |
+| BL-55 | Sete dos oito formulários do Odoo nunca foram revisados | 🟡 | M | 📋 Aberto — só `x_devolucao.form` foi. Quatro têm coluna direita vazia |
+| BL-56 | Classificação do dizimista era campo manual que ninguém mantinha | 🟠 | M | ✅ **Instalado** (21/09) — ação agendada diária, código versionado no repo |
+| BL-57 | O agrupamento "Mês Referencia" agrupa por um campo que o bot nunca grava | 🟡 | P | 📋 Aberto — `x_studio_competencia` só é lido, nunca escrito; todo registro do WhatsApp cai num balde "Nenhum" |
+| BL-58 | O mapa de dizimista continua vazio: o campo que ele lê não está no formulário | 🟡 | P | 📋 Aberto — precisa antes saber se `x_studio_partner_phone` é relacionado através de `x_studio_partner_id` |
+| BL-59 | Classificação feita à mão é desfeita pela ação agendada na madrugada seguinte | 🟡 | P | 📋 Aberto — o statusbar virou só-leitura (21/09) para o problema não ser silencioso |
+| BL-60 | O coordenador não tinha onde registrar a conferência dele, separada da do bot | 🟠 | M | ✅ **Instalado (22/09)** — campo, barra clicável, coluna e filtros |
+| BL-61 | O banner de conferência mostra o código cru (`ausente`, `sem_referencia`) | 🟡 | P | ✅ Concluído (22/09) — tradução nas views; o tipo do campo **não pode** mudar, e está explicado |
+| BL-62 | O ciclo de vida da devolução: A devolver → Em conferência → Conferido / Não confere | 🟠 | G | ✅ **Concluído (22/09)** — Odoo instalado, bot pronto, pergunta da competência incluída. **Precisa de `clasp push`** |
+| BL-63 | O cadastro da comunidade pedia a imagem do QR Code, que o bot nunca leu | 🟡 | P | ✅ Concluído (21/09) — saiu da tela; o campo e as imagens continuam no Odoo |
+| BL-64 | Validar exigia abrir o registro; no kanban não dava | 🟠 | M | ✅ **Instalado (22/09)** — ações 234 e 235, botões no card e no formulário |
+| BL-65 | O calendário de dizimista apontava para a data de NASCIMENTO e nunca mostrou ninguém | 🟠 | M | ✅ **Instalado e conferido na tela** (22/09) — cores e filtro por comunidade funcionando |
+| BL-66 | Não havia relatório mensal: o pivô abria num número só e o gráfico agrupava por campo vazio | 🟠 | P | ✅ Concluído (22/09) — mês × tipo, com valor, quantidade e pessoas. Só view, um `--update` |
+| BL-67 | O `--download` apagou duas views editadas aqui e ainda não subidas | 🔴 | P | ✅ Concluído (22/09) — trava simétrica à do `--update`; as duas views restauradas |
+| BL-68 | "Leitura automática do comprovante" aparecia em lançamento sem comprovante | 🟡 | P | ✅ Concluído (22/09) — o rótulo muda quando não há comprovante |
+| BL-69 | Comprovante de qualquer idade registrava normalmente — não havia checagem de data | 🟠 | P | ✅ Concluído (23/09) — mais de 60 dias, ou data no futuro, vira "Não confere" e avisa a pessoa. **Precisa de `clasp push`** |
+| BL-70 | Quem pula um mês tinha o dízimo gravado calado, sem escolher a competência | 🟠 | M | ✅ Concluído (23/09) — a pergunta passou a ser por intervalo desde a última devolução paga. **Precisa de `clasp push`** |
+| BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
+| BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
+| BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
+| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 🔶 **Fases 0 e 1 no ar; Fase 2 com código pronto (25/09)** — runtime Node roda os .gs de ponta a ponta (`prova-runtime.mjs`). Falta a sessão de nuvem (Google + Upstash). Plano em `MIGRACAO-NIVEL-1.md` |
+| BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
+| BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
+| BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
+| BL-77 | Dízimo gravado como oferta por campo de oferta que sobra na sessão | 🔴 | P | ✅ Concluído (24/09) — o caminho segue o ESTADO da conversa, não a sobra da sessão. **Publicado em 24/09** — validado no WhatsApp (oferta → menu → dízimo da família). |
+| BL-78 | Deduplicação do webhook vale 10 min e não é atômica — reentrega duplica devolução | 🔴 | P | ✅ Concluído (24/09) — TTL de 6 h. A corrida simultânea fica para a Fase 3 do BL-74. **Publicado em 24/09** — publicado. |
+| BL-79 | Reação, figurinha ou áudio zeram a conversa em andamento | 🟠 | P | ✅ Concluído (24/09) — reação ignorada; demais tipos recebem aviso sem mexer no estado. **Publicado em 24/09** — validado no WhatsApp (reação e áudio). |
+| BL-80 | O código de acesso ao relatório (e dados do cadastro) vão para o log | 🟠 | P | ✅ Concluído (24/09) — log registra tamanho e estado, não o texto. **Publicado em 24/09** — publicado. |
+| BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | ✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Publicado em 24/09** — publicado — **falta validar** com acesso de coordenador. |
+| BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | ✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Publicado em 24/09** — publicado. |
+| BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Publicado em 24/09** — publicado. |
+| BL-84 | Achados da revisão de 24/09 conferidos e corrigidos (15 itens) | 🟠 | G | ✅ Concluído (24/09) — todos confirmados; 14 corrigidos, 1 adiado para a Fase 3 do BL-74 (trava global). **Publicado e testado em 24/09** |
+| BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Publicado em 24/09** — validado no WhatsApp. |
+
+---
+
+## Ajustes no Odoo (adiados, com desenho fechado)
+
+### BL-54 — Endereço e mapa da comunidade 🟡 (M)
+
+**Pedido:** campos de endereço no cadastro da comunidade, e geolocalização para ver no mapa.
+
+**Decisão de desenho (usuário, 21/09): via `res.partner`.** Um campo many2one de contato em
+`x_comunidade`; o endereço é o padrão do Odoo e pode aparecer na tela da comunidade como
+campos relacionados.
+
+**Por que não é escolha de gosto.** O mapa do Odoo geolocaliza **através do `res.partner`** —
+verificado na própria instância, no arch da view de mapa de dizimista:
+
+```xml
+<map res_partner="x_studio_partner_id">
+```
+
+Ele não lê latitude e longitude soltas num modelo qualquer. Campos de endereço próprios em
+`x_comunidade` dariam a tela pedida e **nenhum mapa**.
+
+**Atenção — a mesma dependência já morde o projeto:** o mapa de dizimista existe e vive vazio,
+porque `x_studio_partner_id` nunca é preenchido (0 de 508). Criar o campo não basta; alguém
+tem de povoá-lo. Para 6 comunidades isso é trabalho de uma tarde; para os dizimistas é o
+achado A2/E da análise, ainda em aberto.
+
+**O que falta decidir/verificar antes de executar:**
+- se o módulo de geocodificação está disponível na instância (o mapa mostra pino; converter
+  endereço em coordenada é outra coisa)
+- se o endereço entra também no BR Code do PIX (hoje `MediaService._gerarPayloadPix` recebe
+  cidade fixa)
+
+**✅ Implementado em 21/09** — `ferramentas/instalar-endereco-comunidade.mjs`. Cria:
+
+1. `x_studio_partner_id` (many2one `res.partner`) — o endereço de verdade, e o que o mapa lê
+2. cinco campos **relacionados e editáveis**: rua, complemento/bairro, cidade, UF e CEP.
+   Quem digita na tela da comunidade escreve no parceiro — o dado mora num lugar só,
+   então não há duas cópias para manter em sincronia
+3. a view de **mapa** de `x_comunidade`, que não existia
+4. `map` no `view_mode` da ação — senão a view existe e ninguém a alcança
+
+Simula por padrão; gravar exige `--aplicar`. Idempotente: rodar duas vezes não escreve nada
+na segunda. Exercitado contra um Odoo simulado nas três situações (base limpa sem aplicar,
+base limpa aplicando, tudo já instalado).
+
+**⚠️ FALTA INSTALAR** — nada foi criado no Odoo:
+
+```
+node ferramentas/instalar-endereco-comunidade.mjs             # simula
+node ferramentas/instalar-endereco-comunidade.mjs --aplicar   # grava
+node ferramentas/baixar-views.mjs --download                  # versiona a view nova
+```
+
+**Depois, ainda falta:** pôr os campos no formulário de Comunidade (o `baixar-views --update`
+faz, quando os campos existirem) e **preencher o endereço das 6 comunidades** — ver o aviso
+acima.
+
+---
+
+### BL-56 — Classificação automática do dizimista 🟠 (M)
+
+**Regra** (definida pelo usuário em 21/09, com uma precisão minha onde a frase era ambígua):
+
+| Classificação | Critério |
+|---|---|
+| Regular | devolveu em CADA UM dos últimos **N** meses fechados |
+| Eventual | devolveu ao menos uma vez na janela de **M** meses (mês atual incluído), mas não em todos os N |
+| Inativo | nenhuma devolução na janela de **M** meses |
+
+`N` e `M` são `x_studio_meses_regular` e `x_studio_meses_inativo` em `x_parametros`, padrão 3.
+
+**"Mensalmente" virou "todos os N meses FECHADOS".** O mês corrente não é exigido de
+propósito: dia 2 quase ninguém devolveu ainda, e cobrar o mês aberto rebaixaria a paróquia
+inteira todo dia 1º e a promoveria de volta ao longo do mês. O mês corrente conta a favor
+(evita Inativo), nunca contra.
+
+**Quem acabou de se cadastrar não vira Inativo.** "Mais de 3 meses sem devolver" é falso para
+quem existe há três semanas, e Inativo é um rótulo que a secretaria lê como "desistiu".
+
+**Onde mora:** ação agendada do Odoo (`ir.cron`), diária — escolha do usuário. É também o
+lugar certo: 508 dizimistas pelo Apps Script seriam 508 chamadas RPC contra o teto de 6
+minutos por execução. Aqui é uma leitura só, do lado dos dados. Passa a ser a **primeira
+automação dentro do Odoo** — até aqui eram zero (achado D1).
+
+**O código é versionado:** `ferramentas/odoo-acoes/classificar-dizimistas.py`. Ação agendada
+não tem histórico nem revisão (achado D3); manter a fonte no repo e instalar a partir dela
+devolve as duas coisas. O instalador acusa divergência em vez de sobrescrever calado.
+
+**Testado** com `python3 ferramentas/odoo-acoes/teste-classificar.py` — 13 cenários rodando o
+arquivo de verdade contra um Odoo de mentira, não uma cópia da regra.
+
+**⚠️ FALTA INSTALAR.** Nada foi criado no Odoo:
+
+```
+node ferramentas/instalar-acao-classificacao.mjs             # simula
+node ferramentas/instalar-acao-classificacao.mjs --aplicar   # grava
+```
+
+**Depois de instalar, ainda falta:**
+- pôr os dois campos no formulário de Parâmetros (o `baixar-views` faz, quando os campos
+  existirem)
+- decidir o que acontece quando um coordenador classifica alguém à mão: hoje a ação
+  sobrescreve na próxima execução, sem perguntar
+
+---
+
+### BL-55 — Sete dos oito formulários nunca foram revisados 🟡 (M)
+
+A revisão de 21/09 cobriu as **listas** e a **busca** de todos os modelos, mas dos oito
+formulários só `x_devolucao.form` foi de fato revisado (PR #91).
+
+| Formulário | Estado |
+|---|---|
+| `x_devolucao` | ✅ revisado e reescrito |
+| `x_parametros` | ⚠️ só a tabela embutida de privilégios |
+| `x_comunidade` | ✅ revisado (PR #102/#103) — endereço, mapa e alinhamento do `<group>` |
+| `x_dizimista` | ✅ revisado (21/09) — colunas reequilibradas, grupos vazios removidos, devoluções em aba |
+| `x_contato_bot`, `x_notificacao_log`, `x_parametros_line_c498a`, `res.users` | ❌ não revisados |
+
+**O ganho conhecido:** pelo menos quatro delas têm a **coluna direita vazia**, o mesmo defeito
+que em devolução deixava o comprovante abaixo da dobra. O `x_parametros_line_c498a.form` é
+literalmente só `x_name` — os quatro campos da linha de privilégio não têm tela própria.
+
+**Risco a lembrar:** formulário é a view mais estrutural para mexer por xpath, e a de
+devolução só foi segura porque os quatro âncoras foram conferidos contra a view base
+versionada. Fazer uma por vez, com `--update --simular` antes.
+
+---
+
+### BL-57 — "Mês Referencia" agrupa por um campo vazio 🟡 (P)
+
+O menu **Agrupar por → Mês Referencia** de `x_devolucao` usa `x_studio_competencia`.
+Esse campo aparece uma única vez no código do bot, em `OdooService.gs:1024`, e é uma
+**leitura**: `buscarDevolucaoDetalhada` o traz para a tela de detalhe. Nenhum caminho
+o escreve.
+
+Como praticamente toda devolução nasce pelo WhatsApp, o agrupamento devolve um balde
+"Nenhum" com tudo dentro. Quem clica nele conclui que o agrupamento está quebrado — e
+está, só que a causa é o dado, não a view.
+
+**Duas saídas, e a escolha é da paróquia:**
+1. O bot passa a gravar a competência no momento da devolução (o mês da data da
+   devolução, ou o mês que a pessoa disser). Aí o agrupamento vale.
+2. O agrupamento sai do menu, e "Mês Atual" mais o filtro de data cobrem o uso.
+
+Enquanto não se decide, o item fica no menu — tirar uma opção que alguém pode estar
+preenchendo à mão é pior que deixá-la com aviso no arch.
+
+---
+
+### BL-58 — O mapa de dizimista lê um campo que não está no formulário 🟡 (P)
+
+`x_dizimista.map` geolocaliza por `<map res_partner="x_studio_partner_id">`. Só que o
+formulário do dizimista **não mostra esse campo**: a view do Studio o removia com
+`position="replace"`, trocando-o por nome completo e CPF. Não havia, pela tela, como
+preencher o que o mapa lê. Daí os 0 de 508.
+
+**O que precisa ser respondido antes de mexer:** `x_studio_partner_phone` é um campo
+próprio de `x_dizimista`, ou é *relacionado* através de `x_studio_partner_id`, como o
+nome sugere e como o arch base insinua (os três `partner_*` vinham em sequência logo
+depois dele)? Se for relacionado, o telefone não poderia estar preenchido com o
+parceiro vazio — e o bot demonstravelmente usa telefone. Ou seja: ou o parceiro está
+preenchido e os 0 de 508 têm outra explicação, ou o campo é solto e só tem nome de
+relacionado.
+
+A resposta sai de uma leitura de `ir.model.fields` (`related`, `store`) para
+`x_dizimista`. **Sem ela, não dá para desenhar a correção**, e por isso o campo não foi
+devolvido ao formulário na revisão de 21/09: pôr na tela do coordenador um campo cujo
+significado não se conhece é pior que a tela sem ele.
+
+Fechado isso, o caminho é o mesmo do BL-54 na comunidade: parceiro + campos
+relacionados editáveis, e o endereço passando a morar num lugar só.
+
+---
+
+### BL-59 — Classificação manual é desfeita na madrugada seguinte 🟡 (P)
+
+A ação agendada do BL-56 reescreve `x_studio_classificacao` de todos os dizimistas todo
+dia. Enquanto o statusbar do formulário estava `clickable`, um coordenador podia mudar a
+classificação à mão, ver a mudança valer, e encontrá-la desfeita no dia seguinte sem
+aviso nem rastro.
+
+**Feito em 21/09:** o statusbar virou só-leitura, com `help` dizendo que o cálculo é
+diário. O problema deixou de ser silencioso — mas a necessidade, se existir, deixou de
+ser atendida.
+
+**Se a paróquia precisar mesmo decidir caso a caso**, o desenho é um campo de exceção
+(`x_studio_classificacao_manual`, com data e motivo) que a ação agendada respeite e não
+sobrescreva — e não destravar o statusbar. Destravado, o conflito volta a ser invisível.
+
+---
+
+### BL-60 — A validação do coordenador 🟠 (M)
+
+**O problema:** `x_studio_status` carregava a leitura do bot (BL-51) e era clicável.
+Quem quisesse registrar que o dinheiro entrou passava por cima dela — e "Confirmado"
+deixava de dizer quem confirmou. É a mesma forma do BL-59.
+
+São dois julgamentos, de dois autores, sobre coisas diferentes:
+
+| campo | quem decide | sobre o quê |
+|---|---|---|
+| `x_studio_status` | o bot, no ato do registro | o comprovante bate com a comunidade |
+| `x_studio_validacao` | o coordenador | o dinheiro entrou na conta |
+
+O que interessa à paróquia é justamente a **linha em que os dois discordam** — bot diz
+Confirmado, coordenador diz Não recebido. Essa linha só existe se os dois estiverem à
+vista, então as duas colunas ficam juntas na lista.
+
+**Feito em 21/09:**
+- `ferramentas/instalar-validacao-devolucao.mjs` cria o campo (`A validar` → `Validado` /
+  `Não recebido`), o padrão e marca as devoluções existentes como `A validar`
+- A barra de status do topo do formulário passou a ser a da validação, clicável; a leitura
+  do bot desceu para uma linha logo abaixo, como badge só-leitura
+- Coluna e filtros na lista e na busca
+
+**Sobre o botão pedido, e como ele acabou existindo:** na primeira volta o formulário ficou
+só com a barra de status, porque botão de header chama uma `ir.actions.server` por **ID
+numérico** e esse ID só nasce no `--aplicar` — não havia como versioná-lo antes de existir.
+Depois que o `instalar-botoes-kanban.mjs` criou as ações **234** e **235**, os números
+passaram a ser conhecidos, e os botões entraram no formulário direto no arquivo, sem
+instalador.
+
+A barra continua clicável ao lado deles de propósito: os botões só andam para a frente, e é
+a barra que permite voltar para `A validar` depois de um clique errado.
+
+**Risco que isso cria, e como está coberto:** os ids vivem em dois arquivos. Se alguém
+recriar as ações, os números mudam e um botão passa a apontar para o nada — sem aviso; ele
+aparece, é clicado, e o Odoo responde com erro na cara de quem usa. O `conta-mensagens.js`
+confere que formulário e kanban citam **os mesmos ids**, então a divergência aparece na
+verificação antes de aparecer na tela.
+
+**Quem validou e quando:** o campo nasce com `tracking` e `x_devolucao` tem chatter, então
+cada mudança vira uma linha no histórico do registro, com autor e horário. Dois campos a
+menos para manter, e um histórico em vez de um instante.
+
+**Aberto neste item:** nada impede um coordenador de validar devolução de outra
+comunidade. Resolver isso é uma *record rule* ligada a `x_studio_coordenador`, e depende
+de esse campo ser um `res.users` — o que ainda não foi verificado (mesma pendência do
+BL-58).
+
+---
+
+### BL-61 — O código cru da conferência na tela ✅ (P)
+
+O coordenador via `tudo_divergente`, `sem_referencia`, `ausente` — no banner do formulário,
+no card do kanban e numa coluna da lista.
+
+**O caminho certo não existe aqui.** `x_studio_conferencia_pix` é um campo **char**
+(`SetupCamposFamilia.gs:66-68`): o valor gravado *é* o que aparece, e não há rótulo de
+seleção para humanizar. Converter para `selection` seria a correção de verdade, e o Odoo
+recusa:
+
+> Changing the type of a field is not yet supported. Please drop it and create it again!
+> — `odoo/addons/base/models/ir_model.py:1152`
+
+Dropar para recriar apagaria o que o bot já leu em **todos** os registros — o histórico de
+por que cada devolução foi para conferência. Não vale a pena por um rótulo.
+
+**Então a tradução mora nas views**, por `invisible` de valor. As frases são as de
+`Config.gs`, tabela `CONFERENCIA`, campo `textoCoordenador` — as mesmas que a pessoa recebe
+no WhatsApp, sem os asteriscos do negrito. No card elas são mais curtas, porque é card.
+
+**A lista é o caso que não tem solução por view:** coluna de lista não tem onde traduzir um
+char. A coluna saiu do padrão (`optional="hide"`, e passou a se chamar "Conferência
+(código)"), e continua disponível no menu de colunas para quem quiser o valor cru. Quem só
+precisa saber se deve olhar tem o badge de status e o de validação ao lado.
+
+**Duas barreiras contra o código novo esquecido:**
+1. `conta-mensagens.js` lê a tabela `CONFERENCIA` do `Config.gs` de verdade — recortada e
+   avaliada, não copiada — e recusa qualquer código sem frase nas duas views. Conferido que
+   acusa: acrescentei um `chave_ilegivel` ao Config e as quatro checagens ficaram vermelhas.
+2. No arch, um `<span>` de reserva que mostra o código cru quando o valor não é nenhum dos
+   conhecidos. Sem ele, um código novo faria o banner aparecer **vazio** — pior que o código.
+
+*Também corrigido em 21/09:* o espaço que faltava depois dos dois-pontos.
+
+---
+
+### BL-68 — "Leitura automática do comprovante" em lançamento sem comprovante ✅ (P)
+
+A Devolução 02/2026 é um lançamento manual, em dinheiro, sem comprovante nenhum — e o
+formulário anunciava "Leitura automática do comprovante: Pendente". O rótulo prometia uma
+leitura que não houve.
+
+Sem comprovante o rótulo passa a ser "Situação (lançamento sem comprovante)". O badge
+continua: `Pendente` segue significando alguma coisa num lançamento manual — ninguém
+conferiu ainda.
+
+---
+
+### BL-62 — O ciclo de vida da devolução 🟠 (G)
+
+**Desenho fechado em 22/09**, depois de uma revisão que mudou a forma. O Odoo já está
+pronto; falta o Apps Script.
+
+#### Os quatro estados, e por que não são três
+
+A proposta inicial tinha três: Pendente (não devolvido), Confirmado, Rejeitado. A revisão
+achou o buraco: **hoje `Pendente` não significa "não devolveu"** — significa "o comprovante
+chegou e o bot não conseguiu confirmar", e é a maioria dos casos (7 de 9 na tela de
+Ofertas). Com três estados, quem pagou com comprovante ilegível apareceria junto com quem
+não pagou, sem como distinguir depois.
+
+| valor gravado | rótulo | o que é |
+|---|---|---|
+| `A devolver` | A devolver | o mês existe como compromisso e ninguém devolveu ainda |
+| `Pendente` | Em conferência | o comprovante chegou, o bot não confirmou |
+| `Confirmado` | Conferido | o comprovante bate com o cadastro da comunidade |
+| `Rejeitado` | Não confere | o comprovante diverge |
+
+**Só um valor novo.** Os três que existem mantêm o valor gravado e mudaram só o rótulo —
+nada foi migrado, e o `Config.gs` não muda uma linha.
+
+"Rejeitado" virou "Não confere" porque acusava a pessoa: o registro não foi rejeitado, o
+comprovante não bateu. Quem lê isso antes de ligar para alguém precisa da diferença.
+
+Em cima disso continua a **validação do agente da pastoral** (BL-60), que vale mesmo quando
+o bot já disse Conferido ou Não confere: A validar → Validado / Não recebido.
+
+#### Feito no Odoo (22/09)
+
+- `ferramentas/instalar-status-dizimo.mjs` — acrescenta `A devolver`, renomeia os rótulos,
+  ordena o ciclo. **Confere que o campo é `selection` antes de escrever**, e para com
+  explicação se não for: foi supor exatamente isso que fez o BL-61 mudar de plano no meio.
+- **Obrigatoriedade condicional no formulário.** Era `required="1"` fixo em data e valor.
+  Um `A devolver` não tem nenhum dos dois, e quem abrisse um desses e salvasse seria
+  obrigado a inventá-los — transformando o registro em devolução paga aos olhos da
+  classificação, do lembrete mensal e do relatório. Agora é
+  `required="x_studio_status != 'A devolver'"`.
+- A validação **some** no `A devolver`, no card e nos botões: mês que ninguém pagou não tem
+  o que validar, e enchê-la de meses futuros arruinaria a fila do BL-60.
+- Badge cinza para o estado novo, na lista, no card e no formulário.
+
+#### Feito no Apps Script (22/09)
+
+- **A competência é gravada** em toda devolução: o mês da data da devolução.
+  **Fecha o BL-57** — o agrupamento "Mês Referencia" deixa de cair num balde "Nenhum".
+- **O mês em aberto é preenchido**, não duplicado: quando existe um `A devolver` da mesma
+  competência, é nele que o pagamento entra (`write`, não `create`).
+- **O mês seguinte é aberto** ao registrar um dízimo — sem data, sem valor, sem comprovante
+  e **sem validação**. Idempotente: se já existir em qualquer estado, nada acontece.
+- Dezembro abre janeiro do ano seguinte.
+- Oferta não entra no ciclo.
+- Tudo guardado por `campoExiste`: numa base sem o campo de competência, o bot registra
+  exatamente como registrava antes.
+- A abertura do mês seguinte roda em `try` próprio: previsibilidade não pode derrubar o
+  registro de um pagamento que já aconteceu.
+
+**13 cenários no `conta-mensagens.js`, contra o `registrarDevolucao` de verdade.**
+
+**Um achado do próprio harness, que valia mais que os testes:** o Odoo de mentira devolvia
+`[]` para qualquer pergunta de schema fora de dois casos especiais. Isso significa que
+**todo caminho guardado por `campoExiste` era pulado** e parecia coberto — o BL-62 nasceu
+verde sem nunca ter rodado uma linha. O cenário agora declara quais campos existem.
+
+#### A pergunta da competência — feita em 22/09, invertendo a ordem
+
+Quando a pessoa tinha um mês em aberto **anterior** ao que acabou de ser registrado — pagou
+em dezembro com setembro em aberto — o bot não tem como saber de qual mês é o pagamento, e
+adivinhar seria inventar um fato sobre dinheiro.
+
+**Registra primeiro, pergunta depois.** Perguntar antes obrigaria a segurar o comprovante em
+sessão: base64 de 100 KB a 1 MB, contra **100 KB por chave** no `CacheService` e **9 KB por
+valor** no `PropertiesService`. Não cabe — e criaria um caminho em que a pessoa some no meio
+e o pagamento se perde.
+
+> 📅 Registrei como referente a **dezembro/2026**.
+> Vi que você tem **setembro/2026** em aberto. Se este dízimo era daquele mês, é só me dizer
+> que eu acerto.
+> `[ setembro/2026 ]` `[ Está certo ]`
+
+**Duas correções em 23/09, e a segunda consertou a primeira.**
+
+A condição da pergunta errou duas vezes, sempre por não separar *mês em aberto* de *mês
+devido*:
+
+| versão | o que procurava | o que acontecia |
+|---|---|---|
+| 1ª | competência **anterior** à registrada | pessoa com *maio* em aberto mandou comprovante de abril; maio é posterior, então o bot gravou abril **calado** |
+| 2ª | competência **diferente** da registrada | `registrarDevolucao` **abre o mês seguinte antes** de a oferta rodar; a busca achava esse mês recém-criado e **toda devolução passava a perguntar**, oferecendo um mês futuro como se fosse dívida |
+| 3ª | competência **anterior ao mês corrente** e diferente da registrada | mês que ainda não terminou é compromisso, não dívida |
+
+O critério certo não é a relação com a competência paga — é a relação com **hoje**. Dívida é
+mês que já passou e não foi devolvido; o mês que o bot acaba de abrir é, por definição, o
+próximo compromisso.
+
+*No mesmo teste:* o `A devolver` aparecia na lista com forma de pagamento **"Dinheiro"** — o
+padrão do campo no Odoo, num mês que ninguém devolveu. Dado inventado na coluna que o
+coordenador lê. Passa a nascer vazio.
+
+**O fake do harness também errava duas vezes:** não honrava `!=`, e depois honrava só a
+**primeira** condição de competência do domínio — o que teria aprovado de olhos fechados a
+versão que perguntava sempre. Agora aplica todas.
+
+**Os dois ids viajam dentro do id do botão**, não em sessão. É o que faz a correção funcionar
+horas depois, com a sessão já expirada — que é o caso normal, já que a devolução é encerrada
+antes de a pergunta sair.
+
+**A correção TROCA as competências**, não copia: se o dízimo era de setembro, setembro passa
+a ser o mês pago e dezembro volta a ficar em aberto. Copiar deixaria dois registros de
+setembro, um pago e um que nunca fecharia.
+
+**Só manda mensagem quando há dúvida de verdade.** Competência que bate, ou nenhum mês
+anterior em aberto: nada é enviado, e a contagem de mensagens do fluxo normal não muda.
+
+**Coberto por 7 cenários**, incluindo o caso em que o mês em aberto é o mesmo que foi pago
+(não pergunta), o botão estragado (avisa em vez de estourar) e o "Está certo" (não escreve
+nada).
+
+**Um defeito achado no próprio harness:** o Odoo de mentira tratava todo domínio como
+igualdade e ignorava o operador. A busca pelo mês anterior usa `<` — então ela não achava
+nada, enquanto o mês *igual* ao pago era devolvido como se fosse anterior. Mentia nos dois
+sentidos. O fake passou a honrar `<`, `<=`, `>` e `>=`.
+
+**O que ficou de fora, de propósito:** o lote de família (`ComprovanteHandler.gs:359`) não
+oferece correção. São várias devoluções numa submissão, e uma pergunta por membro viraria
+uma rajada de mensagens. Quem lança por família corrige pela tela do Odoo.
+
+**Fora do desenho, de propósito:** oferta não ganha `A devolver`. Oferta não é compromisso
+mensal, e pré-criar registro de oferta produziria linha que nunca fecha.
+
+---
+
+### BL-63 — O QR Code do cadastro da comunidade ✅ (P)
+
+O formulário pedia uma imagem de QR Code por comunidade. **O bot nunca leu esse campo:**
+`x_studio_qr_code` não aparece uma única vez no Apps Script.
+
+Quem gera o QR é o `MediaService`, no momento do pagamento, montando o BR Code a partir
+de `x_studio_chave_pix` (`MediaService.gs:563`). E o caminho preferido nem imagem usa — é
+o card PIX nativo da Meta (`enviarCardPix`), que recebe o código como texto.
+
+Pior que inútil, era um dado que **só podia envelhecer**: trocada a chave PIX da
+comunidade, a figura continuaria mostrando a chave antiga, sem nada acusar. Quem
+conferisse pela imagem conferiria errado.
+
+**Feito:** o campo saiu do formulário. **O campo continua existindo no Odoo**, com o que já
+estiver gravado nele — tirar da tela é reversível, apagar campo de imagem não é, e essa
+decisão não cabe numa revisão de formulário.
+
+**A única razão para devolvê-lo:** se a paróquia usa essa figura para **imprimir cartaz**
+na porta da capela. Nesse caso são duas linhas de volta na view — mas aí vale saber que a
+figura não se atualiza sozinha quando a chave muda.
+
+---
+
+### BL-64 — Validar direto do card do kanban 🟠 (M)
+
+O kanban é a tela que abre no celular, e validar exigia abrir cada registro.
+
+**O que está versionado neste repositório:** o badge de validação no card — cinza enquanto
+ninguém olhou, verde validado, vermelho não recebido. Isso é view pura e sobe com um
+`--update` comum.
+
+**O que não pode ser versionado direto:** os botões. Botão de kanban que faz alguma coisa
+chama uma `ir.actions.server` por **ID numérico**, e esse ID nasce quando a ação é criada
+nesta instância. Um arquivo aqui não tem como carregá-lo, e escrever um número às cegas
+produz botão que aponta para o nada.
+
+**O caminho que resolve isso**, em `ferramentas/instalar-botoes-kanban.mjs`:
+
+1. cria as duas ações (idempotente pelo nome) e descobre os IDs
+2. troca o comentário `MARCADOR-BOTOES-VALIDACAO` do arch pelo bloco de botões já com os
+   números certos, direto no Odoo
+3. um `baixar-views --download` traz o resultado para cá, e a view volta ao caminho normal
+
+Depois do passo 2 o `--update` passa a **pular** esta view, porque o arch do Odoo deixa de
+bater com a impressão digital do índice. É a trava nº 3 do `baixar-views` fazendo o
+trabalho dela, não um defeito — mas é motivo para não adiar o `--download`.
+
+**Descartado: o widget `state_selection`**, que seria uma linha em vez de um instalador. Na
+`saas-19.3` ele não colore: o mapa está cravado no código do widget
+(`{blocked: "red", done: "green"}`) e qualquer outro valor cai em cinza. Os três estados
+ficariam com o mesmo pontinho, e um kanban que não se varre com o olho não serve. Conferido
+na fonte, não deduzido.
+
+**Travado por teste:** `conta-mensagens.js` roda a substituição do marcador contra o arquivo
+de verdade e recusa se ela deixar de pegar — o instalador roda na máquina de quem usa, onde
+o erro apareceria tarde.
+
+---
+
+### BL-65 — Calendário de aniversariantes por comunidade 🟠 (M)
+
+**O defeito que estava lá desde sempre:** a view de calendário de `x_dizimista` (595) tinha
+`date_start="x_studio_date"` — a **data de nascimento**. O calendário posiciona o evento
+pela data que o campo guarda, e o campo guarda `14/03/1975`. A view abria, funcionava, e
+não mostrava ninguém em nenhum mês que alguém fosse abrir.
+
+Sem erro, sem aviso. Um calendário vazio não parece quebrado: parece que ninguém faz
+aniversário. É a mesma família do filtro "Mês Atual" (BL-57/#104) e do mapa de dizimista
+(BL-58) — tela que existe, não falha, e não serve.
+
+**A solução, e por que ela custa uma ação agendada:**
+
+`x_studio_aniversario` guarda o mesmo dia e mês no **ano corrente**, e é para ele que o
+calendário aponta.
+
+Campo calculado seria mais elegante e não funciona: calculado só recalcula quando uma
+dependência muda. A dependência seria a data de nascimento, que não muda nunca — e o que
+muda é o **ano**, que não é dependência de coisa alguma. Em 1º de janeiro o campo ficaria
+com o ano velho e o calendário esvaziaria de novo, em silêncio.
+
+Campo gravado mais ação diária resolve. O custo é baixo: a ação só **escreve onde o valor
+difere**, então depois da virada do ano são 364 dias de uma leitura e nenhuma escrita. E as
+escritas são agrupadas por data — numa paróquia de 508 pessoas, muitas dividem aniversário.
+
+**29 de fevereiro:** `date(1976,2,29).replace(year=2027)` levanta `ValueError`. Sem tratar,
+**uma pessoa derruba a ação inteira** e ninguém mais é atualizado. Cai em 28/02, como o
+calendário civil brasileiro faz. Está coberto por teste, e conferi que o teste acusa quando
+o tratamento sai.
+
+**Arquivos:**
+- `ferramentas/odoo-acoes/atualizar-aniversarios.py` — a fonte versionada da ação
+- `ferramentas/odoo-acoes/teste-aniversarios.py` — 13 cenários executando o arquivo de
+  verdade contra um Odoo de mentira
+- `ferramentas/instalar-aniversarios.mjs` — campo, cron e `calendar` no view_mode
+- a view 595 reescrita: cor e coluna de filtros por comunidade, balão com telefone,
+  nascimento e classificação, `create="false"`
+
+**A data de nascimento não é tocada.** A ação lê `x_studio_date` em dois lugares (o
+domínio da busca e o valor) e escreve num só campo, `x_studio_aniversario`. Como ela varre
+os 508 dizimistas todo dia, um `write` errado ali apagaria a base inteira de datas de
+nascimento, sem volta e sem nada acusando — então a garantia é conferida por três
+verificações, e não combinada: os campos realmente escritos em três execuções, as datas de
+nascimento antes e depois, e uma leitura da árvore sintática do arquivo procurando
+`x_studio_date` dentro de qualquer chamada a `write()`. Conferido que as três acusam quando
+a escrita indevida é introduzida.
+
+**Conferido na tela em 22/09**, com um achado que não é defeito: o ano de 2026 inteiro
+mostra **seis** datas, e o painel lateral lista três comunidades em vez de seis. Com 508
+dizimistas o esperado seria quase todo dia colorido. A explicação é que a base atual é de
+**teste**, criada sem data de nascimento — a tela está certa, o dado é que não existe.
+
+⚠️ **Isto volta quando a base real entrar.** Se o import não trouxer a data de nascimento,
+o calendário nasce vazio de novo e vai parecer defeito pela segunda vez. A data precisa
+estar no mapeamento do import.
+
+**Uma coisa que o instalador conta e vale ler:** quantos dos 508 dizimistas têm data de
+nascimento preenchida. Se forem poucos, o calendário nasce quase vazio — e aí o que falta é
+cadastro, não view. Melhor saber antes de abrir a tela.
+
+---
+
+### BL-66 — Dízimos e ofertas por mês ✅ (P)
+
+**O que existia:** o pivô de `x_devolucao` era literalmente
+`<pivot><field name="x_studio_value" type="measure"/></pivot>` — abria num número só, o
+total de tudo desde sempre, sem linha nem coluna. E o gráfico agrupava por
+`x_studio_competencia`, que o bot nunca grava (BL-57), então virava uma barra chamada
+"Nenhum".
+
+**O que passa a existir:** mês nas linhas, tipo de contribuição nas colunas, e três
+medidas — valor, quantidade de lançamentos, e **pessoas distintas**. Essa última sai de
+graça: o Odoo agrega medida `many2one` como `count_distinct`, então
+`x_studio_dizimista` responde "quantas pessoas diferentes contribuíram", que não é o mesmo
+que quantos lançamentos houve.
+
+**"Informo a comunidade e o mês"** vira isto:
+- a **comunidade** já está no painel da esquerda — a view de busca tem `<searchpanel>` com
+  `x_studio_comunidade`, e um clique isola a sua
+- o **mês** é a primeira linha, e não um campo a preencher: todos aparecem, com setembro ao
+  lado de agosto — que é a pergunta que vem logo depois de "quanto entrou em setembro"
+
+Uma tela de formulário com dois campos e um botão exigiria um modelo transitório e código
+Python, que o Odoo Online com Studio não comporta sem módulo; e entregaria **menos**, porque
+mostraria um mês de cada vez e não exportaria para planilha.
+
+**⚠️ O total é bruto**, de propósito. Entra tudo que foi registrado, inclusive o que o bot
+marcou como `Rejeitado` e o que o coordenador marcou como `Não recebido`. Relatório que
+esconde linha sozinho faz dinheiro sumir sem explicação. Para separar, basta acrescentar
+"Validação" como linha ou coluna pelo menu do próprio pivô — o agrupamento já está na view
+de busca desde o BL-60.
+
+**Se a paróquia quiser o número líquido como padrão**, o caminho é um filtro padrão no
+contexto da ação (não na view), e vale decidir junto o que conta: só `Validado`, ou
+`Validado` mais `A validar`.
+
+**Conferido na fonte da `saas-19.3`, não deduzido:** `interval` em campo de data
+(`pivot_arch_parser.js`), `__count` como medida declarável no XML e o `string` dela sendo
+respeitado (`views/utils.js:87,120`), medida `many2one` virando `count_distinct`
+(`pivot_model.js:1080`), e `stacked`/`type` na raiz do gráfico (`graph_arch_parser.js:20`).
+
+---
+
+### BL-67 — O `--download` apagou trabalho já mesclado 🔴 (P)
+
+**Aconteceu em 22/09, em produção.** Um `--download` passou por cima de duas views
+editadas neste repositório e ainda não levadas ao Odoo com `--update`: o pivô do BL-66 e o
+calendário do BL-65 voltaram à versão antiga. Dois PRs já mesclados, desfeitos — e o
+`git status` mostrou isso como se fosse o resultado normal de baixar.
+
+**A causa:** o download comparava só **dois** lados, disco e Odoo. Vendo-os diferentes,
+escolhia o Odoo. Mas "diferentes" não diz *quem se moveu* — e sem isso a escolha é chute.
+
+O `indice.json` guarda a digital do que o Odoo tinha no download anterior. Com essa terceira
+referência a pergunta tem resposta:
+
+| disco | Odoo | o que fazer |
+|---|---|---|
+| = base | ≠ base | o Odoo mudou → **baixar** |
+| ≠ base | = base | só o disco mudou → **preservar**, e dizer que falta `--update` |
+| ≠ base | ≠ base | os dois mudaram → **preservar**, e avisar que é conflito |
+| — | igual ao disco | mesmo significado → **manter** o texto do disco |
+
+`--forcar` continua descartando a edição local de propósito.
+
+**O `--update` já tinha a trava no sentido contrário** desde o começo — ele não passa por
+cima do que mudou no Studio. Faltava a simétrica. Uma metade de uma trava não é uma trava:
+é uma armadilha com um lado seguro.
+
+**Travado por teste:** a decisão virou uma função pura (`decidirDownload`) e o
+`conta-mensagens.js` exercita os sete casos. Conferi que dois deles ficam vermelhos com a
+lógica que estava em produção.
+
+**O que foi restaurado:** `x_devolucao.pivot.606` e `x_dizimista.calendar.595`, do commit
+anterior ao download. Nada mais se perdeu — o resto do que o download trouxe era o Odoo
+normalizando arch (comentário de várias linhas virando uma, xpath reescrito na forma
+posicional), que é o estado verdadeiro e fica.
+
+---
+
+### BL-69 — A idade do comprovante ✅ (P)
+
+**Não havia checagem nenhuma.** Um comprovante de 2020 registrava como qualquer outro.
+
+**A regra:** comprovante com mais de **60 dias**, ou com data **no futuro**, cai em
+`Não confere` e a pessoa é avisada. É mais duro que o resto da tabela de conferência, de
+propósito: chave que não bate pode ser layout de banco que não entendemos; data é data.
+
+| prazo considerado | por que não |
+|---|---|
+| 5 dias | pegaria quem paga no dia 1º pelo mês anterior. Falso positivo todo mês |
+| 30 dias | apertado para quem pagou e esqueceu de mandar por três semanas |
+| **60 dias** | dois meses é onde deixa de ser plausível como "dízimo deste mês" |
+| 90 dias | passa da janela de 3 meses da classificação; já não diz nada sobre o mês corrente |
+
+**É parâmetro, não número no código:** `x_studio_dias_comprovante` em x_parametros, criado
+por `ferramentas/instalar-dias-comprovante.mjs`. Quem sabe se dois meses é muito ou pouco é
+a paróquia. Em branco, ou fora de 1..365, vale o padrão de fábrica — a regra funciona antes
+de o campo existir.
+
+**Precedência:** chave divergente é mais grave e continua mandando. A idade só decide quando
+a chave conferiu ou não foi lida.
+
+**Data ilegível não acusa nada.** O BL-52 fez a leitura funcionar em vários layouts, mas ela
+ainda falha — e chamar de "antigo" um comprovante cuja data não conseguimos ler seria acusar
+alguém do nosso próprio limite.
+
+**Data no futuro vem de graça na mesma checagem**, com código próprio: é impossível, e
+denuncia adulteração ou erro de leitura. Ações diferentes, códigos diferentes.
+
+*Achado ao escrever:* o `textoCoordenador` que eu tinha posto trazia `{dias}`, e nada no
+projeto substitui essa chave — a pessoa leria "o comprovante tem mais de {dias} dias" no
+WhatsApp. A barreira do BL-61 obrigou a escrever a frase nas views, e foi ali que apareceu.
+
+**12 cenários**, incluindo o limite exato (60 passa, 61 não), parâmetro absurdo voltando ao
+padrão, e o caso que importa: antigo **com a chave certa** vira `Não confere` e avisa.
+
+---
+
+### O pagamento no dia 1º pelo mês anterior — já resolvido
+
+Pagar em 01/10 o dízimo de setembro dá competência *outubro*, que está errado. Não precisou
+de código novo: setembro está em aberto e é anterior ao mês corrente, então o mecanismo do
+BL-62 pergunta *"vi que você tem setembro/2026 em aberto…"* e a troca de competências
+resolve. Só não funciona para quem nunca devolveu antes — e aí não há o que adivinhar.
+
+---
+
+### BL-70 — A pergunta do mês, por intervalo ✅ (M)
+
+**O sintoma, no teste de 23/09:** o dizimista tinha julho pago, mandou um comprovante de
+setembro, e o bot gravou setembro **calado**. Agosto nunca foi mencionado.
+
+**A causa:** a pergunta do BL-62 só existia quando havia um registro `A devolver` para
+oferecer. Mas a corrente abre **um mês por vez** — pagou julho, abre agosto; pagou setembro,
+abre outubro. Quem pula um mês tem esse mês **sem registro nenhum**, e não havia o que
+oferecer.
+
+**Por que não bastava preencher os meses que faltam**, que foi a minha primeira proposta:
+há quem devolva de dois em dois ou de três em três meses por hábito. Para essa pessoa agosto
+não é dívida — é o ritmo dela. Criar o registro seria decidir por ela que ela deve.
+
+**A regra nova:** os candidatos vão do mês seguinte à **última devolução paga** até o mês
+que acabou de ser registrado. Mais de um candidato, pergunta; um só, silêncio.
+
+| situação | candidatos | pergunta? |
+|---|---|---|
+| pagou agosto, registra setembro | setembro | não |
+| pagou julho, registra setembro | agosto, setembro | **sim**, 2 botões |
+| pagou maio, registra setembro | jun…set | **sim**, vira lista |
+| primeira devolução da vida | — | não, não há de onde contar |
+
+O mês registrado vem **primeiro** na lista: é o palpite do bot, e quem concorda toca no
+primeiro item sem ler o resto. Até três opções viram botão (um toque); acima disso, lista —
+quem devolve de três em três meses chega a quatro.
+
+**Teto de 6 opções.** Quem some por anos geraria uma lista impossível de ler; seis cobrem com
+folga o ritmo mais espaçado que a paróquia descreveu.
+
+**Ao escolher um mês:** se existe um `A devolver` daquele mês, as competências **trocam**. Se
+não existe, só grava — inventar um `A devolver` para o mês que sobrou seria, de novo, decidir
+pela pessoa que ela o deve.
+
+**O formato antigo do botão (`comp_<id>_<id>`) continua roteado**, para as mensagens que
+saíram antes desta mudança e ainda estão na conversa de alguém.
+
+*Terceira vez que o fake do harness mentiu por ignorar um operador* — desta vez `!=` no
+status, na busca pela última devolução **paga**. Agora compara operador em status e em
+competência.
+
+---
+
+### BL-72 — No lote de um membro, vale o valor do comprovante ✅ (P)
+
+**Eu tinha entendido ao contrário.** Quando a paróquia disse *"o valor de cadastro é somente
+uma inclinação, a pessoa devolve o que quiser"*, registrei como "não precisa avisar da
+diferença". O sentido era o oposto: **o valor escolhido é irrelevante — vale o que foi pago**.
+
+O sintoma, no teste de 23/09: comprovante de **R$ 400**, registro de **R$ 100**. O relatório
+do mês ficava R$ 300 menor que o extrato, e o número no Odoo não correspondia a dinheiro
+nenhum.
+
+**A regra:** no lote com **um membro**, o valor do comprovante manda. É a mesma do BL-53, que
+valia só para oferta — e o caminho do dizimista único já fazia assim; só o lote de família
+não.
+
+**Com vários membros, a alocação da conversa continua mandando.** O comprovante traz um total
+e não há como dividi-lo entre as pessoas; ali a conversa é a única informação que existe.
+
+---
+
+### BL-71 — A regra de ouro, e a remoção do ciclo automático ✅ (M)
+
+**Decisão da paróquia em 23/09, depois de três tentativas minhas de consertar a pergunta do
+mês.** Cada uma resolvia um caso e criava outro:
+
+| tentativa | o que fazia | o que quebrava |
+|---|---|---|
+| BL-62 | perguntava quando havia um `A devolver` **anterior** | quem tinha maio aberto e pagou abril passava calado |
+| #120 | qualquer `A devolver` **diferente** | achava o mês que o próprio bot acabara de abrir → perguntava **sempre** |
+| BL-70 | o **intervalo** desde a última devolução paga | funcionava, mas com lista de até 6 opções e um modelo mental caro |
+
+A causa comum era a **pré-criação do mês seguinte**. Ela existia para dar previsibilidade e
+produzia: mês fantasma para quem devolve de dois em dois meses, registros que ninguém pediu,
+e um buraco sem rastro quando alguém pulava um mês.
+
+**Removida.** `registrarDevolucao` voltou a só criar a devolução, com a competência.
+
+#### A regra de ouro
+
+- **Primeira devolução da vida** → registra na competência devida, não pergunta nada.
+- **Não é a primeira, e o mês anterior não tem devolução** → pergunta: *este mês ou o
+  anterior?* Duas opções, sempre.
+- **Mês anterior coberto** → silêncio.
+
+Tudo relativo à **competência registrada** (o mês da data do comprovante), não ao dia de
+hoje. É o que faz o caso mais comum funcionar sozinho: quem paga no dia 1º de outubro pelo
+dízimo de setembro tem competência outubro, setembro vazio, e a pergunta aparece.
+
+**Ao escolher, só grava.** Não cria registro para o mês que sobrou, não reabre nada — o bot
+não sabe se aquele mês é dívida ou o ritmo de quem devolve de dois em dois meses.
+
+`A devolver` **não conta como devolução** na verificação do mês anterior: é previsão, não
+pagamento. Restam alguns registros na base, de antes desta mudança; podem ser apagados à mão.
+
+O botão do formato antigo (`comp_<id>_<id>`) responde com um aviso honesto em vez de estourar
+— há mensagens dele em conversas de ontem.
+
+**Corrigido em 23/09, no teste seguinte:** a pergunta não aparecia para quem usa o fluxo de
+**família**. Quem toca em "De quem é a devolução?" e escolhe uma pessoa passa por
+`_tratarResultadoFamilia`, e eu só tinha ligado a pergunta no caminho do dizimista único.
+
+O motivo estava escrito por mim no BL-62 — *"uma pergunta por membro viraria uma rajada de
+mensagens"* — e continua valendo para família de verdade. Mas **lote de um não é lote**:
+agora o lote com exatamente um membro recebe a pergunta, e com vários segue sem. Com vários,
+uma pergunta só não teria resposta possível — cada pessoa pode estar num mês diferente.
+
+**17 cenários**, incluindo o caso do teste real (julho pago, comprovante de setembro), o
+pagamento no dia 1º, quem sumiu por anos (continua sendo *uma* pergunta de duas opções), e o
+`A devolver` no mês anterior não cobrindo nada.
+
+---
+
+### BL-17 (segunda metade) — o usuário dedicado do bot 🔴 (M)
+
+**O bot falava com o Odoo como Administrador** (`ODOO_UID = 2`) desde o começo. Quem obtiver
+a chave de API — script exposto, conta Google comprometida, acesso ao editor do Apps Script
+— podia apagar ou exportar a base inteira: não só devoluções, mas usuários e configurações.
+
+O bot escreve em **três** modelos. Tinha permissão sobre todos.
+
+#### A matriz, levantada das chamadas reais
+
+| modelo | read | write | create | unlink |
+|---|:--:|:--:|:--:|:--:|
+| `x_devolucao` | ✓ | ✓ | ✓ | |
+| `x_dizimista` | ✓ | ✓ | ✓ | |
+| `x_contato_bot` | ✓ | ✓ | ✓ | |
+| `x_notificacao_log` | ✓ | | ✓ | |
+| `x_comunidade` | ✓ | | | |
+| `x_parametros`, `x_parametros_line_c498a` | ✓ | | | |
+| `ir.model.fields` | ✓ | | | |
+| `res.users` | ✓ | | | |
+
+**Nenhum `unlink`, em nada.** O único do projeto está em `reviverPrimeiroContato`
+(`Setup.gs:814`), função manual de depuração — não em runtime. Quem precisar dela roda com
+credencial de administrador, e isso é uma troca deliberada: uma conveniência de depuração não
+justifica dar direito de apagar à integração de produção.
+
+**Nenhuma escrita de schema.** `SetupCamposFamilia` e `SetupCamposOferta` criam campos em
+`ir.model.fields`, e são setups manuais executados uma vez. Em runtime o bot só **lê** o
+schema (`campoExiste` / `campoGravavel`).
+
+#### O que está no repositório
+
+`ferramentas/instalar-usuario-bot.mjs` cria o grupo **"Meu Dízimo · Bot"** com exatamente
+essas permissões, e tem um modo **`--verificar`** que é o que importa: rodado com a chave do
+usuário novo, ele pergunta ao próprio Odoo, operação por operação, e acusa **tanto o que
+falta quanto o que sobra**.
+
+*Corrigido antes do primeiro uso:* eu tinha escrito `check_access_rights`, que **não existe
+mais** nesta versão. Em `odoo/orm/models.py` da `saas-19.3` há `check_access` (levanta
+exceção) e `has_access` (devolve booleano) — é o segundo que serve. O verificador teria
+estourado no primeiro modelo, e ele é justamente o script cujo trabalho é provar que o resto
+ficou certo.
+
+**Custo de usuário: não se aplica.** A paróquia está no plano gratuito do Odoo Online, que
+não limita usuários.
+
+**Ele não cria o usuário nem gera a chave**, de propósito: isso é segredo, e segredo não passa
+por script que alguém possa reexecutar ou logar.
+
+**Ele também não tira ninguém de Administração.** Avisa em vermelho se o usuário ainda estiver
+lá — porque o Odoo **soma** permissões e nunca subtrai, então o grupo novo não limita nada
+enquanto isso —, mas tirar acesso por script tranca gente para fora quando o login está errado.
+
+#### Duas armadilhas fechadas junto
+
+**O `|| 2` do `getOdooConfig`.** Propriedade ausente ou com lixo caía silenciosamente no
+administrador — um padrão que desfazia este item inteiro sem avisar. Agora não há padrão
+nenhum: falta a propriedade, estoura.
+
+**A URL da instância e o nome do banco estavam escritos em `Config.gs` e `Setup.gs`** — e este
+repositório é **público**. Só percebi ao responder "é seguro usar essa solução?", olhando o
+arquivo em vez da memória. A URL não é credencial, mas diz onde apontar uma tentativa e
+confirma o nome do banco.
+
+Passaram a vir só das Script Properties. **Continuam no histórico do git**, e reescrever
+histórico de repositório público não desfaz o que já foi lido — trate a URL como conhecida. A
+defesa real é a chave e o usuário não-administrador, que é justamente este item.
+`conta-mensagens.js` recusa a reintrodução.
+
+#### Ganho secundário: trilha de auditoria
+
+Hoje tudo que o bot faz aparece no Odoo como se o **administrador** tivesse feito. Com usuário
+próprio, o histórico de cada registro passa a dizer quem foi — o bot ou uma pessoa.
 
 ---
 
@@ -93,7 +987,7 @@
 **Correção:** reescrever as chamadas usando `searchRead`/`create`; para `search_count`, adicionar um método `count(model, domain)` em `OdooService`. Corrigir o nome do campo de data. Remover ou corrigir `processarRespostaNotificacao`.
 **Aceite:** `executarNotificacoesDiarias()` roda sem erro; um dizimista elegível recebe o template; log gravado em `x_notificacao_log`; quem já devolveu no mês não é notificado.
 
-**⚠️ Nota de sequenciamento (auditoria 17/09/2026):** o Sprint 3 abaixo determina fazer **BL-21 e BL-24 antes** de reativar o BL-01 — mas o BL-01 está concluído e **já em produção** (trigger de hora em hora, `NotificacaoHandler.gs:356-358`), enquanto BL-21 e BL-24 seguem abertos. O envio em si é seguro: é sequencial com `Utilities.sleep(2000)` entre mensagens (`:179`), então não há rajada de *saída*. A exposição é a **onda de respostas** que chega nos minutos seguintes — o cenário 6 da análise de carga — batendo num webhook sem retry/backoff (BL-24) e sob o teto de ~30 execuções simultâneas (BL-21). **Recomendação:** priorizar BL-24 antes do próximo ciclo mensal de notificações, ou reduzir o alcance do disparo (lotes menores por hora) até que BL-21/BL-24 estejam fechados.
+**⚠️ Nota de sequenciamento (auditoria 17/09/2026):** o Sprint 3 abaixo determina fazer **BL-21 e BL-24 antes** de reativar o BL-01 — mas o BL-01 está concluído e **já em produção** (trigger de hora em hora, `NotificacaoHandler.gs:356-358`), enquanto BL-21 e BL-24 seguem abertos. O envio em si é seguro: é sequencial com `Utilities.sleep(2000)` entre mensagens (`:179`), então não há rajada de *saída*. A exposição é a **onda de respostas** que chega nos minutos seguintes — o cenário 6 da análise de carga — batendo num webhook sem retry/backoff (BL-24) e sob o teto de ~30 execuções simultâneas (BL-21). **Recomendação:** priorizar BL-24 antes do próximo ciclo mensal de notificações, ou reduzir o alcance do disparo (lotes menores por hora) até que BL-21/BL-24 estejam fechados. **Situação em 23/09:** as duas metades foram feitas — o BL-24 está concluído (`Utils.fetchComRetry`) e o **BL-73** escalonou o disparo em lotes configuráveis (padrão: 20 a cada 2h, das 9h às 17h). O teto do BL-21 continua de pé para o tráfego normal, mas o disparo de lembretes deixou de ser um gatilho previsível para encostar nele.
 
 ### BL-02 — Confirmação falsa de devolução 🔴 (P)
 **Arquivo:** `ComprovanteHandler.gs:225-262`
@@ -1200,6 +2094,28 @@ Revisão do código-fonte conferindo **cada item marcado como concluído** contr
 
 ---
 
+## Publicação de 22/09/2026 ✅
+
+`clasp push` e nova versão do deployment feitos em 22/09. Passou a valer no bot, de uma vez:
+
+| | |
+|---|---|
+| BL-52 | a data do comprovante em qualquer layout |
+| BL-53 | a oferta grava o valor do comprovante, não o digitado |
+| BL-62 | competência, mês em aberto preenchido, mês seguinte aberto, e a pergunta do mês |
+
+Era a primeira publicação desde 20/09 — os três subiram juntos, e nenhum deles tinha rodado
+uma vez em produção. O roteiro de conferência está logo abaixo; o que ele pede em primeiro
+lugar é um dízimo de verdade, porque é o caminho que os três atravessam.
+
+⚠️ **O `registrarDevolucao` passou a fazer mais chamadas RPC por devolução** (procurar o mês
+em aberto, conferir se o mês seguinte já existe, e às vezes um `write` no lugar do `create`).
+Todas são guardadas: se qualquer uma falhar, a devolução é registrada do mesmo jeito e só a
+previsibilidade se perde. Mas isso interage com BL-24 (sem retry) e BL-21 (teto de execuções),
+que seguem abertos — vale olhar o tempo de execução no log depois das primeiras devoluções.
+
+---
+
 ## Checklist de publicação (17/09/2026)
 
 Nada do que foi corrigido vale no bot antes destes passos. Ordem sugerida, tudo em ambiente de teste primeiro:
@@ -1211,3 +2127,891 @@ Nada do que foi corrigido vale no bot antes destes passos. Ordem sugerida, tudo 
 5. `WEBHOOK_SECRET` já está configurado nesta instalação, então o fail-closed do BL-17 não muda nada na Meta. Para conferir a URL de callback: `configurarSegredoWebhook()` reimprime sem trocar o segredo.
 6. Testar pelo WhatsApp, com atenção ao **fluxo de comprovante**, que concentra BL-24, BL-26 e BL-27: imagem legível, imagem com chave divergente (deve cair em conferência e aparecer com ⚠️ na lista do coordenador) e um PDF ilegível (deve pedir reenvio e **não** registrar R$ 0,00).
 7. Opcional, quando quiser fechar o BL-17: seguir o roteiro do uid dedicado e repetir o passo 6 com as novas credenciais.
+
+### BL-73 — O disparo de lembretes é escalonado ✅ (M)
+
+**Pedido (usuário, 23/09):** *"Nao vai ocorrer 500 notificações de uma vez. Exceto se tiver 500
+dizimistas com data de devolução no mesmo dia. Mas uma forma de mitigar é escalonar. A rotina
+pode executar a cada 2h e pega 20 dizimistas para notificar. Os alertas devem ser entre 9h e 17h.
+Todos esses parâmetros devem ser configuráveis."*
+
+**O diagnóstico estava certo, e já estava escrito aqui.** A nota de sequenciamento do BL-01
+(auditoria 17/09) recomendava exatamente isto: *"reduzir o alcance do disparo (lotes menores por
+hora) até que BL-21/BL-24 estejam fechados"*. Ficou registrada e não foi feita.
+
+**O que era o risco, e o que NÃO era.** O envio nunca foi o gargalo: ele já é sequencial, com
+`Utilities.sleep(2000)` entre mensagens, então não havia rajada de *saída*. O problema é a **onda
+de volta** — quem recebe o lembrete responde nos minutos seguintes, cada resposta é uma execução
+do webhook, e o teto de ~30 execuções simultâneas do Apps Script (BL-21) é compartilhado por
+todos os usuários. Notificar 500 pessoas de uma vez não trava o envio; trava a conversa de todo
+mundo depois dele. Havia ainda um segundo problema, mais silencioso: a seleção fazia **duas
+consultas ao Odoo por candidato**, então 500 dizimistas eram ~1000 RPCs numa execução com teto de
+6 minutos.
+
+**O que passou a valer.** Quatro números em `x_parametros`, todos inteiros, todos com padrão de
+fábrica em `NOTIFICACAO_PADRAO` (Config.gs) e faixa em `NOTIFICACAO_LIMITES`:
+
+| Campo | Padrão | Faixa | O que é |
+|---|---|---|---|
+| `x_studio_notif_hora_inicio` | 9 | 0..23 | a partir de que hora se pode tocar o telefone |
+| `x_studio_notif_hora_fim` | 17 | 1..24 | até que hora — **exclusivo** |
+| `x_studio_notif_intervalo` | 2 | 1..12 | de quantas em quantas horas sai um lote |
+| `x_studio_notif_lote` | 20 | 1..200 | quantos lembretes por lote |
+
+Com os padrões: disparos às **9h, 11h, 13h e 15h**, 20 cada — 80 por dia.
+
+**`horaFim` é exclusivo**, como sempre foi nesta rotina. `17` quer dizer que o último disparo
+acontece **antes** das 17h — com intervalo 2 e início 9, o último é o das 15h. Para incluir a hora
+das 17h, o valor é `18`. Está escrito na descrição do campo, que é onde a paróquia lê antes de
+digitar.
+
+**O acionador continua de hora em hora, de propósito.** Trocar para `everyHours(2)` seria o
+caminho óbvio e estaria errado: o intervalo passaria a morar no Apps Script, e mudá-lo exigiria
+alguém abrir o editor e reinstalar o acionador — o pedido era que **todos** os parâmetros fossem
+configuráveis, e isso só se sustenta se a decisão for tomada a cada execução, com o número que
+está no Odoo agora. O preço são as ~20 execuções diárias que acordam, leem `x_parametros` e
+terminam. É barato, e é o que paga a configurabilidade. O harness reprova quem "otimizar" isso.
+
+**O teto é uma PARADA, não um corte.** `buscarDizimistasElegiveis(limite)` para de examinar
+candidatos assim que enche o lote. A diferença não é cosmética: cortar no fim gastaria as ~1000
+RPCs mesmo assim, com o log dizendo "20 enviados" — exatamente o que se esperava ver. Há um caso
+no harness que conta as consultas de histórico e reprova se passarem de `2 × lote`.
+
+**A fila anda, e ninguém é perdido.** Quem fica de fora de um lote continua elegível no disparo
+seguinte, porque a repescagem notifica **a partir** do dia de notificação, não só nele, e
+`jaFoiNotificadoEsteMes` tira da conta quem já recebeu. A ordem é `dia_preferido asc, id asc`:
+quem venceu primeiro é notificado primeiro, e o desempate por id é estável, de modo que a fila não
+embaralha entre disparos.
+
+**O que se recusou a fazer, e por quê.** Três decisões onde o lado "seguro" seria calar:
+
+1. **`x_parametros` ilegível não suprime o disparo** — sai com o padrão de fábrica, que é
+   conservador por construção. O oposto seria uma instabilidade de rede às 9h suprimindo o
+   lembrete do dia inteiro.
+2. **Número fora da faixa volta ao padrão e avisa no log** — `lote: 0` calaria a rotina para
+   sempre, `lote: 9999` traria de volta a rajada que isto existe para evitar.
+3. **Janela invertida (`fim <= início`) volta ao padrão** — é a única combinação rejeitada como
+   *conjunto*: cada número sozinho está na faixa, mas juntos fecham a janela e o lembrete nunca
+   mais sai, em silêncio.
+
+**O modo de falha deste desenho é silencioso**, e por isso ganhou uma ferramenta própria:
+`previsaoEscalonamento()`, no editor do Apps Script, imprime a janela, os degraus do dia, o teto
+diário e quantos dias levaria para percorrer a fila de hoje — avisando quando passa de 3. Um lote
+pequeno demais não dá erro nenhum; só faz o lembrete de alguém chegar dias depois.
+
+**Cobertura:** 23 casos novos no `conta-mensagens.js`, rodando `executarNotificacoesDiarias`
+inteira contra stubs com o relógio e a resposta do Odoo fixados. **12 deles reprovam contra o
+código anterior** — conferido revertendo os dois arquivos e rodando o harness. Mais duas
+verificações estruturais: os padrões e faixas de `Config.gs` têm de bater com os do instalador (a
+descrição do campo é o único lugar onde a paróquia lê a faixa), e o acionador tem de continuar
+`everyHours(1)`.
+
+**Instalação:**
+
+```
+node ferramentas/instalar-escalonamento-notificacao.mjs            # simula
+node ferramentas/instalar-escalonamento-notificacao.mjs --aplicar  # grava
+```
+
+Depois, arrastar os quatro campos para o formulário de Parâmetros no Studio — criar o campo não o
+põe na tela. **O escalonamento já vale sem isso**, com o padrão de fábrica; o instalador serve
+para poder ajustar.
+
+**Fica aberto:** o BL-73 mitiga o BL-21, não o fecha. O teto de execuções simultâneas continua de
+pé para o tráfego normal de conversas; o que mudou é que o disparo de lembretes deixou de ser um
+gatilho previsível para encostar nele.
+
+---
+
+### BL-75 — O teto de 50 propriedades do editor ✅ (P)
+
+**Sintoma (usuário, 24/09):** *"Criei o novo usuário, mas não consigo editar no properties porque
+passou de 50 propriedades."* O editor do Apps Script mostra no máximo 50 propriedades e, acima
+disso, **a lista inteira vira somente leitura** — perde-se a tela de configuração, não só o
+excedente. Sem ela não dá para trocar `ODOO_UID` nem `ODOO_API_KEY`, que era exatamente o passo
+que faltava no **BL-17**.
+
+**O diagnóstico errado, e por que ele era tentador.** A primeira leitura foi "os contadores nunca
+são apagados". Está errada: a poda automática existe e funciona — `Utils._somarShards` descarta os
+períodos vencidos a cada passagem, de carona na trigger de sessões, a cada 20 minutos. O que
+falhou não foi a limpeza, foi a **aritmética da retenção**:
+
+| Chave | Retenção | Shards | Regime permanente |
+|---|---|---|---|
+| `uso_urlfetch_<dia>_<0..4>` | 7 dias | 5 | 35 |
+| `msgs_<mês>_servico\|template_<0..4>` | **6 meses** | 5 | **60** |
+| configuração | — | — | 27 |
+
+**~120 propriedades em operação normal.** O teto de 50 seria cruzado na primeira semana, e foi. O
+harness calcula 93 contra o código anterior.
+
+**O achado que resolve:** das ~95 chaves de contador, **15 eram lidas**. `verificarCotaUrlFetch`
+soma só **hoje**; `somarMensagensDoMes` e `verificarCotaMensagens` somam só o **mês corrente**.
+As outras 80 eram escrita sem leitor — histórico que nenhuma tela mostra. Guardar seis meses
+custava 60 propriedades para servir 10.
+
+**O que passou a valer:**
+
+| Constante | Era | É | Custo |
+|---|---|---|---|
+| `URLFETCH_DIAS_GUARDADOS` | 7 (literal na poda) | 2 | nenhum — ninguém lê ontem |
+| `MSG_MESES_GUARDADOS` | 6 | 2 | nenhum — ninguém lê mês passado |
+| `URLFETCH_SHARDS` | 5 | 2 | ⚠️ real, ver abaixo |
+
+Regime permanente: 12 contadores + 27 de configuração + 6 de folga = **45**.
+
+**O shard é o único custo real, e não é de graça.** Ele existe porque `setProperties` é
+read-modify-write sem trava, então execuções simultâneas perdem incremento. De 5 para 2 a colisão
+fica mais provável e a contagem subestima um pouco mais. Aceitei porque é telemetria, não
+dinheiro; porque já subestimava sob concorrência; e porque ficar trancado fora da própria
+configuração custa mais. O **BL-74 Fase 3** troca o mecanismo por `INCR` no Redis, que é atômico
+de verdade e dispensa shard.
+
+Foram 3 shards primeiro. **O harness reprovou em 51** — as 27 chaves de configuração são piso e
+não podem ser podadas, então a folga tinha de sair do shard. A conta não foi feita de cabeça.
+
+**Ferramentas novas (`Setup.gs`):**
+
+- `podarContadores()` — apaga o que está fora da retenção e diz quantas propriedades sobraram.
+  **Só toca em chave com prefixo de contador**; configuração, sessão, bloqueio e `media_id` ficam
+  onde estão. Trocar uma pane de tela por perda de `ODOO_API_KEY` seria um negócio muito pior, e
+  há caso no harness verificando que os dois únicos pontos de exclusão estão dentro das guardas de
+  prefixo.
+- `listarPropriedades()` — lista tudo por grupo, com valores sensíveis mascarados. Existe porque
+  acima de 50 a tela não mostra o resto, e aí não se sabe nem o que está ocupando espaço.
+- `verificarProperties()` passou a **avisar a partir de 40** e a explicar a pane acima de 50. O
+  sintoma não diz a causa: a pessoa só descobre que não consegue mais editar `ODOO_API_KEY`.
+
+**A chave do Odoo não passa por código.** A saída poderia ter sido uma função que grava
+`ODOO_API_KEY` recebendo o valor como argumento — e aí o segredo ficaria digitado num `.gs`, a um
+`clasp push` de distância do repositório **público**. `podarContadores()` devolve a tela do
+editor, e o segredo continua sendo digitado onde sempre foi.
+
+**Cobertura:** 4 casos no `conta-mensagens.js`, sendo o principal o cálculo do **regime
+permanente a partir das constantes** — nada no código dizia esse número, e era o número que
+faltava. Três dos quatro reprovam contra o código anterior.
+
+**Ordem de uso:** `clasp push` → `podarContadores()` → recarregar o editor (F5) → editar
+`ODOO_UID` e `ODOO_API_KEY` → `testarConexaoOdoo()` → seguir o BL-17.
+
+---
+
+### BL-17 — nota de 24/09: a detecção de administrador dava falso OK
+
+Com `ODOO_UID = 13` conectando e o `testarConexaoOdoo()` verde, faltava rodar
+`--aplicar --login=` e depois `--verificar`. Ao reler o script antes disso, apareceu um defeito
+no **único aviso que justifica o item inteiro**.
+
+A checagem de "este usuário ainda é administrador?" estava assim:
+
+```js
+[['id', 'in', u.groups_id], ['name', 'ilike', 'Settings']]
+```
+
+**`res.groups.name` é traduzido.** Num Odoo em português o grupo se chama "Configurações" /
+"Administração", e o filtro não casa com nada — o script então **silencia** sobre um usuário que
+continua administrador. Não é um erro que apareça como erro: aparece como "está tudo certo",
+que é o desfecho pior que não ter checagem nenhuma.
+
+É a **segunda vez** que este script falha assim. A primeira foi o `check_access_rights`, que não
+existe mais na `saas-19.3` e teria estourado no primeiro modelo. Os dois casos têm a mesma forma:
+o script cujo trabalho é provar que o resto ficou certo não tinha nada provando que ele próprio
+estava.
+
+**Correção:** resolver os grupos por **XML ID** via `ir.model.data`, que não é traduzido —
+`base.group_system` (Administração → Configurações) e `base.group_erp_manager` (Administração →
+Direitos de acesso). O segundo faltava por completo: um usuário só com ele administra direitos de
+acesso e passaria batido mesmo em inglês.
+
+E, quando os XML IDs não resolvem, **avisa em vez de calar** — não dá para afirmar que alguém não
+é administrador quando a consulta falhou.
+
+**Cobertura:** 5 casos no `conta-mensagens.js`, três deles reprovando contra a versão anterior.
+Um detalhe do próprio harness ficou registrado ali: os comentários deste script **citam o código
+errado de propósito**, ao explicar por que foi trocado, então a busca por "não pode conter X"
+acusava a própria explicação de X. A varredura passou a ignorar comentários — foi ela que pegou
+isso, na primeira execução.
+
+**O que continua sendo manual, de propósito:** tirar o usuário de Administração. Tirar acesso por
+script tranca alguém para fora quando o login errado é informado, e há caso no harness garantindo
+que o script nunca remove ninguém de grupo.
+
+---
+
+### BL-17 — nota de 24/09 (2): o alarme falso do `res.partner`
+
+Com o usuário criado (**Função: Usuário**, não Administrador), o grupo "Meu Dízimo · Bot"
+instalado com a matriz correta e 1 usuário dentro, a tela do Odoo mostrava também:
+**Direitos de acesso: 127. Regras de registro: 58. Grupos: 4.**
+
+Nosso grupo contribui **9** desses 127. Os outros ~118 vêm do grupo de usuário interno padrão
+(`base.group_user`), e é aí que estava o defeito.
+
+**O verificador contava `res.partner` como sobra** e concluía *"provavelmente o usuário ainda é
+administrador"*. Isso é falso: `base.group_user` concede escrita em `res.partner`,
+`ir.attachment` e `mail.message` a **todo usuário interno** do Odoo. É o piso, não um sinal de
+privilégio — e o `--verificar` teria acusado de administrador um usuário corretamente limitado,
+logo depois de a tela provar o contrário.
+
+**Alarme falso desgasta o alarme.** Na próxima sobra de verdade, ninguém olha. Por isso a lista
+foi partida em duas:
+
+- **Escrita que só administrador deveria ter** — `ir.ui.view`, `ir.cron`, `res.groups`. Exigem
+  `base.group_system` ou `base.group_erp_manager`. Aqui, sobra é achado.
+- **Piso do usuário interno** — `res.partner`, `ir.attachment`, `mail.message`. Informativo,
+  não conta.
+
+`ir.model.fields` saiu da lista de proibidos: já estava na MATRIZ com `write: 0`, e a duplicação
+fazia a mesma falha entrar duas vezes no total.
+
+**O residual, dito com todas as letras.** No Odoo, um usuário interno não pode ser mais restrito
+que `base.group_user` — a alternativa seria usuário de portal, que não serve para o acesso via
+API aos modelos `x_*`. Então o bot **continua alcançando os modelos padrão do Odoo** (contatos,
+anexos, mensagens). O que o BL-17 elimina é o poder de administrador: apagar a base, gerenciar
+usuários, instalar módulos, ler tudo. É uma redução grande e não é redução total. Baixar do piso
+exigiria regras de registro por modelo, que é outro item.
+
+**Cobertura:** mais 2 casos no `conta-mensagens.js`, ambos reprovando contra a versão anterior.
+
+---
+
+### BL-17 — nota de 24/09 (3): o verificador aprovava quando não sabia
+
+O usuário rodou `--verificar` com **um uid que não existe, de propósito**, e o script devolveu um
+relatório completo — matriz, FALTA, SOBRA, veredito — contra credencial que nem autenticava. Pior,
+na seção de segurança:
+
+```
+   res.partner              write:· ok
+   ir.ui.view               write:· ok
+   ir.cron                  write:· ok
+   res.groups               write:· ok
+```
+
+**Falha total de autenticação lida como aprovação.** Um dígito errado na chave e a conclusão seria
+"o bot está trancado".
+
+O driver de prova mostrou que era pior do que o log sugeria. Quatro defeitos:
+
+| Cenário | Comportamento anterior | Correto |
+|---|---|---|
+| uid inexistente | **exit 0, ✅ "nada de administrador"** | falhar |
+| credencial recusada | exit 1 com diagnóstico falso ("ainda é administrador") | falhar dizendo que é credencial |
+| erro de rede | inventava 3 FALTA e 1 SOBRA | dizer "não sei" |
+| **usuário ainda administrador** | **exit 0** | falhar |
+
+O último é o mais grave: `process.exit(faltando ? 1 : 0)` **ignorava `sobrando`**. A condição
+exata que o BL-17 existe para detectar saía com código zero e passaria em qualquer CI.
+
+**As causas, todas da mesma família:**
+
+1. `rpc()` descartava `error.data.name`, que é onde o Odoo distingue `AccessDenied` (credencial)
+   de `AccessError` (permissão). Sem isso, o script adivinhava pelo texto da mensagem — que muda
+   com o idioma.
+2. `pode()` devolvia a **string** do erro quando não era permissão. String comparada com booleano
+   é sempre diferente, então todo "não sei" virava FALTA ou SOBRA.
+3. Na lista de administrador, `ok = w !== true` — uma string é `!== true`, logo **"ok"**. A
+   checagem de segurança aprovava justamente quando não sabia.
+4. O código de saída só olhava `faltando`.
+
+**O que passou a valer:** `rpc()` preserva `odooName`; uma **conferência de credencial** roda
+antes de qualquer outra coisa e aborta dizendo se o uid não existe ou se a chave foi recusada,
+imprimindo **nome e login de quem conectou** (verificar o usuário errado devolve um relatório
+coerente e inútil); `pode()` tem **três estados** — `true`, `false`, `null` —, e `null` nunca é
+achado; só `false` aprova na lista de administrador; e o exit code cai com falta, sobra **ou**
+indeterminado.
+
+**A lição, que é a quarta repetição da mesma:** este script já errou quatro vezes, sempre para o
+lado do "está tudo certo" — `check_access_rights`, o grupo por nome em inglês, o `res.partner` do
+piso, e agora estas quatro. **Ler o código não pegou nenhuma delas**; três passaram por revisão.
+Por isso agora existe `ferramentas/prova-verificador.mjs`: sobe um Odoo de mentira em localhost,
+um por cenário, e roda o verificador de verdade contra ele. Sai 1 se qualquer cenário responder
+diferente do esperado. Nada vai para a rede e nenhuma credencial é usada.
+
+**Cobertura:** 5 cenários executáveis na prova, mais 5 casos novos no `conta-mensagens.js` (que
+também exige que a prova não seja apagada). Os cinco cenários reprovam contra a versão anterior —
+dois deles com exit 0 onde deveria ser 1.
+
+---
+
+### BL-17 — nota de 24/09 (4): a chamada errada, e o mock que a abençoava
+
+O conserto anterior funcionou como devia: o verificador **recusou-se a dar veredito**, imprimiu
+39 "NÃO SEI" e saiu com 1. A versão de antes teria dito "16 FALTANDO, 25 SOBRANDO, ainda é
+administrador" — acusando um usuário correto por um erro do próprio script.
+
+O que ele expôs:
+
+```
+BaseModel.has_access() missing 1 required positional argument: 'operation'
+```
+
+**A chamada estava errada.** Em `odoo/api.py`, método que não é `@api.model` é despachado por
+`_call_kw_multi`:
+
+```python
+ids, args = args[0], args[1:]
+recs = model.browse(ids)
+result = method(recs, *args, **kwargs)
+```
+
+`args[0]` é **sempre** consumido como lista de ids. Mandando `['read']`, o Odoo leu `'read'` como
+ids e chamou `has_access(recs)` sem operação. O certo é `[[], 'read']` — recordset vazio
+explícito, depois a operação. O comentário que eu tinha escrito ali ("num recordset vazio, que é
+o que o execute_kw entrega quando não se passam ids") descrevia um mecanismo que não existe.
+
+**E a prova não pegou, porque o mock errava igual.** O Odoo de mentira lia `args[0]` como a
+operação — exatamente o engano de quem chamava. Um mock que repete a suposição de quem chama não
+testa a suposição: **ele a confirma**. A prova ficou verde contra código que o Odoo real recusou
+39 vezes seguidas.
+
+**Correção dupla:** a chamada virou `[[], op]`, e o mock passou a reproduzir o despacho —
+consome `args[0]` como ids e devolve a mensagem real do Odoo quando a forma está errada.
+Revertendo só a chamada, a prova agora reprova em 2 cenários. Antes, passava em 5.
+
+**Varredura:** nenhum outro ponto do projeto tem o mesmo problema. Todas as demais chamadas são
+CRUD padrão (`read`, `write`, `create`, `unlink`, `search*`), onde `args[0]` já é id ou domínio
+por definição. `has_access` era a única com argumento posicional extra.
+
+**Quinta falha do mesmo script, e a primeira em que o próprio script se protegeu.** As quatro
+anteriores deram veredito errado; esta parou e disse que não sabia. É a diferença entre um
+verificador quebrado e um verificador honesto — e foi o conserto da nota (3) que produziu isso.
+
+**A lição sobre mocks**, que vale além deste item: o mock foi escrito lendo o mesmo trecho de
+código que o chamador. Onde os dois compartilham uma suposição, o teste não tem como falhar.
+Vale para o fake do Odoo no `conta-mensagens.js` também — ele já mentiu três vezes por motivos
+dessa família.
+
+---
+
+### BL-17 — nota de 24/09 (5): a sobra não era administrador
+
+Com a chamada corrigida, o `--verificar` finalmente devolveu a matriz de verdade:
+
+```
+   x_devolucao              read:✓  write:✓  create:✓  unlink:·
+   x_dizimista              read:✓  write:✓  create:✓  unlink:·
+   x_contato_bot            read:✓  write:✓  create:✓  unlink:·
+   x_notificacao_log        read:✓  write:✓ SOBRA  create:✓  unlink:·
+   x_comunidade             read:✓  write:✓ SOBRA  create:✓ SOBRA  unlink:·
+   x_parametros             read:✓  write:✓ SOBRA  create:✓ SOBRA  unlink:·
+   x_parametros_line_c498a  read:✓  write:✓ SOBRA  create:✓ SOBRA  unlink:·
+   ir.model.fields          read:✓  write:·  create:·  unlink:·
+   res.users                read:✓  write:✓ SOBRA  create:·  unlink:·
+```
+
+**Oito sobras reais** — e a mensagem final dizia *"o usuário ainda tem poder de administrador"*,
+**contradizendo a própria saída do comando**, que mostrava `ir.ui.view`, `ir.cron` e `res.groups`
+todos em `· ok`. A tela do Odoo confirma: Função = Usuário, e os 4 grupos são Todos, Usuário,
+Meu Dízimo · Bot e Procedimentos técnicos. Nenhum é Administração.
+
+**A causa real: ACLs do Odoo são ADITIVAS.** Criar um grupo restritivo não anula uma regra
+permissiva já existente. O Studio cria uma `ir.model.access` junto com cada modelo `x_*`, valendo
+para todo usuário interno — e é ela que concede a escrita. O grupo "Meu Dízimo · Bot" soma,
+nunca subtrai.
+
+Mandar a pessoa procurar em Administração quando o problema está em `ir.model.access` custa uma
+tarde. **Dois contadores separados agora:**
+
+| | O que é | O que fazer |
+|---|---|---|
+| `sobraDeAdmin` | escrita em `ir.ui.view` / `ir.cron` / `res.groups` | tirar de Administração |
+| `sobraNoBot` | escrita a mais nos `x_*` | achar a `ir.model.access` permissiva |
+
+**Modo `--explicar` (novo), rodado com a chave do administrador:** lista, por modelo, cada regra
+de `ir.model.access`, o grupo dela e o que concede a mais — marcando 🚨 só quando o bot pertence
+àquele grupo (ou quando a regra não tem grupo, valendo para todos).
+
+Uma armadilha evitada ali: `ir.model.access.model_id` volta como `[id, rótulo AMIGÁVEL]`
+("Devolução"), não o nome técnico. Agrupar pelo rótulo casaria com nada — é a mesma armadilha do
+grupo de administrador buscado por nome. O modo resolve o nome técnico via `ir.model`, e há caso
+no harness exigindo isso.
+
+**O que o `--explicar` NÃO faz, de propósito:** apagar as regras. Elas existem provavelmente para
+os agentes da pastoral, que editam comunidade e parâmetros pela tela. Apagá-las tranca as pessoas
+para fora. O caminho é restringir a regra a um grupo de quem usa a tela e deixar o bot fora dele —
+decisão sobre quem pode o quê na paróquia, não coisa de script.
+
+**Risco concreto enquanto isso não fecha:** `x_comunidade` com escrita significa que a **chave PIX
+da paróquia é gravável pelo bot**. Quem obtiver a chave de API poderia redirecionar doações. É
+bem menor que o risco de administrador (apagar a base, gerenciar usuários), mas é o que resta.
+
+**Cobertura:** cenário novo `sobra-no-bot` na prova executável — o caso real, em que os modelos do
+bot sobram e os de administrador estão limpos —, mais 3 casos no `conta-mensagens.js`. A prova
+passou de 5 para 6 cenários, e a contagem na mensagem final passou a sair da lista em vez de um
+literal, que já estava desatualizado.
+
+---
+
+### BL-17 — nota de 24/09 (6): `groups_id` não existe mais
+
+O `--explicar` estourou na primeira consulta:
+
+```
+Error: Invalid field 'groups_id' on 'res.users'   (builtins.ValueError)
+```
+
+Conferido no código-fonte da versão fixada (`odoo/addons/base/models/res_users.py:248-250`,
+tag `saas-19.3`):
+
+```python
+group_ids     = fields.Many2many('res.groups', ..., help="Groups explicitly assigned")
+all_group_ids = fields.Many2many('res.groups', string="Groups and implied groups",
+                                 compute='_compute_all_group_ids')
+```
+
+`groups_id` virou **`group_ids`**, e ganhou um irmão: **`all_group_ids`**, com os grupos
+implicados.
+
+**A distinção não é cosmética.** Grupos do Odoo implicam outros. Quem está num grupo que implica
+`base.group_system` é administrador **sem ter `group_system` na lista explícita** — e uma
+`ir.model.access` num grupo implicado também alcança o usuário. Olhar só os explícitos deixaria
+passar exatamente os casos que interessam. Então:
+
+| Uso | Campo |
+|---|---|
+| "é administrador?" | `all_group_ids` |
+| "esta ACL alcança o bot?" | `all_group_ids` |
+| "pôr no grupo" | `group_ids` (o gravável; o outro é computed) |
+
+**Sétimo uso, dois modos quebrados.** O campo morto aparecia 7 vezes, em `--explicar` **e** em
+`--aplicar --login=`. O segundo é o que põe o bot no grupo — o que explica por que o usuário
+precisou fazer isso à mão na tela do Odoo.
+
+**Por que a prova não pegou: ela cobria só `--verificar`.** Um terço do script. Duas correções
+estruturais:
+
+1. **O mock passou a validar nomes de campo** contra os que existem de verdade na `saas-19.3`, e
+   devolve `ValueError: Invalid field 'x' on 'y'` como o Odoo. Revertendo para `groups_id`, a
+   prova agora reprova em 2 cenários.
+2. **Dois cenários novos para `--explicar`** — `explicar-limpo` (nenhuma regra concede a mais,
+   exit 0) e `explicar-culpado` (a regra sem grupo, do Studio, exit 1 nomeando-a). O mock
+   devolve `model_id` com um rótulo **propositalmente diferente** do nome técnico, para que a
+   resolução via `ir.model` seja realmente exercitada.
+
+**A sexta falha desta família, e a primeira com defesa automática.** As seis foram todas a mesma
+coisa: nome de API do Odoo escrito de memória em vez de conferido na versão fixada —
+`check_access_rights`, grupo por nome traduzido, `res.partner` do piso, a forma de `has_access`,
+o exit code, e agora `groups_id`. O padrão é claro, e o antídoto é o que já existe para o py_js
+(`provar-dominio-filtro.mjs`): **baixar a fonte da tag e conferir, em vez de lembrar.**
+
+**Cobertura:** a prova foi de 6 para **8 cenários** e passou a exercitar dois modos em vez de um;
+mais 4 casos no `conta-mensagens.js`.
+
+---
+
+### BL-17 — nota de 24/09 (7): o `--explicar` respondeu, e uma das 5 é intocável
+
+O diagnóstico saiu limpo: **todas as 5 sobras vinham de um grupo só**, `base.group_user`
+("Role / User"), o grupo de qualquer usuário interno.
+
+```
+🚨 Notificaçao Log group_user   →  A MAIS: write
+🚨 Comunidade group_user        →  A MAIS: write, create
+🚨 Parâmetros group_user        →  A MAIS: write, create
+🚨 parametros_line group_user   →  A MAIS: write, create
+🚨 res_users all (Role / User)  →  A MAIS: write
+```
+
+**A quinta não é do Studio — é do Odoo.** Conferido em
+`odoo/addons/base/security/ir.model.access.csv` da tag `saas-19.3`:
+
+```
+"access_res_users_employee","res_users all","model_res_users","base.group_user",1,1,0,0
+```
+
+Write em `res.users` para todo `base.group_user` é de fábrica, e é o que permite a cada pessoa
+editar as próprias preferências (idioma, fuso, assinatura). Tirar quebraria todos os usuários
+internos, e o Odoo restauraria na próxima atualização.
+
+**A matriz estava pedindo o impossível.** `res.users: write 0` gerava um achado que ninguém pode
+resolver — o mesmo erro do `res.partner` da nota (2), repetido. Agora a matriz aceita `null` para
+"piso do Odoo, não se opina", distinto de `0` ("não pode, e poder é achado"), e a linha do
+`res.users` usa `null`.
+
+**As outras quatro são do Studio e saem.** E dá para vê-lo pelo próprio relatório: a paróquia já
+tem papéis de verdade — `Pastoral do Dízimo / Acesso Comunidade`, `Pastoral do Dízimo / Secretaria
+Paroquial`, `Role / Administrator` — e a Secretaria já tem `read, write, create` em Comunidade e
+Parâmetros pela regra dela. A regra de `group_user` é **redundante para quem tem papel** e
+permissiva para quem não tem.
+
+**Modo `--restringir` (novo), com duas travas**, porque isto altera a permissão de **todos os
+usuários internos**, não só do bot:
+
+1. **Só toca em modelo `x_*`.** Os do Odoo (`res.users`, `ir.model.fields`) ficam fora por
+   construção — exatamente o caso acima.
+2. **Só toca em regra cujo grupo é `base.group_user`**, resolvido por XML ID. As da Secretaria,
+   da Pastoral e do Administrador não são tocadas: são elas que mantêm as pessoas trabalhando.
+
+Simula por padrão. Há caso na prova afirmando que **nenhuma escrita sai sem `--aplicar`** — não
+basta o texto dizer que simulou, o mock registra as gravações e o cenário exige zero.
+
+**Depois de aplicar, o estado esperado:** quem tem papel continua com o que o papel dá; quem é só
+usuário interno passa a ler e não escrever nos modelos do dízimo; o bot fica na matriz.
+
+**Cobertura:** a prova foi de 8 para **10 cenários**, cobrindo agora três modos (`--verificar`,
+`--explicar`, `--restringir`); mais 5 casos no `conta-mensagens.js`.
+
+---
+
+### BL-17 — nota de 24/09 (8): restringir podia trancar a Secretaria
+
+A simulação do `--restringir` saiu correta — 4 regras a alterar, as 3 que o bot legitimamente
+precisa intocadas, e `res_users all` **ausente da lista**, provando que a trava de "só modelo
+`x_*`" funcionou.
+
+Mas comparando com o relatório do `--explicar`, faltava uma pergunta:
+
+| Modelo | Regra de escrita fora de `group_user` |
+|---|---|
+| `x_comunidade` | ✅ `Secretaria - Comunidade` |
+| `x_parametros` | ✅ `Secretaria - Parâmetros` |
+| **`x_parametros_line_c498a`** | ❌ **nenhuma** |
+| `x_notificacao_log` | ❌ nenhuma (mas ninguém edita log à mão) |
+
+**A Secretaria edita as linhas de parâmetro hoje pela regra de `base.group_user`.** Tirando-a,
+só o Administrador escreve nelas — e o sintoma aparece quando alguém tenta salvar, não na hora
+de aplicar. Um script que faz uma mudança de permissão sem dizer isso empurra o custo para a
+pessoa errada, num momento pior.
+
+**O `--restringir` passou a avisar.** Para cada regra que perde `write`, ele pergunta se resta
+alguma outra regra de escrita **que não seja do administrador nem do próprio grupo do bot**. Se
+não restar, lista o modelo sob um aviso explícito e sugere criar antes a regra do grupo de quem
+usa a tela, espelhando a do modelo "pai".
+
+**A verificação que faltava na prova, e que quase passou despercebida:** o cenário órfão prova
+que o aviso *aparece*, mas não que ele *discrimina*. Um aviso disparando sempre passaria nos
+dois. Por isso o cenário com Secretaria ganhou uma **assertiva negativa** — ele reprova se o
+aviso aparecer. Conferido forçando `orfaos.push(model)` incondicional: reprova, como deve.
+
+**Cobertura:** a prova foi de 10 para **11 cenários**; mais 2 casos no `conta-mensagens.js`, que
+chegou a 265 verificações.
+
+---
+
+### BL-76 — Parâmetros, notificações e contato do bot só para o Administrador 📋 (P)
+
+**Decisão do usuário (24/09):** *"Quero manter os acessos de parametros, notificações e contato
+bot somente com o perfil admin. Mas isso pode ser feito depois."*
+
+**Por que é um item separado do BL-17.** O BL-17 trata do que o **bot** pode fazer. Este trata do
+que as **pessoas** podem fazer. Os dois se cruzam nas mesmas regras de `ir.model.access`, mas são
+perguntas diferentes e com riscos diferentes: errar no BL-17 deixa uma chave de API poderosa
+demais; errar aqui tranca um agente da pastoral para fora do trabalho dele.
+
+**Estado atual**, do relatório do `--explicar` de 24/09:
+
+| Modelo | Bot | Administrador | Secretaria | Acesso Comunidade | `Role / User` |
+|---|---|---|---|---|---|
+| `x_parametros` | read | tudo | read, write, create | read | read, write, create |
+| `x_parametros_line_c498a` | read | tudo | — | — | read, write, create |
+| `x_notificacao_log` | read, create | tudo | — | — | read, write, create |
+| `x_contato_bot` | read, write, create | tudo | — | — | read, write, create |
+
+**O alvo:** nas quatro linhas, sobrar **apenas o grupo do bot e o Administrador**.
+
+**O que precisa mudar** (a confirmar na tela antes de aplicar):
+
+1. Apagar, ou zerar, as regras de `Role / User` (`base.group_user`) nos quatro modelos.
+   O bot não perde nada: ele tem regra própria em todos.
+2. Em `x_parametros`, apagar também `Secretaria - Parâmetros` e `Comunidade - Parâmetros` — são
+   elas que hoje dão acesso à Secretaria e à Pastoral.
+3. Conferir com quem usa: **alguém da Secretaria edita parâmetros hoje?** Se sim, esta decisão
+   transfere essa tarefa para o Administrador, e isso é escolha da paróquia, não consequência
+   técnica.
+
+**Relação com o `--restringir` do BL-17.** Aquele modo tira só `write`/`create` de `group_user`,
+deixando `read`, e só nos modelos onde a matriz do bot pede menos. Ele **não fecha este item** —
+aqui o alvo inclui tirar o `read` e mexer nas regras da Secretaria, que o `--restringir` não toca
+de propósito.
+
+Uma consequência boa: com esta decisão registrada, o aviso *"depois disto, SÓ O ADMINISTRADOR
+escreve em x_parametros_line_c498a"* que o `--restringir` emite deixa de ser um impedimento e
+passa a ser o resultado desejado.
+
+**O que NÃO entra aqui:** `x_comunidade`. A Secretaria precisa editar comunidade (chave PIX,
+titular, endereço) e continua com a regra dela. `x_devolucao` e `x_dizimista` idem — são o
+trabalho diário da pastoral.
+
+---
+
+### BL-17 — nota de 24/09 (9): "Nada foi alterado" era promessa por sorte
+
+O `--restringir --aplicar` morreu em `UND_ERR_CONNECT_TIMEOUT` e imprimiu *"Isso é CONEXÃO, não
+credencial. Nada foi alterado."* **Desta vez era verdade** — a queda veio na primeira chamada,
+antes de qualquer gravação, e o `--verificar` seguinte confirmou as mesmas 7 sobras.
+
+Mas a frase saía do tratador de erro do `rpc()`, ou seja **de qualquer ponto do código**. O
+`--restringir --aplicar` grava num laço, uma regra por vez. Um timeout na terceira de quatro
+deixaria duas regras já gravadas — e o script juraria que nada mudou, mandando a pessoa confiar
+num estado pela metade.
+
+Promessa que só vale por sorte não é promessa.
+
+**Agora o `rpc()` registra o que já gravou** (`create`, `write`, `unlink`) e a mensagem de queda
+diz a verdade dos dois lados: "nada foi alterado, a falha veio antes de qualquer gravação" ou
+"⚠️ N gravações JÁ FORAM FEITAS", listando-as.
+
+**Não tenta desfazer, de propósito.** Reverter exigiria conhecer o valor anterior de cada campo,
+e tentar isso pela mesma rede que acabou de cair transforma um problema em dois. Em vez disso
+aponta a saída real: **os modos são idempotentes** — rodar de novo mostra o que já foi aplicado
+como "já está certo" e grava só o que falta.
+
+**Cobertura:** cenário `queda-no-meio` na prova, com o mock derrubando o socket **depois** da
+primeira gravação e o cenário exigindo que a saída **não** contenha "Nada foi alterado". Com a
+mensagem antiga, reprova. A prova foi de 11 para **12 cenários**.
+
+**De passagem, duas coisas que o log confirmou funcionando:** o aviso *"confira se é MESMO o
+usuário do bot"* pegou uma execução feita com a chave do administrador ainda no `.odoo-env` — o
+relatório saiu coerente e completamente inútil, e a linha com nome e login foi o que denunciou.
+E `res.users write` aparece como `~ piso` em vez de achado, conforme a nota (7): as sobras caíram
+de 8 para 7 sem que nada no Odoo mudasse.
+
+---
+
+### BL-17 — FECHADO (24/09)
+
+```
+   x_devolucao              read:✓  write:✓  create:✓  unlink:·
+   x_dizimista              read:✓  write:✓  create:✓  unlink:·
+   x_contato_bot            read:✓  write:✓  create:✓  unlink:·
+   x_notificacao_log        read:✓  write:·  create:✓  unlink:·
+   x_comunidade             read:✓  write:·  create:·  unlink:·
+   x_parametros             read:✓  write:·  create:·  unlink:·
+   x_parametros_line_c498a  read:✓  write:·  create:·  unlink:·
+   ir.model.fields          read:✓  write:·  create:·  unlink:·
+   res.users                read:✓  write:~ piso  create:·  unlink:·
+
+   ir.ui.view  · ok      ir.cron  · ok      res.groups  · ok
+
+✅ Exatamente o que o código usa nos modelos do bot, e nada de administrador.
+```
+
+**O que mudou de verdade:** a chave de API do bot deixou de valer o ERP inteiro. Antes, quem a
+obtivesse — um script exposto, uma conta Google comprometida, alguém com acesso ao editor do Apps
+Script — podia apagar ou exportar a base da paróquia, criar usuários e instalar módulos. Agora
+alcança nove modelos, sem `unlink` em nenhum.
+
+**O residual, dito com todas as letras:** o bot continua alcançando `res.partner`,
+`ir.attachment` e `mail.message` com escrita, porque é o piso de `base.group_user` e um usuário
+interno não pode ser mais restrito que isso. Baixar dali exigiria regras de registro por modelo,
+ou um usuário de portal — que não serve para acesso via API aos modelos `x_*`.
+
+**O que este item custou, e por quê vale registrar.** Nove notas de correção, todas do
+**verificador**, não do que ele verificava. As seis primeiras foram a mesma coisa: nome de API do
+Odoo escrito de memória em vez de conferido na versão fixada. As três últimas foram mensagens
+confiantes e erradas — "ainda é administrador" quando não era, "nada foi alterado" sem saber.
+
+O padrão só quebrou quando o script passou a **falhar em vez de concluir**: a nota (4) fez ele
+dizer "NÃO SEI" e sair com 1, e foi essa recusa que expôs o bug real da chamada. Um verificador
+que aprova quando não sabe é pior que verificador nenhum — ele encerra a investigação.
+
+Ficou `ferramentas/prova-verificador.mjs`, com **12 cenários** executáveis contra um Odoo de
+mentira, cobrindo três modos. Ler o código não pegou nenhuma das nove; três passaram por revisão.
+
+---
+
+### BL-17 — nota final: a metade que o `--verificar` não prova
+
+Com o `--verificar` limpo, restava uma pergunta que ele **não responde**: ele prova que as
+permissões batem com a MATRIZ, não que a matriz cobre o que o código usa. São coisas diferentes,
+e a segunda é a que quebra em produção.
+
+**E quebra sem janela.** `ODOO_UID` e `ODOO_API_KEY` são lidos das Script Properties **a cada
+execução** — a troca do usuário valeu no instante em que foi salva no editor, sem `clasp push`.
+Uma matriz incompleta derruba o bot antes de qualquer deploy, e o sintoma é um `AccessError` num
+caminho que ninguém percorre até alguém reclamar.
+
+**Varredura feita:** todo modelo Odoo citado no código foi comparado com a matriz. Dois ficavam
+de fora:
+
+| Modelo | Situação |
+|---|---|
+| `ir.model` | só em `SetupCamposFamilia.gs` e `SetupCamposOferta.gs`, funções manuais do editor que criam schema e rodam com credencial de administrador — já excluídas de propósito na MATRIZ |
+| `x_parametros_line` | **modelo que não existe no Odoo** (o real é `x_parametros_line_c498a`) |
+
+**O segundo virou limpeza.** `OdooService.buscarParametro(chave)` consultava `x_parametros_line`
+e era chamado só por `TesteNotificacao.gs`, que está no `.claspignore`. Em produção, código morto
+apontando para um modelo inexistente. Removido.
+
+Os dois usos no teste passaram a ler a **Script Property `NOTIFICACOES_ATIVAS`**, que é o
+interruptor que a produção realmente usa. Antes o teste dizia "não configurado" para todo mundo,
+sempre — a consulta falhava em silêncio dentro de um `try/catch` e ninguém notava. Um teste que
+sempre dá a mesma resposta não testa nada.
+
+**Virou verificação permanente.** O `conta-mensagens.js` passou a cruzar as chamadas
+`OdooService.*`/`this.*` de todo `.gs` que vai ao deploy contra a MATRIZ, e reprova se aparecer
+modelo não coberto. Também avisa (sem reprovar) sobre permissão concedida a modelo sem uso.
+
+Um detalhe do próprio guarda, encontrado ao escrevê-lo: a primeira versão só casava
+`OdooService.metodo('modelo'` numa linha, e dentro do `OdooService.gs` as chamadas são `this.` com
+o nome do modelo **na linha seguinte**. Ele acusou três modelos usados o tempo todo de estarem
+"sem uso". Corrigido antes de entrar.
+
+**O que continua sem prova, e só um teste real fecha:** as **regras de registro** (a instância tem
+58). Elas filtram QUAIS REGISTROS um usuário alcança, e `has_access` responde pelo MODELO, não
+pela linha. O bot pode ter permissão em `x_dizimista` e uma regra de registro limitá-lo a zero
+registros. Mandar uma mensagem ao bot e fazer uma devolução cobre isso e o resto.
+
+---
+
+## Revisão de código de 24/09/2026
+
+Revisão dos `.gs` de produção feita junto com a análise de escopo da migração (BL-74). Os itens
+BL-77 a BL-83 foram **conferidos linha a linha**; o BL-84 reúne o que os revisores apontaram e
+ainda precisa de conferência antes de virar correção. Detalhes e contexto em
+[notas.md](notas.md).
+
+Nenhum depende da migração: valem para o Apps Script de hoje.
+
+**Corrigidos em 24/09** (BL-77 a BL-83), um commit por item. Cada conserto tem caso no
+`conta-mensagens.js` que **reprova no código anterior** — conferido um a um. O BL-82 era pior
+que o registrado: sem rótulo, um valor sem separador de milhar não era lido de jeito nenhum.
+
+### BL-77 — Dízimo gravado como oferta 🔴 (P)
+
+**Arquivos:** `OfertaHandler.gs:58-65`, `ComprovanteHandler.gs:774`, `MenuHandler.gs`,
+`DevolucaoHandler.gs`
+
+**O problema.** Quando o dizimista toca em *Oferta*, `OfertaHandler.iniciar` já grava
+`ofertaComunidadeId`, `ofertaComunidadeNome`, `ofertaNome` e `ofertaDizimistaId` na sessão —
+antes de ele escolher qualquer coisa. Nada limpa esses campos: `menuPrincipal`, `menuDizimista`
+e `iniciarDevolucao` só trocam o estado. E o `ComprovanteHandler` decide o caminho **só pela
+presença** de `ofertaComunidadeId`.
+
+**Cenário.** Toca em Oferta → desiste → toca em Dízimo → manda o comprovante. A devolução é
+gravada com `tipo='oferta'`, some do relatório de dízimo, e a pessoa lê "Oferta recebida".
+Dado financeiro errado, em silêncio.
+
+**Proposta.** Limpar os quatro campos `oferta*` ao entrar em `iniciarDevolucao` e no menu. Mais
+robusto ainda: decidir o caminho pelo **estado** da conversa, não pela sobra de um campo.
+
+**Aceite.** Caso novo no `conta-mensagens.js`: Oferta → Menu → Dízimo → comprovante grava
+`tipo='dizimo'`.
+
+### BL-78 — Deduplicação do webhook curta e não atômica 🔴 (P)
+
+**Arquivo:** `Webhook.gs:316-322`
+
+**O problema.** A chave `msg_<id>` vive 600 s, e o `CacheService` pode descartá-la antes. A Meta
+reentrega o webhook por horas quando não recebe resposta a tempo — e as execuções medidas levam
+10 a 24 s. Uma reentrega depois de 10 min é processada de novo; se a mensagem era um comprovante,
+`registrarDevolucao` faz um segundo `create`. Além disso o `get` → `put` não é atômico: duas
+entregas simultâneas passam juntas pelo filtro.
+
+**Proposta.** TTL de 6 h (o máximo do cache). Para o caso simultâneo, o BL-74 Fase 3 resolve de
+vez (nome de tarefa determinístico no Cloud Tasks); até lá, aceitar o risco residual e registrar.
+
+### BL-79 — Reação, figurinha ou áudio zeram a conversa 🟠 (P)
+
+**Arquivo:** `Router.gs:32-35`
+
+**O problema.** `reaction`, `sticker`, `audio`, `location`, `contacts`, `unsupported` e `system`
+caem no `default`, que chama `MenuHandler.menuPrincipal` → `setEstado(MENU)` e envia um menu
+(mensagem cobrada). Um 👍 no meio do cadastro, ou logo antes de mandar o comprovante, desfaz o
+estado; a foto seguinte recebe "Não estou esperando uma imagem".
+
+**Proposta.** `reaction` → ignorar. Demais tipos → aviso curto ("ainda não entendo áudio…")
+**sem mexer no estado**. Subtipo `interactive` desconhecido hoje é descartado sem resposta —
+tratar igual.
+
+### BL-80 — Código de acesso ao relatório no log 🟠 (P)
+
+**Arquivo:** `Router.gs:324`
+
+**O problema.** `console.log(\`💬 Texto: "${texto}" | Estado: ${estado}\`)` registra toda
+mensagem de texto, inclusive em `AGUARDANDO_CODIGO_RELATORIO` — anulando o cuidado de
+`RelatorioHandler.gs:222`, que diz para não logar a senha. Também vão para o log endereço, data de
+nascimento e valores digitados no cadastro por conversa.
+
+**Proposta.** Logar tamanho e estado, não o conteúdo; ou mascarar nos estados sensíveis.
+
+### BL-81 — A baixa age sobre a pendente errada 🟠 (M)
+
+**Arquivo:** `RelatorioHandler.gs:987-1049` (e `processarSelecaoPendente`, `:853-883`)
+
+**O problema.** Os botões `btn_confirmar_baixa`/`btn_rejeitar_baixa` têm id fixo; a devolução
+alvo vem de `pendente_devolucao_id` na sessão, que é sobrescrito a cada pendente aberta.
+
+**Cenário.** O coordenador abre A, depois B, rola a conversa e toca "Confirmar" na mensagem de A.
+Quem é confirmada é **B**. A baixa também não confere se o status ainda é Pendente (outra pessoa
+pode ter rejeitado pelo Odoo), e `processarSelecaoPendente` não confere se a comunidade da
+devolução está no acesso daquele coordenador.
+
+**Proposta.** Id do botão carrega a devolução (`btn_confirmar_baixa_<id>`); ao confirmar,
+reler e exigir status Pendente e comunidade dentro do acesso.
+
+### BL-82 — OCR corta valor sem separador de milhar 🟠 (P)
+
+**Arquivo:** `VisionService.gs:231-232` (e o caminho alternativo em `:249`)
+
+**O problema.** `\d{1,3}(?:\.\d{3})*(?:,\d{2})?` não tem delimitador no fim. "Valor: R$ 1234,56"
+casa só `123`; "R$ 10000,00" vira `100`. O BL-69 marca "Não confere" em várias situações, mas não
+nesta: o valor lido é plausível.
+
+**Proposta.** Aceitar `\d{1,3}(?:\.\d{3})+|\d+` antes da vírgula e ancorar com `(?![\d.,])`.
+Casos no harness com e sem separador.
+
+### BL-83 — Primeiro contato em hora local num campo `datetime` 🟡 (P)
+
+**Arquivo:** `OdooService.gs:1244`
+
+**O problema.** `x_studio_data_primeiro_contato` é `datetime`; o Odoo interpreta o valor recebido
+como **UTC**. O código grava `formatDate(..., 'America/Sao_Paulo', ...)`, então a tela mostra 3 h
+a menos, e contatos depois das 21h aparecem no dia anterior.
+
+**Proposta.** Formatar em `'UTC'`. Mesma família do BL-01 (campo `date` com formato errado).
+
+### BL-84 — Achados da revisão, conferidos e corrigidos ✅ (G)
+
+Os achados que os revisores apontaram e eu não tinha conferido. **Todos se confirmaram** ao ler o
+código. Cada correção tem caso no `conta-mensagens.js` que **reprova no código anterior**,
+conferido um a um; um commit por grupo na branch `fix/bl-84`.
+
+| Achado | Correção |
+|---|---|
+| `parseValorBR` colava números ("100 ou 200" → 100200), sem teto | Um número por texto; dois é ambiguidade (pede de novo). Teto de R$ 100 mil |
+| Dois comprovantes seguidos gravavam duas devoluções | Um comprovante por vez, por pessoa (marca no cache, conferida sob a trava); o segundo ouve "ainda estou analisando" |
+| Timeout **depois** do `create` pedia reenvio — e duplicava | Antes de dizer "não foi registrado", pergunta ao Odoo se a devolução acabou de ser criada |
+| `criarMembro` sem guarda contra toque duplo | Sob a trava, confere o familiar pelo nome completo na família; achando, devolve o mesmo id |
+| Oferta ou devolução Rejeitada calava o lembrete de dízimo | "Já devolveu" conta só dízimo e ignora Rejeitado |
+| Número com erro permanente ocupava o lote para sempre | Duas falhas no mês encerram as tentativas daquela pessoa |
+| Envio sem log no Odoo era repetido no degrau seguinte | Marca no cache logo após o envio + gravação do log com 3 tentativas |
+| Lote até 200 × 2 s passava do teto de 6 min | Orçamento de 4,5 min no laço; o resto sai pela repescagem |
+| Consolidado somava devoluções Rejeitadas | Rejeitadas fora de todo total; Pendentes ficam, mas aparecem à parte como "a validar" |
+| Despejo do cache apagava cadastro em andamento | A marca de início vive 2 h (o dobro da sessão); sumiu com a conversa ativa = despejo, recomeça a contagem. O limite de 60 min, com aviso, segue valendo |
+| Aviso de expiração saía em dobro | A marca "já avisei" vai antes das chamadas ao Odoo |
+| Limite de taxa da Meta (HTTP 400) não era repetido | Códigos 4, 80007, 130429 e 131056 repetem como o 429 |
+| Nome e telefone de quem oferta no log | O log da devolução leva só o que serve ao diagnóstico; o do lembrete, sem telefone |
+| Flow aceitava comunidade inexistente | Recusada no cadastro e na oferta; nome da oferta com teto de 60 |
+| "menu" no código de acesso contava como tentativa errada | Sai, sem mexer no contador; vale também no mês personalizado |
+| Admin só via 10 comunidades | Listas paginadas — e a da **oferta** cortava em 9, o que ninguém tinha visto. Hoje são 6: era latente |
+| Código PIX enviado a `api.qrserver.com` | A reserva do card manda dados + copia e cola, sem imagem: a chave pode ser CPF de pessoa física |
+| Documento qualquer com `sha256` virava "imagem" | Só vale como pista sem tipo declarado; o motivo técnico da falha sai da tela |
+
+**Adiado, de propósito:** a trava global do Apps Script, segurada durante chamadas ao Odoo, faz o
+`_comLock` desistir sob carga. É estrutural: o Apps Script só tem uma trava para tudo. Aumentar a
+espera atrasaria todo mundo. A Fase 3 do BL-74 resolve com trava por usuário no Redis — e a
+`Plataforma.trava` já pede as chaves por usuário.
+
+**Conferido e descartado:** o `flow_token` com o número de outra pessoa. Os dados são sempre
+gravados na sessão do remetente autenticado pela Meta, nunca no número do token.
+
+**Fica registrado para depois:** o número do WhatsApp (`from`) continua nos logs. É o
+identificador operacional de tudo, e mascará-lo cegaria o diagnóstico.
+
+### BL-85 — Texto enquanto o bot espera o comprovante ✅ (P)
+
+**Arquivo:** `Router.gs` (switch de `_rotearTexto`)
+
+**Achado no teste real de 24/09**, validando o BL-79. Depois dos dados de pagamento, o 👍 foi
+**enviado** como mensagem — não como reação. Um emoji sozinho é **texto** para o WhatsApp, e
+texto em `AGUARDANDO_COMPROVANTE` (ou `_FAMILIA`, `_OFERTA`) caía no `default` do Router →
+menu → estado MENU. O comprovante seguinte ouviu "Não estou esperando uma imagem". O mesmo vale
+para "já paguei", "ok", "enviando".
+
+**Correção.** Nos três estados de espera de comprovante, texto recebe um lembrete com botão Menu,
+e o estado fica onde estava. "menu" continua saindo pelo atalho de sempre.
+
+**Aceite.** Caso no `conta-mensagens.js` (três estados × "👍" e "já paguei") — reprova no código
+anterior.

@@ -1,0 +1,99 @@
+<!-- res.users · view 173 · res.users.preferences.form · base · form · prioridade 18 -->
+<form string="Users" edit="1">
+  <sheet>
+    <widget name="notification_alert"/>
+    <div class="d-flex flex-column flex-md-row align-items-center gap-3">
+      <field name="image_1920" widget="contact_image" options="{'preview_image': 'avatar_128'}"/>
+      <field name="avatar_128" invisible="1"/>
+      <!-- Needed in contact_image widget -->
+      <group class="o_form_header_details d-flex flex-column gap-md-0 w-100">
+        <label for="name" class="d-md-none"/>
+        <h1>
+          <field name="name"/>
+        </h1>
+        <label for="email" class="d-md-none"/>
+        <div name="email" class="d-flex align-items-baseline w-md-50 gap-2">
+          <i class="d-none d-md-inline-flex fa fa-fw fa-envelope" title="Email"/>
+          <field name="email" placeholder="Email"/>
+        </div>
+        <label for="phone" class="d-md-none"/>
+        <div name="phone" class="d-flex align-items-baseline w-md-50 gap-2">
+          <i class="d-none d-md-inline-flex fa fa-fw fa-phone" title="Phone"/>
+          <field name="phone" placeholder="Phone"/>
+        </div>
+      </group>
+    </div>
+    <notebook>
+      <page string="Preferences" name="preferences_page">
+        <group>
+          <group>
+            <label for="lang"/>
+            <div class="o_row">
+              <field name="lang" required="1" readonly="0"/>
+              <button type="action" name="44" class="oe_edit_only btn-sm btn-link mb4 fa fa-globe" aria-label="Add a language" groups="base.group_system" title="Add a language"/>
+            </div>
+            <field name="signature" readonly="0" options="{'codeview': true, 'height': 112, 'resizable': true}" class="o_field_border_visible"/>
+          </group>
+          <!-- This group is meant to be used in overrides -->
+          <group name="other_preferences"/>
+        </group>
+      </page>
+      <page name="calendar" string="Calendar">
+        <group>
+          <group name="calendar_preferences">
+            <field name="tz" widget="timezone_mismatch" options="{'tz_offset_field': 'tz_offset'}" readonly="0"/>
+            <field name="tz_offset" invisible="1"/>
+            <!-- needed for the timezone_mismatch widget -->
+          </group>
+          <!-- This group is meant to be used in overrides -->
+          <group name="other_calendar_preferences"/>
+        </group>
+      </page>
+      <page string="Security" name="page_security">
+        <div name="auth" class="d-flex">
+          <div class="col-7 col-sm-6 col-lg-3 d-flex flex-column">
+            <span class="o_form_label">
+              Change Password
+            </span>
+            <span class="text-muted">
+              Update if compromised.
+            </span>
+          </div>
+          <button name="preference_change_password" type="object" string="Change password" class="btn btn-secondary h-100 my-auto"/>
+        </div>
+        <div name="api_keys" class="d-lg-flex mt-3">
+          <div class="col-lg-3 d-flex flex-column">
+            <label for="api_key_wizard" string="API Keys" class="o_form_label"/>
+            <span class="text-muted">
+              Connect external services.
+            </span>
+          </div>
+          <div class="w-lg-75 d-flex flex-column my-auto">
+            <field name="api_key_ids" mode="kanban" invisible="not api_key_ids" class="w-lg-75 o_base_api_keys_kanban_view"/>
+            <div>
+              <button name="api_key_wizard" string="Add API Key" type="object" class="btn btn-secondary h-100"/>
+            </div>
+          </div>
+        </div>
+        <div class="d-lg-flex mt-3">
+          <div class="col-lg-3 d-flex flex-column">
+            <label for="action_revoke_all_devices" string="Devices" class="o_form_label"/>
+            <span class="text-muted">
+              Check if they are yours.
+            </span>
+          </div>
+          <div class="w-lg-75 d-flex flex-column my-auto">
+            <field name="session_ids" mode="kanban" class="w-lg-75 o_base_devices_kanban_view"/>
+            <div>
+              <button name="action_revoke_all_devices" type="object" string="Log out from all devices" class="btn btn-secondary h-100"/>
+            </div>
+          </div>
+        </div>
+      </page>
+    </notebook>
+    <footer>
+      <button name="preference_save" type="object" string="Update Preferences" class="btn-primary" data-hotkey="q"/>
+      <button name="preference_cancel" special="cancel" data-hotkey="x" class="btn-secondary"/>
+    </footer>
+  </sheet>
+</form>

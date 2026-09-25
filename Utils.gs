@@ -40,7 +40,33 @@ const Utils = {
   // ~100 mil em Workspace. Confirme no painel de cotas do projeto e ajuste.
   URLFETCH_COTA_DIARIA: 20000,
   URLFETCH_PREFIXO:     'uso_urlfetch_',
-  URLFETCH_SHARDS:      5,
+
+  // BL-75: eram 5. O Properties do Apps Script tem um TETO DE 50 PROPRIEDADES
+  // NA INTERFACE do editor — acima disso a lista vira somente leitura e não há
+  // como editar nem ODOO_API_KEY nem nada. Com 5 shards, 7 dias de chamadas e
+  // 6 meses de mensagens, o regime normal era ~120 propriedades: o teto seria
+  // cruzado na primeira semana, e foi.
+  //
+  // O shard existe porque `setProperties` é read-modify-write sem trava, então
+  // execuções simultâneas perdem incremento. Menos shards = mais colisão = a
+  // contagem subestima um pouco mais. É telemetria, não dinheiro, e já
+  // subestimava sob concorrência. Perder precisão aqui custa menos do que
+  // ficar trancado fora da própria configuração.
+  //
+  // Dois, e não três, porque a conta não fechava: o harness calcula o regime
+  // permanente a partir destas constantes e reprovou em 51. O número de
+  // chaves de CONFIGURAÇÃO (27) é piso — não dá para podar —, então a folga
+  // tinha de sair daqui.
+  //
+  // (O BL-74 Fase 3 troca isto por `INCR` no Redis, que é atômico de verdade
+  //  e torna o shard desnecessário.)
+  URLFETCH_SHARDS:      2,
+
+  // Por quantos dias guardar o contador de chamadas. Só HOJE é lido — por
+  // `verificarCotaUrlFetch`, que é o único leitor. O resto era histórico que
+  // ninguém consultava: 80 das ~95 chaves de contador eram só escrita.
+  // Dois dias, e não um, por causa da virada do dia no fuso de São Paulo.
+  URLFETCH_DIAS_GUARDADOS: 2,
 
   // ── Mensagens entregues ao WhatsApp (custo) ─────────────────────────────
   // Desde 01/10/2026 a Meta cobra as mensagens de serviço acima de uma
@@ -52,7 +78,13 @@ const Utils = {
   // template tem tarifa própria.
   MSG_PREFIXO:          'msgs_',
   MSG_FRANQUIA_SERVICO: 1000,
-  MSG_MESES_GUARDADOS:  6,
+  // BL-75: eram 6 meses. Pelo mesmo motivo do URLFETCH_SHARDS — e porque
+  // NENHUM leitor olha mês passado: `somarMensagensDoMes` e
+  // `verificarCotaMensagens` filtram pelo mês corrente. Guardar seis meses
+  // custava 60 propriedades para servir 10.
+  // Dois, e não um, para a virada do mês não apagar o número antes de alguém
+  // conferir a fatura.
+  MSG_MESES_GUARDADOS:  2,
 
   // Contadores da execução atual. Cada execução do Apps Script roda num
   // contexto JS próprio, então isto zera sozinho a cada disparo — é por
@@ -95,7 +127,7 @@ const Utils = {
 
       try {
         this._chamadasExternas++;   // BL-25: conta cada tentativa real
-        resposta = UrlFetchApp.fetch(url, options);
+        resposta = Plataforma.http.fetch(url, options);
       } catch (e) {
         excecao = e;
       }
@@ -109,7 +141,8 @@ const Utils = {
         else                             this._mensagensServico++;
       }
 
-      const repetir = code === 429 || ((excecao || code >= 500) && idempotente);
+      const repetir = code === 429 || this._limiteDeTaxaDaMeta(resposta) ||
+                      ((excecao || code >= 500) && idempotente);
 
       if (!repetir) break;
 
@@ -127,7 +160,7 @@ const Utils = {
         console.warn(`⏳ [${rotulo}] Falha transitória ` +
                      `(${excecao ? excecao.message : 'HTTP ' + code}) — ` +
                      `tentativa ${tentativa}/${this.RETRY_MAX_TENTATIVAS}, aguardando ${espera}ms`);
-        Utilities.sleep(espera);
+        Plataforma.relogio.dormir(espera);
       } else {
         console.error(`❌ [${rotulo}] Esgotadas as ${this.RETRY_MAX_TENTATIVAS} tentativas.`);
       }
@@ -135,6 +168,29 @@ const Utils = {
 
     if (excecao) throw excecao;
     return resposta;
+  },
+
+  /**
+   * A Meta disse "devagar"? (BL-84)
+   *
+   * O WhatsApp quase nunca responde 429: o limite de taxa vem como HTTP 400,
+   * com o motivo no corpo. Sem isto, o único caso em que repetir um ENVIO é
+   * seguro — a recusa acontece antes de processar, então nada duplica — virava
+   * perda silenciosa de mensagem.
+   *   4       muitas chamadas do app
+   *   80007   limite da conta (WABA)
+   *   130429  limite de vazão do número
+   *   131056  muitas mensagens para o mesmo destinatário
+   * @private
+   */
+  _limiteDeTaxaDaMeta(resposta) {
+    if (!resposta || resposta.getResponseCode() !== 400) return false;
+    try {
+      const codigo = (JSON.parse(resposta.getContentText()).error || {}).code;
+      return [4, 80007, 130429, 131056].indexOf(codigo) >= 0;
+    } catch (e) {
+      return false;   // corpo que não é JSON não é o limite da Meta
+    }
   },
 
   /**
@@ -162,7 +218,7 @@ const Utils = {
     if (!chamadas && !servico && !template) return;
 
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
       const shard = Math.floor(Math.random() * this.URLFETCH_SHARDS);
       const mes   = this._mesAtual();
 
@@ -250,7 +306,7 @@ const Utils = {
    * @returns {{servico: number, template: number, mes: string}}
    */
   somarMensagensDoMes() {
-    const todas = PropertiesService.getScriptProperties().getProperties();
+    const todas = Plataforma.propriedades.getProperties();
     const mes   = this._mesAtual();
     let servico = 0, template = 0;
 
@@ -275,7 +331,7 @@ const Utils = {
    */
   verificarCotaMensagens(todasProps) {
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
       const mes   = this._mesAtual();
       let servico = 0, template = 0;
 
@@ -306,7 +362,7 @@ const Utils = {
 
   verificarCotaUrlFetch(todasProps) {
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
 
       const total = this._somarShards({
         props,
@@ -314,7 +370,7 @@ const Utils = {
         prefixo: this.URLFETCH_PREFIXO,
         tamanho: 10,                    // yyyy-MM-dd
         atual:   this._hoje(),
-        corte:   this._hoje(new Date(Date.now() - 7 * 86400000))
+        corte:   this._hoje(new Date(Date.now() - this.URLFETCH_DIAS_GUARDADOS * 86400000))
       });
 
       const pct = Math.round((total / this.URLFETCH_COTA_DIARIA) * 100);
@@ -331,7 +387,7 @@ const Utils = {
 
   /** Data em America/Sao_Paulo no formato yyyy-MM-dd. @private */
   _hoje(data) {
-    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
+    return Plataforma.relogio.formatar(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
   },
 
   /**
@@ -351,7 +407,7 @@ const Utils = {
    * `console.warn`. O bot funcionava; só a medição estava morta.
    */
   _mesAtual(data) {
-    return Utilities.formatDate(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
+    return Plataforma.relogio.formatar(data || new Date(), 'America/Sao_Paulo', 'yyyy-MM');
   },
 
   /**
@@ -501,11 +557,11 @@ const Utils = {
   estaBloqueado(from) {
     const chave = `${this.BLOQUEIO_PREFIXO}${from}`;
     try {
-      const cache    = CacheService.getScriptCache();
+      const cache    = Plataforma.cache;
       const cacheado = cache.get(chave);
       if (cacheado !== null) return cacheado === '1';
 
-      const bloqueado = !!PropertiesService.getScriptProperties().getProperty(chave);
+      const bloqueado = !!Plataforma.propriedades.getProperty(chave);
       cache.put(chave, bloqueado ? '1' : '0', bloqueado ? 3600 : 300);
       return bloqueado;
     } catch (e) {
@@ -531,7 +587,7 @@ const Utils = {
    */
   marcarSuspeito(from) {
     try {
-      const props = PropertiesService.getScriptProperties();
+      const props = Plataforma.propriedades;
       const chave = `${this.SUSPEITO_PREFIXO}${from}`;
       const hoje  = this._hoje();
 
@@ -558,11 +614,11 @@ const Utils = {
 
   excedeuTaxa(from) {
     try {
-      const props  = PropertiesService.getScriptProperties();
+      const props  = Plataforma.propriedades;
       const porMin = parseInt(props.getProperty('LIMITE_MSG_MINUTO'), 10) || this.LIMITE_MSG_MINUTO_PADRAO;
       const porHora = parseInt(props.getProperty('LIMITE_MSG_HORA'), 10) || this.LIMITE_MSG_HORA_PADRAO;
 
-      const cache = CacheService.getScriptCache();
+      const cache = Plataforma.cache;
       const agora = Date.now();
 
       // A chave inclui o BALDE de tempo. Isso não é detalhe: `cache.put` renova
@@ -634,18 +690,29 @@ const Utils = {
    * sem vírgula, ponto seguido de 3 dígitos também é milhar ("1.000"); ponto
    * isolado é decimal ("50.00").
    *
+   * BL-84: só UM número por texto, e com teto. A versão anterior apagava tudo
+   * que não fosse dígito e colava o resto: "100 ou 200" virava 100200 e
+   * "entre 50 e 100" virava 50100 — e esse valor ia para o cadastro, o card
+   * PIX e o lembrete mensal. Dois números é ambiguidade: devolve null e o
+   * chamador pede de novo, que é o que ele já faz para texto inválido.
+   *
    * @param {string|number} texto
    * @returns {number|null} null se não for um valor positivo válido.
    */
   parseValorBR(texto) {
-    let t = String(texto == null ? '' : texto).replace(/[^\d.,]/g, '');
+    const numeros = String(texto == null ? '' : texto).match(/\d(?:[\d.,]*\d)?/g) || [];
+    if (numeros.length !== 1) return null;
+
+    let t = numeros[0];
     if (t.indexOf(',') >= 0) {
       t = t.replace(/\./g, '').replace(',', '.');
     } else if (/\.\d{3}(\.\d{3})*$/.test(t)) {
       t = t.replace(/\./g, '');
     }
     const valor = parseFloat(t);
-    return (isNaN(valor) || valor <= 0) ? null : valor;
+    // Acima de R$ 100 mil é quase certamente digitação ("5000000" por
+    // "50,00"). Um valor real desse tamanho a secretaria registra à mão.
+    return (isNaN(valor) || valor <= 0 || valor > 100000) ? null : valor;
   },
 
   /**
@@ -1139,6 +1206,25 @@ const Utils = {
    * @param {string} dataOdoo - Ex: "2025-03-15"
    * @returns {string} Ex: "15/03/2025"
    */
+  /**
+   * 'aaaa-mm-01' → 'setembro/2026'. (BL-62)
+   *
+   * A competência é uma data no Odoo, e o dia dela é sempre 1º — ele não
+   * significa nada. Mostrar "01/09/2026" a quem devolveu o dízimo faria a
+   * pessoa procurar o que aconteceu naquele dia. O mês é o dado.
+   *
+   * @param {string} competencia - 'aaaa-mm-dd'
+   * @returns {string}
+   */
+  mesPorExtenso(competencia) {
+    const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+                   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const m = String(competencia || '').match(/^(\d{4})-(\d{2})/);
+    if (!m) return String(competencia || '');
+    const mes = MESES[Number(m[2]) - 1];
+    return mes ? `${mes}/${m[1]}` : String(competencia);
+  },
+
   formatarDataOdoo(dataOdoo) {
     if (!dataOdoo) return '—';
     const partes = dataOdoo.split('-');

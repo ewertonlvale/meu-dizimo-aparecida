@@ -1,0 +1,7 @@
+<!-- x_parametros · view 614 · Default search view for x_parametros · base · search · prioridade 16 -->
+<search>
+  <field name="x_name"/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_parametros" domain="[['x_active', '=', False]]"/>
+  <separator/>
+</search>

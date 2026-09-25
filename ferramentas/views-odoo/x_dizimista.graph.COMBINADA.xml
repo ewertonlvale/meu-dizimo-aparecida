@@ -1,0 +1,6 @@
+<!-- x_dizimista · graph combinada (via get_view) · view 598
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<graph sample="1">
+  <field name="x_studio_value" type="measure"/>
+  <field name="x_studio_data_cadastro" type="col"/>
+</graph>

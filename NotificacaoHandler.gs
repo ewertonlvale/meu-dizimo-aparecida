@@ -19,7 +19,7 @@ const NotificacaoHandler = {
     const config = getConfig();  // ✅ CORRIGido: buscar config dinamicamente
 
     console.log(`📤 [Notif] Enviando template "${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}" ` +
-                `para dizimista id=${dizimista.id} (${dizimista.x_name}) fone=${dizimista.x_studio_partner_phone}`);
+                `para dizimista id=${dizimista.id} (${dizimista.x_name})`);   // BL-84: sem o telefone
 
     const payload = {
       messaging_product: "whatsapp",
@@ -105,42 +105,136 @@ const NotificacaoHandler = {
 // SCHEDULER - ROTINA DIÁRIA
 // ============================================================================
 
-// Janela de envio (horário útil). Como o acionador roda de hora em hora, isto
-// evita mandar lembrete de madrugada — fora da janela a rotina roda mas não envia.
-// Ajuste conforme a preferência da paróquia.
-const NOTIF_HORA_INICIO = 8;   // inclusive
-const NOTIF_HORA_FIM    = 20;  // exclusivo (envia até as 19h59)
+/**
+ * Os quatro números do escalonamento, lidos do Odoo. (BL-73)
+ *
+ * Vêm de `x_parametros`; o padrão de fábrica é NOTIFICACAO_PADRAO, em
+ * Config.gs, e vale enquanto os campos não existirem, vierem vazios ou
+ * vierem fora da faixa de NOTIFICACAO_LIMITES.
+ *
+ * FALHA DE LEITURA NÃO PARA O DISPARO. Se o Odoo não responder, o lembrete
+ * do mês não pode deixar de sair por causa disso — sai com o padrão, que é
+ * conservador por construção (janela curta, lote pequeno). O oposto seria
+ * pior: uma instabilidade de rede às 9h suprimiria o disparo do dia inteiro.
+ *
+ * `horaFim <= horaInicio` é a única combinação que se rejeita como conjunto:
+ * cada número sozinho estaria na faixa, mas juntos fecham a janela e nunca
+ * mais sai lembrete nenhum — em silêncio, que é o jeito ruim de quebrar.
+ *
+ * @returns {{horaInicio:number, horaFim:number, intervaloHoras:number, lote:number, ajustes:string[]}}
+ */
+function lerEscalonamentoNotificacao() {
+  const cfg = {
+    horaInicio:     NOTIFICACAO_PADRAO.horaInicio,
+    horaFim:        NOTIFICACAO_PADRAO.horaFim,
+    intervaloHoras: NOTIFICACAO_PADRAO.intervaloHoras,
+    lote:           NOTIFICACAO_PADRAO.lote,
+    ajustes:        []
+  };
+
+  const CAMPOS = {
+    horaInicio:     'x_studio_notif_hora_inicio',
+    horaFim:        'x_studio_notif_hora_fim',
+    intervaloHoras: 'x_studio_notif_intervalo',
+    lote:           'x_studio_notif_lote'
+  };
+
+  let p;
+  try {
+    p = OdooService.buscarParametros() || {};
+  } catch (e) {
+    cfg.ajustes.push(`não li x_parametros (${e.message}) — tudo no padrão de fábrica`);
+    return cfg;
+  }
+
+  Object.keys(CAMPOS).forEach((chave) => {
+    const bruto = p[CAMPOS[chave]];
+    // Campo ausente, nulo ou vazio: silêncio. É o caso normal enquanto o
+    // instalador não rodou, e não merece linha de log a cada hora.
+    if (bruto === undefined || bruto === null || bruto === false || bruto === '') return;
+
+    const valor = Number(bruto);
+    const lim   = NOTIFICACAO_LIMITES[chave];
+    if (!Number.isFinite(valor) || !Number.isInteger(valor) || valor < lim.min || valor > lim.max) {
+      cfg.ajustes.push(`${CAMPOS[chave]}="${bruto}" fora de ${lim.min}..${lim.max} — usando ${cfg[chave]}`);
+      return;
+    }
+    cfg[chave] = valor;
+  });
+
+  if (cfg.horaFim <= cfg.horaInicio) {
+    cfg.ajustes.push(`janela ${cfg.horaInicio}h–${cfg.horaFim}h é vazia — voltando ao padrão ` +
+                     `${NOTIFICACAO_PADRAO.horaInicio}h–${NOTIFICACAO_PADRAO.horaFim}h`);
+    cfg.horaInicio = NOTIFICACAO_PADRAO.horaInicio;
+    cfg.horaFim    = NOTIFICACAO_PADRAO.horaFim;
+  }
+
+  return cfg;
+}
+
+/**
+ * Esta hora é hora de disparar um lote? (BL-73)
+ *
+ * Duas perguntas, nesta ordem, e a segunda é a que o BL-73 acrescentou:
+ *
+ *   1. Está dentro da janela? (`horaInicio <= hora < horaFim`)
+ *   2. Esta hora é um DEGRAU do escalonamento? Com início 9h e intervalo 2h,
+ *      os degraus são 9, 11, 13, 15 — as horas 10, 12 e 14 caem na janela e
+ *      mesmo assim não disparam. É o que transforma "de hora em hora" em
+ *      "de duas em duas horas" sem trocar o acionador.
+ *
+ * POR QUE NÃO MUDAR O ACIONADOR PARA `everyHours(2)`: porque o intervalo
+ * passaria a morar no Apps Script, e mudá-lo exigiria alguém abrir o editor
+ * e reinstalar o acionador. O pedido era que TODOS os parâmetros fossem
+ * configuráveis — o que só se sustenta se a decisão for tomada aqui, a cada
+ * execução, com o número que está no Odoo agora.
+ *
+ * O preço são as execuções que acordam e não fazem nada (10h, 12h, 14h...).
+ * Cada uma custa uma leitura de `x_parametros` e termina. É barato, e é o que
+ * paga a configurabilidade.
+ *
+ * @param {number} hora - 0..23, no fuso da paróquia
+ * @param {Object} cfg - o que `lerEscalonamentoNotificacao` devolveu
+ * @returns {{disparar: boolean, motivo: string}}
+ */
+function ehHoraDeDisparar(hora, cfg) {
+  const janela = `${cfg.horaInicio}h–${cfg.horaFim}h`;
+
+  if (hora < cfg.horaInicio || hora >= cfg.horaFim) {
+    return { disparar: false, motivo: `fora da janela (${hora}h; envia ${janela})` };
+  }
+
+  const degraus = [];
+  for (let h = cfg.horaInicio; h < cfg.horaFim; h += cfg.intervaloHoras) degraus.push(h);
+
+  if ((hora - cfg.horaInicio) % cfg.intervaloHoras !== 0) {
+    return {
+      disparar: false,
+      motivo: `${hora}h não é degrau do escalonamento (a cada ${cfg.intervaloHoras}h: ` +
+              `${degraus.map((h) => h + 'h').join(', ')})`
+    };
+  }
+
+  return {
+    disparar: true,
+    motivo: `degrau de ${hora}h (janela ${janela}, a cada ${cfg.intervaloHoras}h, até ` +
+            `${cfg.lote} por disparo — ${degraus.length} disparo(s) por dia, ` +
+            `no máximo ${degraus.length * cfg.lote} lembrete(s))`
+  };
+}
 
 function executarNotificacoesDiarias() {
   const t0 = Date.now();
-  const agora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  const agora = Plataforma.relogio.formatar(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
   console.log(`━━━━━━ [Notif] INÍCIO da rotina de notificações — ${agora} (${TIMEZONE}) ━━━━━━`);
 
-  // Só envia em horário útil (evita lembrete de madrugada com o acionador horário).
-  const horaAtual = Number(Utilities.formatDate(new Date(), TIMEZONE, 'H'));
-  if (horaAtual < NOTIF_HORA_INICIO || horaAtual >= NOTIF_HORA_FIM) {
-    console.log(`🌙 [Notif] Fora da janela de envio (${horaAtual}h; envia ${NOTIF_HORA_INICIO}h–${NOTIF_HORA_FIM}h) — encerrando sem enviar.`);
-    return;
-  }
-
   try {
-    // Etapa 0: diagnóstico de configuração (sem expor segredos)
-    try {
-      const cfg = getConfig();
-      console.log(`🔧 [Notif] Config OK — phoneId=${cfg.WHATSAPP_PHONE_ID} ` +
-                  `token=${cfg.WHATSAPP_TOKEN ? 'presente' : 'AUSENTE'} ` +
-                  `template="${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}"`);
-    } catch (eCfg) {
-      console.error(`❌ [Notif] Config inválida: ${eCfg.message}`);
-      throw eCfg;
-    }
-
-    // Etapa 1: interruptor global via Script Property NOTIFICACOES_ATIVAS.
+    // Etapa 0: interruptor global via Script Property NOTIFICACOES_ATIVAS.
     // Padrão: ATIVADO (ausente = ligado). Para desligar, defina
     // NOTIFICACOES_ATIVAS = 'false' em Script Properties.
     // (Antes lia de x_parametros_line, modelo inexistente no Odoo, o que poluía
     //  o log com um erro a cada execução — agora sem consulta que falha.)
-    const flagNotif = PropertiesService.getScriptProperties().getProperty('NOTIFICACOES_ATIVAS');
+    const flagNotif = Plataforma.propriedades.getProperty('NOTIFICACOES_ATIVAS');
     const desligado = ['false', '0', 'nao', 'não', 'off', 'desativado']
       .indexOf(String(flagNotif || '').trim().toLowerCase()) >= 0;
 
@@ -152,34 +246,77 @@ function executarNotificacoesDiarias() {
       return;
     }
 
-    // Etapa 2: selecionar elegíveis
+    // Etapa 1: o escalonamento (BL-73). O acionador roda de hora em hora; é
+    // aqui que se decide se ESTA hora dispara um lote, e de que tamanho.
+    // Vem antes do diagnóstico de credenciais de propósito: 20 das 24
+    // execuções do dia terminam neste ponto, e não faz sentido gastar log
+    // com configuração de WhatsApp numa execução que não vai enviar nada.
+    const esc = lerEscalonamentoNotificacao();
+    esc.ajustes.forEach((a) => console.warn(`⚠️ [Notif] parâmetro: ${a}`));
+
+    const horaAtual = Number(Plataforma.relogio.formatar(new Date(), TIMEZONE, 'H'));
+    const degrau = ehHoraDeDisparar(horaAtual, esc);
+    if (!degrau.disparar) {
+      console.log(`🌙 [Notif] ${degrau.motivo} — encerrando sem enviar.`);
+      return;
+    }
+    console.log(`⏱️ [Notif] ${degrau.motivo}`);
+
+    // Etapa 2: diagnóstico de configuração (sem expor segredos)
+    try {
+      const cfg = getConfig();
+      console.log(`🔧 [Notif] Config OK — phoneId=${cfg.WHATSAPP_PHONE_ID} ` +
+                  `token=${cfg.WHATSAPP_TOKEN ? 'presente' : 'AUSENTE'} ` +
+                  `template="${CONFIG.TEMPLATES.LEMBRETE_DEVOLUCAO}"`);
+    } catch (eCfg) {
+      console.error(`❌ [Notif] Config inválida: ${eCfg.message}`);
+      throw eCfg;
+    }
+
+    // Etapa 3: selecionar elegíveis — no MÁXIMO `esc.lote`.
     let dizimistasParaNotificar;
     try {
-      dizimistasParaNotificar = buscarDizimistasElegiveis();
+      dizimistasParaNotificar = buscarDizimistasElegiveis(esc.lote);
     } catch (eBusca) {
       console.error(`❌ [Notif] Falha ao buscar dizimistas elegíveis: ${eBusca.message}`);
       if (eBusca.stack) console.error(`❌ [Notif] Stack: ${eBusca.stack}`);
       throw eBusca;
     }
 
-    console.log(`📊 [Notif] ${dizimistasParaNotificar.length} dizimista(s) elegível(is) hoje.`);
+    console.log(`📊 [Notif] ${dizimistasParaNotificar.length} dizimista(s) neste lote ` +
+                `(teto de ${esc.lote}).`);
     if (dizimistasParaNotificar.length === 0) {
-      console.log('✅ [Notif] Nenhum dizimista para notificar hoje — encerrando.');
+      console.log('✅ [Notif] Ninguém a notificar neste disparo — encerrando.');
       return;
     }
 
-    // Etapa 3: enviar
+    // Etapa 4: enviar
     let sucessos = 0;
     let erros    = 0;
     const falhas = [];
 
-    dizimistasParaNotificar.forEach((dizimista, index) => {
+    for (let index = 0; index < dizimistasParaNotificar.length; index++) {
+      const dizimista = dizimistasParaNotificar[index];
+
+      if (index > 0) Plataforma.relogio.dormir(2000);  // Delay de 2s entre envios (rate limit)
+
+      // BL-84: para antes do teto de 6 min do Apps Script — conferido DEPOIS
+      // da pausa, que é quando o envio aconteceria. O resto do lote não se
+      // perde: a repescagem o pega no próximo degrau.
+      if (Date.now() - t0 > NOTIFICACAO_ORCAMENTO_MS) {
+        console.warn(`⏱️ [Notif] Orçamento de tempo esgotado após ${index} envio(s) — ` +
+                     `${dizimistasParaNotificar.length - index} ficam para o próximo degrau.`);
+        break;
+      }
+
       console.log(`➡️ [Notif] (${index + 1}/${dizimistasParaNotificar.length}) ` +
                   `id=${dizimista.id} ${dizimista.x_name}`);
       try {
-        if (index > 0) Utilities.sleep(2000);  // Delay de 2s entre envios (rate limit)
-
         NotificacaoHandler.enviarLembreteSimples(dizimista);
+        // BL-84: a marca vem ANTES do log. Se a gravação no Odoo falhar, o
+        // log não existe e o próximo degrau lembraria a pessoa de novo — a
+        // marca local segura o dia (6 h, o máximo do cache).
+        Plataforma.cache.put(_chaveNotificado(dizimista.id), '1', 21600);
         registrarLogNotificacao(dizimista.id, 'sucesso', null);
         sucessos++;
       } catch (erro) {
@@ -188,10 +325,15 @@ function executarNotificacoesDiarias() {
         falhas.push(`${dizimista.id}:${dizimista.x_name}`);
         erros++;
       }
-    });
+    }
 
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
-    console.log(`━━━━━━ [Notif] FIM — ${sucessos} sucesso(s), ${erros} erro(s) em ${dt}s ━━━━━━`);
+    // Lote cheio quer dizer que provavelmente sobrou gente para o próximo
+    // degrau — dizer isso no log evita a leitura errada de que só havia 20.
+    const sobra = (sucessos + erros) >= esc.lote
+      ? ' — lote cheio, o resto sai no próximo degrau'
+      : '';
+    console.log(`━━━━━━ [Notif] FIM — ${sucessos} sucesso(s), ${erros} erro(s) em ${dt}s${sobra} ━━━━━━`);
     if (erros > 0) console.error(`❌ [Notif] Falharam: ${falhas.join(', ')}`);
 
   } catch (erro) {
@@ -209,64 +351,109 @@ function executarNotificacoesDiarias() {
 // FUNÇÕES AUXILIARES
 // ============================================================================
 
-function buscarDizimistasElegiveis() {
+/**
+ * Quem recebe lembrete NESTE disparo — no máximo `limite`. (BL-73)
+ *
+ * O `limite` não é um corte aplicado no fim: é uma PARADA. A seleção percorre
+ * os candidatos em ordem e para assim que enche o lote. A diferença não é
+ * cosmética — cada candidato custa duas consultas ao Odoo (`jaFoiNotificado`
+ * e `jaDevolveu`), então filtrar 500 pessoas para depois jogar 480 fora
+ * gastaria ~1000 RPCs e minutos de execução para enviar 20 mensagens. Com a
+ * parada, o custo é proporcional ao lote, não ao tamanho da paróquia.
+ *
+ * O ARRASTO FUNCIONA porque quem já foi notificado sai da conta no disparo
+ * seguinte (`jaFoiNotificadoEsteMes`) e porque a repescagem notifica a PARTIR
+ * do dia de notificação, não só nele: os que sobraram continuam elegíveis
+ * amanhã. Ninguém é perdido por ficar de fora de um lote — só adiado.
+ *
+ * A ORDEM é `dia_preferido asc, id asc`, e é ela que garante justiça: quem
+ * venceu primeiro é notificado primeiro, e o desempate por id é estável, de
+ * modo que a fila não embaralha entre disparos.
+ *
+ * @param {number} [limite] - teto do lote; sem ele, vale NOTIFICACAO_PADRAO.lote
+ * @returns {Array<Object>}
+ */
+function buscarDizimistasElegiveis(limite) {
+  const teto = (Number.isInteger(limite) && limite > 0)
+    ? limite
+    : NOTIFICACAO_PADRAO.lote;
+
   const hoje = new Date();
   const diaHoje = hoje.getDate();
   const mesAtual = hoje.getMonth() + 1;
   const anoAtual = hoje.getFullYear();
-  
+
   const filtros = [
     ['x_active', '=', true],
     ['x_studio_notificacao_ativa', '=', true]
   ];
-  
+
   const dizimistas = OdooService.searchRead(
     'x_dizimista',
     ['x_name', 'x_studio_partner_phone', 'x_studio_value', 'x_studio_dia_preferido'],
     filtros,
-    { limit: false }
+    { limit: false, order: 'x_studio_dia_preferido asc, id asc' }
   );
 
   console.log(`🔎 [Notif] ${dizimistas.length} dizimista(s) ativo(s) com notificação ligada. ` +
-              `Hoje é dia ${diaHoje} (${mesAtual}/${anoAtual}).`);
+              `Hoje é dia ${diaHoje} (${mesAtual}/${anoAtual}). Lote de até ${teto}.`);
 
-  const elegiveis = dizimistas.filter(d => {
+  const elegiveis = [];
+  let examinados = 0;
+
+  for (let i = 0; i < dizimistas.length; i++) {
+    if (elegiveis.length >= teto) {
+      console.log(`⏹️ [Notif] Lote cheio (${teto}) após examinar ${examinados} de ` +
+                  `${dizimistas.length} — o restante fica para o próximo disparo.`);
+      break;
+    }
+
+    const d = dizimistas[i];
     const diaVencimento  = d.x_studio_dia_preferido || 10;
     const diaNotificacao = calcularDiaNotificacao(diaVencimento);
 
     // Repescagem: notifica a PARTIR do dia de notificação (não só no dia exato).
-    // Se um disparo diário atrasar/pular a janela, o grupo é recuperado no dia
-    // seguinte — a deduplicação (jaFoiNotificadoEsteMes) garante um único envio
-    // por mês, e jaDevolveueEsteMes evita lembrar quem já devolveu.
+    // Se um disparo atrasar, pular a janela ou não couber no lote, o grupo é
+    // recuperado no disparo seguinte — a deduplicação (jaFoiNotificadoEsteMes)
+    // garante um único envio por mês, e jaDevolveueEsteMes evita lembrar quem
+    // já devolveu.
+    //
+    // NÃO conta como "examinado": este teste é local, não custa RPC nenhuma.
+    // Com a ordem por dia_preferido, os que ainda não venceram estão todos no
+    // fim da lista — mas não se pode PARAR aqui, porque o teto de 28 dias do
+    // `calcularDiaNotificacao` faz dias preferidos diferentes caírem no mesmo
+    // dia de notificação, e a ordenação é pelo dia preferido, não por ele.
     if (diaHoje < diaNotificacao) {
-      return false;   // ainda não chegou o dia deste dizimista
+      continue;   // ainda não chegou o dia deste dizimista
     }
+
+    examinados++;
 
     // A partir daqui é candidato — logamos cada decisão.
     if (!d.x_studio_partner_phone) {
       console.warn(`⚠️ [Notif] id=${d.id} (${d.x_name}) SEM telefone — pulando.`);
-      return false;
+      continue;
     }
 
     try {
       if (jaFoiNotificadoEsteMes(d.id, mesAtual, anoAtual)) {
         console.log(`⏭️ [Notif] id=${d.id} (${d.x_name}) já notificado este mês — pulando.`);
-        return false;
+        continue;
       }
       if (jaDevolveueEsteMes(d.id, mesAtual, anoAtual)) {
         console.log(`⏭️ [Notif] id=${d.id} (${d.x_name}) já devolveu este mês — pulando.`);
-        return false;
+        continue;
       }
     } catch (e) {
       // Erro ao consultar histórico no Odoo: não abortar a rotina inteira nem
       // arriscar notificação indevida — pula este e registra para análise.
       console.error(`❌ [Notif] Erro ao checar histórico de id=${d.id} (${d.x_name}): ${e.message} — pulando por segurança.`);
-      return false;
+      continue;
     }
 
     console.log(`✔️ [Notif] id=${d.id} (${d.x_name}) elegível (dia preferido ${diaVencimento}).`);
-    return true;
-  });
+    elegiveis.push(d);
+  }
 
   return elegiveis;
 }
@@ -281,28 +468,58 @@ function calcularDiaNotificacao(diaVencimento) {
   return diaNotificacao;
 }
 
-function jaFoiNotificadoEsteMes(dizimistaId, mes, ano) {
-  const mesReferencia = `${ano}-${mes.toString().padStart(2, '0')}`;
-  
-  const logs = OdooService.count('x_notificacao_log', [
-    ['x_studio_dizimista', '=', dizimistaId],
-    ['x_studio_mes_referencia', '=', mesReferencia],
-    ['x_studio_tipo', '=', 'lembrete'],
-    ['x_studio_status_envio', '=', 'sucesso']
-  ]);
-
-  return logs > 0;
+/** Marca local de "lembrete enviado", por pessoa e mês (BL-84). @private */
+function _chaveNotificado(dizimistaId) {
+  return `notif_ok_${dizimistaId}_${getMesReferenciaAtual()}`;
 }
 
+/**
+ * Já foi tratado este mês? Sim se houve um envio com sucesso — ou se já
+ * falhou NOTIFICACAO_MAX_FALHAS_MES vezes (BL-84: o número com erro
+ * permanente não pode ocupar o lote para sempre).
+ *
+ * A marca do cache vem primeiro: cobre o envio que saiu mas cujo log não
+ * chegou ao Odoo, e não custa RPC.
+ */
+function jaFoiNotificadoEsteMes(dizimistaId, mes, ano) {
+  const mesReferencia = `${ano}-${mes.toString().padStart(2, '0')}`;
+  if (Plataforma.cache.get(`notif_ok_${dizimistaId}_${mesReferencia}`)) return true;
+
+  const logs = OdooService.searchRead('x_notificacao_log', ['x_studio_status_envio'], [
+    ['x_studio_dizimista', '=', dizimistaId],
+    ['x_studio_mes_referencia', '=', mesReferencia],
+    ['x_studio_tipo', '=', 'lembrete']
+  ], { limit: 20 }) || [];
+
+  if (logs.some(l => l.x_studio_status_envio === 'sucesso')) return true;
+
+  const falhas = logs.filter(l => l.x_studio_status_envio === 'erro').length;
+  if (falhas >= NOTIFICACAO_MAX_FALHAS_MES) {
+    console.warn(`⚠️ [Notif] id=${dizimistaId}: ${falhas} falha(s) de envio este mês — ` +
+                 `não tento mais. Confira o telefone no cadastro.`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Já devolveu o DÍZIMO este mês? (BL-84)
+ *
+ * Contava qualquer x_devolucao: uma OFERTA no mês calava o lembrete do dízimo,
+ * e uma devolução REJEITADA — que é dinheiro que não chegou à paróquia, por
+ * exemplo chave errada — também. É o mesmo filtro de tipo do
+ * `OdooService.devolucoesDoMes`.
+ */
 function jaDevolveueEsteMes(dizimistaId, mes, ano) {
   const primeiroDia = new Date(ano, mes - 1, 1).toISOString().split('T')[0];
   const ultimoDia = new Date(ano, mes, 0).toISOString().split('T')[0];
-  
-  const devolucoes = OdooService.count('x_devolucao', [
+
+  const devolucoes = OdooService.count('x_devolucao', OdooService._comTipo([
     ['x_studio_dizimista', '=', dizimistaId],
     ['x_studio_data_da_devolucao', '>=', primeiroDia],
-    ['x_studio_data_da_devolucao', '<=', ultimoDia]
-  ]);
+    ['x_studio_data_da_devolucao', '<=', ultimoDia],
+    ['x_studio_status', '!=', 'Rejeitado']
+  ], 'dizimo'));
 
   return devolucoes > 0;
 }
@@ -319,19 +536,29 @@ function registrarLogNotificacao(dizimistaId, status, mensagemErro) {
     // x_studio_data_envio é um campo DATE no Odoo → precisa de 'yyyy-MM-dd'.
     // Antes gravava toISOString() (datetime ISO), o que o Odoo rejeitava e
     // impedia o registro do log (quebrando a deduplicação).
-    x_studio_data_envio: Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'),
+    x_studio_data_envio: Plataforma.relogio.formatar(hoje, TIMEZONE, 'yyyy-MM-dd'),
     x_studio_mes_referencia: mesReferencia,
     x_studio_status_envio: status,
     x_studio_mensagem_erro: mensagemErro || false
   };
   
-  try {
-    const logId = OdooService.create('x_notificacao_log', payload);
-    console.log(`🗒️ [Notif] Log gravado no Odoo (id=${logId}) — dizimista=${dizimistaId} status=${status} ref=${mesReferencia}`);
-  } catch (erro) {
-    // Não relança: a falha em registrar o log não deve derrubar o envio.
-    console.error(`❌ [Notif] Falha ao gravar log no Odoo (dizimista=${dizimistaId} status=${status}): ${erro.message}`);
+  // BL-84: três tentativas. O log é a deduplicação do mês — sem ele, a pessoa
+  // é lembrada de novo. O `create` não se repete sozinho (não é idempotente),
+  // e aqui repetir é seguro: um log duplicado não faz mal nenhum; um log
+  // ausente manda uma mensagem a mais.
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const logId = OdooService.create('x_notificacao_log', payload);
+      console.log(`🗒️ [Notif] Log gravado no Odoo (id=${logId}) — dizimista=${dizimistaId} status=${status} ref=${mesReferencia}`);
+      return true;
+    } catch (erro) {
+      // Não relança: a falha em registrar o log não deve derrubar o envio.
+      console.error(`❌ [Notif] Falha ao gravar log no Odoo (tentativa ${tentativa}/3, ` +
+                    `dizimista=${dizimistaId} status=${status}): ${erro.message}`);
+      if (tentativa < 3) Plataforma.relogio.dormir(1000);
+    }
   }
+  return false;
 }
 
 function getMesReferenciaAtual() {
@@ -346,9 +573,14 @@ function getMesReferenciaAtual() {
 // ============================================================================
 
 /**
- * Instala o acionador que dispara os lembretes DE HORA EM HORA.
- * A própria executarNotificacoesDiarias decide quem notificar (dia preferido de
- * cada dizimista + repescagem) e só envia em horário útil (NOTIF_HORA_INICIO/FIM).
+ * Instala o acionador que acorda a rotina DE HORA EM HORA.
+ *
+ * DE HORA EM HORA NÃO É A CADENA DE ENVIO. Quem decide se a execução dispara
+ * um lote é `ehHoraDeDisparar`, com a janela e o intervalo que estão em
+ * `x_parametros` naquele momento (BL-73). O acionador é só o despertador; o
+ * horário está no Odoo, e mudá-lo lá NÃO exige rodar isto de novo — que é o
+ * ponto de tê-lo lá.
+ *
  * A deduplicação mensal garante um único envio por dizimista — desde que o log
  * (x_notificacao_log) esteja gravando; confirme com testarGravacaoLog.
  *
@@ -358,22 +590,21 @@ function getMesReferenciaAtual() {
 function instalarTriggerNotificacoes() {
   removerTriggerNotificacoes();
 
-  ScriptApp.newTrigger('executarNotificacoesDiarias')
-    .timeBased()
-    .everyHours(1)     // de hora em hora; o envio só ocorre em horário útil (ver NOTIF_HORA_*)
-    .create();
+  // De hora em hora: é despertador; o disparo em si obedece x_parametros (BL-73).
+  Plataforma.gatilhos.aCadaHoras('executarNotificacoesDiarias', 1);
 
-  console.log(`✅ Acionador instalado: executarNotificacoesDiarias (de hora em hora; ` +
-              `envio ${NOTIF_HORA_INICIO}h–${NOTIF_HORA_FIM}h). Rode este instalador de novo para reaplicar.`);
+  const p = NOTIFICACAO_PADRAO;
+  console.log(`✅ Acionador instalado: executarNotificacoesDiarias (acorda de hora em hora).`);
+  console.log(`ℹ️ O disparo obedece x_parametros. Sem eles vale o padrão de fábrica: ` +
+              `${p.horaInicio}h–${p.horaFim}h, a cada ${p.intervaloHoras}h, ` +
+              `até ${p.lote} por disparo.`);
+  console.log(`ℹ️ Rode 'node ferramentas/instalar-escalonamento-notificacao.mjs --aplicar' ` +
+              `para poder ajustar esses quatro números no Odoo.`);
 }
 
 /** Remove o(s) acionador(es) da rotina de notificações. */
 function removerTriggerNotificacoes() {
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'executarNotificacoesDiarias') {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
+  Plataforma.gatilhos.removerDe('executarNotificacoesDiarias');
 }
 
 // NOTA: a resposta do usuário ao lembrete (botão "Devolver agora" do template)
@@ -397,7 +628,7 @@ function removerTriggerNotificacoes() {
  *   3. Acompanhe os logs [Notif][TESTE] na aba Execuções.
  */
 function testarNotificacaoAgora() {
-  const props  = PropertiesService.getScriptProperties();
+  const props  = Plataforma.propriedades;
   const numero = props.getProperty('NUMERO_TESTE') || '5586988521231'; // <- ajuste se necessário
 
   console.log(`🧪 [Notif][TESTE] Lembrete imediato para ${numero} (ignora filtro de dia/mês)`);
@@ -444,7 +675,7 @@ function testarNotificacaoAgora() {
  * Menu: Executar → testarGravacaoLog
  */
 function testarGravacaoLog() {
-  const props  = PropertiesService.getScriptProperties();
+  const props  = Plataforma.propriedades;
   const numero = props.getProperty('NUMERO_TESTE') || '5586988521231';
 
   let dizimista;
@@ -465,7 +696,7 @@ function testarGravacaoLog() {
     x_name:                  `DIAGNÓSTICO — ${dizimista.x_name} — ${mesRef}`, // obrigatório
     x_studio_dizimista:      dizimista.id,
     x_studio_tipo:           'lembrete',
-    x_studio_data_envio:     Utilities.formatDate(hoje, TIMEZONE, 'yyyy-MM-dd'), // campo DATE
+    x_studio_data_envio:     Plataforma.relogio.formatar(hoje, TIMEZONE, 'yyyy-MM-dd'), // campo DATE
     x_studio_mes_referencia: mesRef,
     x_studio_status_envio:   'erro',   // 'erro' NÃO conta na deduplicação (que exige 'sucesso')
     x_studio_mensagem_erro:  'DIAGNOSTICO BL-01 — pode apagar este registro'
@@ -550,4 +781,74 @@ function listarNotificacoesDoDia(diaAlvo) {
   });
 
   console.log(`✅ [Notif][PREVIEW] RESULTADO: ${receberao} de ${doDia.length} receberão o lembrete no dia ${diaAlvo}.`);
+}
+// ============================================================================
+// PRÉ-VISUALIZAÇÃO DO ESCALONAMENTO (BL-73)
+// ============================================================================
+
+/**
+ * Mostra, sem enviar nada, COMO os lembretes estão escalonados agora: a
+ * janela, os degraus do dia, o tamanho do lote e quantos dias levaria para
+ * percorrer a fila de hoje.
+ *
+ * É o antídoto para o modo de falha silencioso deste desenho. Um lote pequeno
+ * demais ou uma janela curta demais não dão erro nenhum — só fazem o lembrete
+ * de alguém chegar dias depois, e ninguém descobre isso lendo o log de uma
+ * execução que "terminou sem enviar". Aqui a conta aparece inteira.
+ *
+ * Menu do editor: Executar → previsaoEscalonamento
+ */
+function previsaoEscalonamento() {
+  const esc = lerEscalonamentoNotificacao();
+  esc.ajustes.forEach((a) => console.warn(`⚠️ parâmetro: ${a}`));
+
+  const degraus = [];
+  for (let h = esc.horaInicio; h < esc.horaFim; h += esc.intervaloHoras) degraus.push(h);
+
+  const porDia = degraus.length * esc.lote;
+
+  console.log(`⏱️ Janela: ${esc.horaInicio}h–${esc.horaFim}h (o fim é exclusivo — ` +
+              `o último disparo é o de ${degraus[degraus.length - 1]}h).`);
+  console.log(`⏱️ Disparos: ${degraus.map((h) => h + 'h').join(', ')} ` +
+              `(a cada ${esc.intervaloHoras}h) — ${degraus.length} por dia.`);
+  console.log(`📦 Lote: até ${esc.lote} por disparo → no máximo ${porDia} lembrete(s) por dia.`);
+
+  let candidatos = null;
+  try {
+    const hoje = new Date();
+    const diaHoje = hoje.getDate();
+    const todos = OdooService.searchRead(
+      'x_dizimista',
+      ['x_studio_dia_preferido'],
+      [['x_active', '=', true], ['x_studio_notificacao_ativa', '=', true]],
+      { limit: false }
+    );
+    candidatos = todos.filter(
+      (d) => diaHoje >= calcularDiaNotificacao(d.x_studio_dia_preferido || 10)
+    ).length;
+    console.log(`👥 ${candidatos} dizimista(s) já passaram do dia de notificação ` +
+                `(entre ${todos.length} ativos com notificação ligada).`);
+  } catch (e) {
+    console.error(`❌ Não consegui contar os candidatos no Odoo: ${e.message}`);
+  }
+
+  if (candidatos === null) return;
+
+  if (candidatos === 0) {
+    console.log('✅ Fila vazia — nada a escalonar hoje.');
+    return;
+  }
+
+  // Estimativa GROSSA de propósito: conta todo mundo que passou do dia, sem
+  // descontar quem já foi notificado ou já devolveu — essas duas checagens
+  // custam duas RPCs por pessoa, e aqui a pergunta é de dimensionamento, não
+  // de quem exatamente recebe. O número real só cai; nunca sobe.
+  const dias = Math.ceil(candidatos / porDia);
+  console.log(`📆 Teto de ${dias} dia(s) para percorrer a fila ` +
+              `(${candidatos} ÷ ${porDia} por dia). Quem já foi notificado ou já ` +
+              `devolveu sai da conta, então na prática é menos.`);
+  if (dias > 3) {
+    console.warn(`⚠️ ${dias} dias é bastante para um lembrete mensal. Para encurtar: ` +
+                 `aumente o lote, alargue a janela ou reduza o intervalo em x_parametros.`);
+  }
 }

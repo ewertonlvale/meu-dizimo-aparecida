@@ -1,0 +1,1230 @@
+{
+  "gerado_em": "2026-09-22T10:40:57.843Z",
+  "tipo": "todos",
+  "modelos": [
+    {
+      "modelo": "ir.model",
+      "views": [
+        {
+          "id": 47,
+          "name": "ir.model form",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "ir.model.form.47.ir.model_form.xml",
+          "modulo": "base",
+          "hash": "5d1027652b1f2c3d0c77c036c17934d8214d31b393d64179c5c9c9459ce14bf6"
+        },
+        {
+          "id": 48,
+          "name": "ir.model list",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "ir.model.list.48.ir.model_list.xml",
+          "modulo": "base",
+          "hash": "48038836fbdc9d428d0a833c44397cb4aff5c797d801445d2dd30c641028c453"
+        },
+        {
+          "id": 49,
+          "name": "ir.model search",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "ir.model.search.49.ir.model_search.xml",
+          "modulo": "base",
+          "hash": "bf2b82526c66e6066b65920f1540d80393e4e8bb1b4381693cd63eba07168a2c"
+        },
+        {
+          "id": 418,
+          "name": "ir.model form",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 47,
+          "mode": "extension",
+          "arquivo": "ir.model.form.418.ir.model_form.xml",
+          "modulo": "mail",
+          "hash": "f189ab289abbe37c1526619697c13a7a8bc47d4c682c649684172da6b72750e4"
+        },
+        {
+          "id": 419,
+          "name": "ir.model search",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 49,
+          "mode": "extension",
+          "arquivo": "ir.model.search.419.ir.model_search.xml",
+          "modulo": "mail",
+          "hash": "514f20756ea6e7b7ed0ee371184c0619326008f6a691e3ba4dda0dc9b9ca3981"
+        },
+        {
+          "id": 589,
+          "name": "ir.model form",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 47,
+          "mode": "extension",
+          "arquivo": "ir.model.form.589.ir.model_form.xml",
+          "modulo": "ai_fields",
+          "hash": "5a8c196c20f5f7acce106480ef9a63175c2a3a0690e1def5fddde38f42e06dae"
+        },
+        {
+          "id": 650,
+          "name": "Odoo Studio: ir.model search customization",
+          "tipo": "search",
+          "priority": 160,
+          "active": true,
+          "inherit_id": 49,
+          "mode": "extension",
+          "arquivo": "ir.model.search.650.Odoo_Studio_ir.model_search_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "be3a4f819e0303e9b12b8f29a11d6f79ca8c0a926c7e673277efd0deec53a250"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "ir.model.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 47
+        },
+        {
+          "tipo": "list",
+          "arquivo": "ir.model.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 48
+        },
+        {
+          "tipo": "search",
+          "arquivo": "ir.model.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 49
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "res.users",
+      "views": [
+        {
+          "id": 166,
+          "name": "res.users.simplified.form",
+          "tipo": "form",
+          "priority": 1,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.form.166.res.users.simplified.form.xml",
+          "modulo": "base",
+          "hash": "417f020a63ccb2450b84a5360d6bd7451f1a76b3a7246f366cb1ff93f213e121"
+        },
+        {
+          "id": 167,
+          "name": "res.users.form",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.form.167.res.users.form.xml",
+          "modulo": "base",
+          "hash": "21e622adec2bb4b882e57759f82d6347c6a3e6f13ac37df9fed3abaa042eee31"
+        },
+        {
+          "id": 168,
+          "name": "res.users.list",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.list.168.res.users.list.xml",
+          "modulo": "base",
+          "hash": "d8c3d63574b248235f42534c01b627d87f946278e2aa26db614e9efd462dcea0"
+        },
+        {
+          "id": 169,
+          "name": "res.users.kanban",
+          "tipo": "kanban",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.kanban.169.res.users.kanban.xml",
+          "modulo": "base",
+          "hash": "1c0f2ee867dba0510d4738079031713114450f6d34ca16942dd5dc9436778d09"
+        },
+        {
+          "id": 170,
+          "name": "res.users.search",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.search.170.res.users.search.xml",
+          "modulo": "base",
+          "hash": "54a00c8f980ba3e5aa680169703facd022f4aa3be777144d2bb52134b6ae59b5"
+        },
+        {
+          "id": 231,
+          "name": "res.users.view.search.inherit.auth.totp",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 170,
+          "mode": "extension",
+          "arquivo": "res.users.search.231.res.users.view.search.inherit.auth.totp.xml",
+          "modulo": "auth_totp",
+          "hash": "12ad2e848f572aab46d09ed5f05da0e2a904940a8273fe001f793815771f2269"
+        },
+        {
+          "id": 232,
+          "name": "user form: add totp status",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 167,
+          "mode": "extension",
+          "arquivo": "res.users.form.232.user_form_add_totp_status.xml",
+          "modulo": "auth_totp",
+          "hash": "8a637a6144cb64a81ba74c870c9ff4f52a1bddf73257b24ab0096f965da22b8c"
+        },
+        {
+          "id": 233,
+          "name": "users preference: totp",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 173,
+          "mode": "extension",
+          "arquivo": "res.users.form.233.users_preference_totp.xml",
+          "modulo": "auth_totp",
+          "hash": "f851efcfb24d0751a85d88ad5807ae11f8545421d8ebb62a25699c1f28b760de"
+        },
+        {
+          "id": 252,
+          "name": "auth.passkey.users.form",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 167,
+          "mode": "extension",
+          "arquivo": "res.users.form.252.auth.passkey.users.form.xml",
+          "modulo": "auth_passkey",
+          "hash": "f87f547c8647c8d274bc95dd241f82d23d11b841df4c606179fe4f0ac2cddb07"
+        },
+        {
+          "id": 253,
+          "name": "auth.passkey.users.preferences",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 173,
+          "mode": "extension",
+          "arquivo": "res.users.form.253.auth.passkey.users.preferences.xml",
+          "modulo": "auth_passkey",
+          "hash": "d7a60977d67d24ae227a5ac87e3034d0358e137b814db4cd4c26643bb0b63e4c"
+        },
+        {
+          "id": 258,
+          "name": "res.users.list.iap",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.list.258.res.users.list.iap.xml",
+          "modulo": "iap",
+          "hash": "a20c3ec9f11112c84f120534312c4777a452b1abea61e55e883df74aa5b2a235"
+        },
+        {
+          "id": 261,
+          "name": "res.users.preferences.form.color_scheme",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 173,
+          "mode": "extension",
+          "arquivo": "res.users.form.261.res.users.preferences.form.color_scheme.xml",
+          "modulo": "web_enterprise",
+          "hash": "f46100bb202ceaafd40431a6fbaac2a42e2817ac9f3b854d7c4645634282d3c8"
+        },
+        {
+          "id": 262,
+          "name": "res.users.form.color_scheme",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 167,
+          "mode": "extension",
+          "arquivo": "res.users.form.262.res.users.form.color_scheme.xml",
+          "modulo": "web_enterprise",
+          "hash": "f46100bb202ceaafd40431a6fbaac2a42e2817ac9f3b854d7c4645634282d3c8"
+        },
+        {
+          "id": 266,
+          "name": "res.users.preferences.form.mobile",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 173,
+          "mode": "extension",
+          "arquivo": "res.users.form.266.res.users.preferences.form.mobile.xml",
+          "modulo": "web_mobile",
+          "hash": "976880e03bf7508be66beae24f011fd1f3abdb807c00ac8c280a18f1d1d3f500"
+        },
+        {
+          "id": 410,
+          "name": "res.users.preferences.form.mail",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 173,
+          "mode": "extension",
+          "arquivo": "res.users.form.410.res.users.preferences.form.mail.xml",
+          "modulo": "mail",
+          "hash": "a3c2fc5aa829385d01e511fba60a62f2e921b504780f2ad61abf0e66be586fb0"
+        },
+        {
+          "id": 411,
+          "name": "res.users.form.mail",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 167,
+          "mode": "extension",
+          "arquivo": "res.users.form.411.res.users.form.mail.xml",
+          "modulo": "mail",
+          "hash": "fcff5a0c2117f739d1fcf0bd88abbb7be2b91ccaa4323e7c2b825974c131be6d"
+        },
+        {
+          "id": 436,
+          "name": "res.users.form.inherit",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 167,
+          "mode": "extension",
+          "arquivo": "res.users.form.436.res.users.form.inherit.xml",
+          "modulo": "auth_signup",
+          "hash": "55791d2b709ca9751f9dab709742de2a18c398a610a116eef05e83977dab4abe"
+        },
+        {
+          "id": 437,
+          "name": "res.users.list.inherit",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 168,
+          "mode": "extension",
+          "arquivo": "res.users.list.437.res.users.list.inherit.xml",
+          "modulo": "auth_signup",
+          "hash": "c3e1b53fc9b48b875c281698dadb82fdc15c1971fc7b01a44f257be97477290a"
+        },
+        {
+          "id": 446,
+          "name": "res.users.view.form.inherit.auth.totp.mail",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 232,
+          "mode": "extension",
+          "arquivo": "res.users.form.446.res.users.view.form.inherit.auth.totp.mail.xml",
+          "modulo": "auth_totp_mail",
+          "hash": "b87e0d92cd5b66cd8cf87727652372b1b853ac1a748b117377aff837903a2ae5"
+        },
+        {
+          "id": 447,
+          "name": "res.users.view.form.auth.totp.mail",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 173,
+          "mode": "primary",
+          "arquivo": "res.users.form.447.res.users.view.form.auth.totp.mail.xml",
+          "modulo": "auth_totp_mail",
+          "hash": "22574e2f5271722acc5cecacaca179f401ac0a970018c8262ccbd06312352ffa"
+        },
+        {
+          "id": 459,
+          "name": "res.users.view.form.mail_bot",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": 411,
+          "mode": "extension",
+          "arquivo": "res.users.form.459.res.users.view.form.mail_bot.xml",
+          "modulo": "mail_bot",
+          "hash": "9c6d4b6d8bb96ccc9540a7c2e5d9cb94f3c22d0ee258abaec58c7ee1101fefaf"
+        },
+        {
+          "id": 173,
+          "name": "res.users.preferences.form",
+          "tipo": "form",
+          "priority": 18,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "res.users.form.173.res.users.preferences.form.xml",
+          "modulo": "base",
+          "hash": "81b8c85ba1839464e981ba0539714c230e6485804a08b5c15beccf20b678ce23"
+        },
+        {
+          "id": 638,
+          "name": "Odoo Studio: res.users.simplified.form customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 166,
+          "mode": "extension",
+          "arquivo": "res.users.form.638.Odoo_Studio_res.users.simplified.form_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "22006d99e40df19b6f82c88064e3ec5718d8cb0d48539e913dec0317b81ddf4e"
+        },
+        {
+          "id": 639,
+          "name": "Odoo Studio: res.users.kanban customization",
+          "tipo": "kanban",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 169,
+          "mode": "extension",
+          "arquivo": "res.users.kanban.639.Odoo_Studio_res.users.kanban_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "a35ab050c94fafe8f7d1608d1896255237898ded87524a0e9510da351d7baf38"
+        },
+        {
+          "id": 640,
+          "name": "Odoo Studio: res.users.form customization",
+          "tipo": "form",
+          "priority": 160,
+          "active": true,
+          "inherit_id": 167,
+          "mode": "extension",
+          "arquivo": "res.users.form.640.Odoo_Studio_res.users.form_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "bc564b1938f9d2603d256435c86263f19d674bdd25bb2b5f15ec90dca1987f0e"
+        },
+        {
+          "id": 641,
+          "name": "Odoo Studio: res.users.list customization",
+          "tipo": "list",
+          "priority": 160,
+          "active": true,
+          "inherit_id": 168,
+          "mode": "extension",
+          "arquivo": "res.users.list.641.Odoo_Studio_res.users.list_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "c68450a3614e70b59d6494f06f4fbeda069d1e66a8dd19c4a8cb10351dc335ce"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "res.users.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 166
+        },
+        {
+          "tipo": "kanban",
+          "arquivo": "res.users.kanban.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 169
+        },
+        {
+          "tipo": "list",
+          "arquivo": "res.users.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 168
+        },
+        {
+          "tipo": "search",
+          "arquivo": "res.users.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 170
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_comunidade",
+      "views": [
+        {
+          "id": 600,
+          "name": "Default list view for x_comunidade",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_comunidade.list.600.Default_list_view_for_x_comunidade.xml",
+          "modulo": "studio_customization",
+          "hash": "7807a171f4658946f84f1d947bd85f969467399075e1de122955ddbcd4114358"
+        },
+        {
+          "id": 601,
+          "name": "Default form view for x_comunidade",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_comunidade.form.601.Default_form_view_for_x_comunidade.xml",
+          "modulo": "studio_customization",
+          "hash": "ec3b62fd88fd589c08472ed5aeafdefbd8d12a8a80b52bfa6d8d06e065872888"
+        },
+        {
+          "id": 602,
+          "name": "Default search view for x_comunidade",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_comunidade.search.602.Default_search_view_for_x_comunidade.xml",
+          "modulo": "studio_customization",
+          "hash": "1eb75acadf5938b6fc96a780228dbccf9a3fece2371ff7e43936d22ec405d924"
+        },
+        {
+          "id": 678,
+          "name": "Default kanban view for ir.model(445,)",
+          "tipo": "kanban",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_comunidade.kanban.678.Default_kanban_view_for_ir.model_445_.xml",
+          "modulo": null,
+          "hash": "b8a02a6d4d0cfa158c4b4083b92fe0b3a58047423715a2752bafa73a1ebf8982"
+        },
+        {
+          "id": 680,
+          "name": "Default map view for x_comunidade",
+          "tipo": "map",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_comunidade.map.680.Default_map_view_for_x_comunidade.xml",
+          "modulo": null,
+          "hash": "800e513ac2a1edc73f77e671eac771e85bf059fd1ecaef6813361fea794d65e4"
+        },
+        {
+          "id": 609,
+          "name": "Odoo Studio: Default form view for x_comunidade customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 601,
+          "mode": "extension",
+          "arquivo": "x_comunidade.form.609.Odoo_Studio_Default_form_view_for_x_comunidade_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "fcd56d30343b154744374b3369214c814e5f43ce3c98d4f0b83fa8db878a6cf5"
+        },
+        {
+          "id": 645,
+          "name": "Odoo Studio: Default list view for x_comunidade customization",
+          "tipo": "list",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 600,
+          "mode": "extension",
+          "arquivo": "x_comunidade.list.645.Odoo_Studio_Default_list_view_for_x_comunidade_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "82450c7d0556c10241fff95a70c5bb5cab6dd6cb8bc4e84880f785f5cdff43c9"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "x_comunidade.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 601
+        },
+        {
+          "tipo": "kanban",
+          "arquivo": "x_comunidade.kanban.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 678
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_comunidade.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 600
+        },
+        {
+          "tipo": "map",
+          "arquivo": "x_comunidade.map.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 680
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_comunidade.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 602
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_contato_bot",
+      "views": [
+        {
+          "id": 646,
+          "name": "Default list view for x_contato_bot",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_contato_bot.list.646.Default_list_view_for_x_contato_bot.xml",
+          "modulo": "studio_customization",
+          "hash": "12cf0901939c700b81ef9575bf64ac499e7dfbd497d1fea4de807d7743787cac"
+        },
+        {
+          "id": 647,
+          "name": "Default form view for x_contato_bot",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_contato_bot.form.647.Default_form_view_for_x_contato_bot.xml",
+          "modulo": "studio_customization",
+          "hash": "7bd22447ccc532b41b48487563785bd3e5a2bf03a51b0670d340c5220dc35153"
+        },
+        {
+          "id": 648,
+          "name": "Default search view for x_contato_bot",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_contato_bot.search.648.Default_search_view_for_x_contato_bot.xml",
+          "modulo": "studio_customization",
+          "hash": "12cb70b59cd498af2f8d816e11f5ab9a05cd56a811715404f0b8849beab4a288"
+        },
+        {
+          "id": 649,
+          "name": "Odoo Studio: Default form view for x_contato_bot customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 647,
+          "mode": "extension",
+          "arquivo": "x_contato_bot.form.649.Odoo_Studio_Default_form_view_for_x_contato_bot_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "cffb81bba343ffed21ac2be2f255bb767fe68953dedff01077ce0c3c13347113"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "x_contato_bot.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 647
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_contato_bot.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 646
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_contato_bot.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 648
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_devolucao",
+      "views": [
+        {
+          "id": 603,
+          "name": "Default list view for x_devolucao",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.list.603.Default_list_view_for_x_devolucao.xml",
+          "modulo": "studio_customization",
+          "hash": "ec8acf8efd2835ad8721c205e50bca3312024aa34928271a1abefc6ab6f04046"
+        },
+        {
+          "id": 604,
+          "name": "Default form view for x_devolucao",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.form.604.Default_form_view_for_x_devolucao.xml",
+          "modulo": "studio_customization",
+          "hash": "0488812c19a4bf26c76326bb0a75c61c3eeb96d0fc96d8c303f098331bd7683e"
+        },
+        {
+          "id": 605,
+          "name": "Default search view for x_devolucao",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.search.605.Default_search_view_for_x_devolucao.xml",
+          "modulo": "studio_customization",
+          "hash": "e1c48d542618bde49f36bb226533a31fe4c11166a5d500b572e259d2e4c82b9c"
+        },
+        {
+          "id": 606,
+          "name": "Default pivot view for x_devolucao",
+          "tipo": "pivot",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.pivot.606.Default_pivot_view_for_x_devolucao.xml",
+          "modulo": "studio_customization",
+          "hash": "ec65a4627a0740ba36b59a2ad225dc7d52ee28aa4e98cea1cb90cec3ea484be9"
+        },
+        {
+          "id": 607,
+          "name": "Default graph view for x_devolucao",
+          "tipo": "graph",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.graph.607.Default_graph_view_for_x_devolucao.xml",
+          "modulo": "studio_customization",
+          "hash": "61dc96c91cf5167228cf27ea6f707a864ba36596de87cc6272141e31395a4dd0"
+        },
+        {
+          "id": 679,
+          "name": "Default kanban view for ir.model(447,)",
+          "tipo": "kanban",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml",
+          "modulo": null,
+          "hash": "af4a482a0d2cf976d43812328951f9906ee6a98d6d193e8660c2e31b130c8720"
+        },
+        {
+          "id": 608,
+          "name": "Odoo Studio: Default form view for x_devolucao customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 604,
+          "mode": "extension",
+          "arquivo": "x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "07ea1616fdf7b916fcd02f8463302c45b0908ee73e895118a981c413cb0dfc43"
+        },
+        {
+          "id": 610,
+          "name": "Odoo Studio: Default list view for x_devolucao customization",
+          "tipo": "list",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 603,
+          "mode": "extension",
+          "arquivo": "x_devolucao.list.610.Odoo_Studio_Default_list_view_for_x_devolucao_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "f826f28270977b6c481af5734b532889558c2aa81f7bad2ba6d4c12eaf8e4677"
+        },
+        {
+          "id": 624,
+          "name": "Odoo Studio: Default graph view for x_devolucao customization",
+          "tipo": "graph",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 607,
+          "mode": "extension",
+          "arquivo": "x_devolucao.graph.624.Odoo_Studio_Default_graph_view_for_x_devolucao_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "965d28b5010d8e3188eb9628543b7ed87acb3864ebd9bb16b5cd3ec1425cd723"
+        },
+        {
+          "id": 644,
+          "name": "Odoo Studio: Default search view for x_devolucao customization",
+          "tipo": "search",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 605,
+          "mode": "extension",
+          "arquivo": "x_devolucao.search.644.Odoo_Studio_Default_search_view_for_x_devolucao_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "a18ff805ca2a2edf5336a4bc116666f6bcb98c5cd4e13124a3c133a663f9d994"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "x_devolucao.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 604
+        },
+        {
+          "tipo": "graph",
+          "arquivo": "x_devolucao.graph.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 607
+        },
+        {
+          "tipo": "kanban",
+          "arquivo": "x_devolucao.kanban.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 679
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_devolucao.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 603
+        },
+        {
+          "tipo": "pivot",
+          "arquivo": "x_devolucao.pivot.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 606
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_devolucao.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 605
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_dizimista",
+      "views": [
+        {
+          "id": 592,
+          "name": "Default list view for x_dizimista",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.list.592.Default_list_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "b6c4125553012b4f1b11952f355399a06040757befe80a64815484d8bcaab8e1"
+        },
+        {
+          "id": 593,
+          "name": "Default form view for x_dizimista",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.form.593.Default_form_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "e268b61075d3e5b3207b5a7c9da304986be7d400c49adbf9f00ade3970613f8b"
+        },
+        {
+          "id": 594,
+          "name": "Default search view for x_dizimista",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.search.594.Default_search_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "fdf5e0b47d94568c6150371d72923887ff4e903967eecb5b49418f4c89be5d25"
+        },
+        {
+          "id": 595,
+          "name": "Default calendar view for x_dizimista",
+          "tipo": "calendar",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.calendar.595.Default_calendar_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "acf8aafa6103e7b20a11ce52f08ebd5c50fdc7c48413b269ca527acaa252fdc2"
+        },
+        {
+          "id": 596,
+          "name": "Default map view for x_dizimista",
+          "tipo": "map",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.map.596.Default_map_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "c502f2a6018683307dd4a246bc7f2bf6dbc7079e606b67c99cb85656d9d6d35f"
+        },
+        {
+          "id": 597,
+          "name": "Default pivot view for x_dizimista",
+          "tipo": "pivot",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.pivot.597.Default_pivot_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "7ce169afde09b1d7b57e20fc9eea6c85174a5df35aff745d62a5b66d1799fa1d"
+        },
+        {
+          "id": 598,
+          "name": "Default graph view for x_dizimista",
+          "tipo": "graph",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.graph.598.Default_graph_view_for_x_dizimista.xml",
+          "modulo": "studio_customization",
+          "hash": "61dc96c91cf5167228cf27ea6f707a864ba36596de87cc6272141e31395a4dd0"
+        },
+        {
+          "id": 673,
+          "name": "Default kanban view for ir.model(443,)",
+          "tipo": "kanban",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_dizimista.kanban.673.Default_kanban_view_for_ir.model_443_.xml",
+          "modulo": null,
+          "hash": "6bac42f14bf549def128c3c8142609d041caf6328ccc222d498753e624099981"
+        },
+        {
+          "id": 599,
+          "name": "Odoo Studio: Default form view for x_dizimista customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 593,
+          "mode": "extension",
+          "arquivo": "x_dizimista.form.599.Odoo_Studio_Default_form_view_for_x_dizimista_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "f892f5ed74715c0eaf6a552ea6d9a71d32651279525dd79d20a2732eb271cc74"
+        },
+        {
+          "id": 611,
+          "name": "Odoo Studio: Default list view for x_dizimista customization",
+          "tipo": "list",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 592,
+          "mode": "extension",
+          "arquivo": "x_dizimista.list.611.Odoo_Studio_Default_list_view_for_x_dizimista_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "3f923d090d50625cdbf230d355a10697c7eebb1da6339b11388f744b336caf27"
+        },
+        {
+          "id": 623,
+          "name": "Odoo Studio: Default graph view for x_dizimista customization",
+          "tipo": "graph",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 598,
+          "mode": "extension",
+          "arquivo": "x_dizimista.graph.623.Odoo_Studio_Default_graph_view_for_x_dizimista_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "6467499cb8b3ebc7458b70e0c7ecca7eb7fe5a17f78dc2b2cef1e93704913239"
+        },
+        {
+          "id": 674,
+          "name": "Odoo Studio: Default kanban view for ir.model(443,) customization",
+          "tipo": "kanban",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 673,
+          "mode": "extension",
+          "arquivo": "x_dizimista.kanban.674.Odoo_Studio_Default_kanban_view_for_ir.model_443_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "7a3613107babb99e294fafd2c5c19a92db9d41f1f34470becc5625e05f52b8e2"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "calendar",
+          "arquivo": "x_dizimista.calendar.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 595
+        },
+        {
+          "tipo": "form",
+          "arquivo": "x_dizimista.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 593
+        },
+        {
+          "tipo": "graph",
+          "arquivo": "x_dizimista.graph.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 598
+        },
+        {
+          "tipo": "kanban",
+          "arquivo": "x_dizimista.kanban.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 673
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_dizimista.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 592
+        },
+        {
+          "tipo": "map",
+          "arquivo": "x_dizimista.map.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 596
+        },
+        {
+          "tipo": "pivot",
+          "arquivo": "x_dizimista.pivot.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 597
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_dizimista.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 594
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_notificacao_log",
+      "views": [
+        {
+          "id": 619,
+          "name": "Default list view for x_notificacao_log",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_notificacao_log.list.619.Default_list_view_for_x_notificacao_log.xml",
+          "modulo": "studio_customization",
+          "hash": "9d24ef12dceeff5950b0f9a95081356dbea8b48a338da134feb014e84bde23ae"
+        },
+        {
+          "id": 620,
+          "name": "Default form view for x_notificacao_log",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_notificacao_log.form.620.Default_form_view_for_x_notificacao_log.xml",
+          "modulo": "studio_customization",
+          "hash": "2cc03de0c2af99d7ef6db5a39cc6cffbf79b6a1c44618354d90b0997eb4b1151"
+        },
+        {
+          "id": 621,
+          "name": "Default search view for x_notificacao_log",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_notificacao_log.search.621.Default_search_view_for_x_notificacao_log.xml",
+          "modulo": "studio_customization",
+          "hash": "8fe39dca629f7045388871367bd6d3a5267a1d7e22116f6dc05f45262ad7022f"
+        },
+        {
+          "id": 622,
+          "name": "Odoo Studio: Default form view for x_notificacao_log customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 620,
+          "mode": "extension",
+          "arquivo": "x_notificacao_log.form.622.Odoo_Studio_Default_form_view_for_x_notificacao_log_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "cd868de88f7425b36d28f0bc0c47be5646f4eb7310593e9ca7ad0162bd1f2a83"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "x_notificacao_log.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 620
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_notificacao_log.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 619
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_notificacao_log.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 621
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_parametros",
+      "views": [
+        {
+          "id": 612,
+          "name": "Default list view for x_parametros",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_parametros.list.612.Default_list_view_for_x_parametros.xml",
+          "modulo": "studio_customization",
+          "hash": "8f8bf3cd39c25930e6fb7df27963f7195a5e78d0d4f68ee6e80140ce5bcbf6fa"
+        },
+        {
+          "id": 613,
+          "name": "Default form view for x_parametros",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_parametros.form.613.Default_form_view_for_x_parametros.xml",
+          "modulo": "studio_customization",
+          "hash": "edf7134b00bb105edaa19de7b18b027ae7927835726a2bec89ca28c579724eed"
+        },
+        {
+          "id": 614,
+          "name": "Default search view for x_parametros",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_parametros.search.614.Default_search_view_for_x_parametros.xml",
+          "modulo": "studio_customization",
+          "hash": "593e5f0fb397542ccaf36b497fef2de9f207cebce77b705c081279dcd376a497"
+        },
+        {
+          "id": 615,
+          "name": "Odoo Studio: Default form view for x_parametros customization",
+          "tipo": "form",
+          "priority": 99,
+          "active": true,
+          "inherit_id": 613,
+          "mode": "extension",
+          "arquivo": "x_parametros.form.615.Odoo_Studio_Default_form_view_for_x_parametros_customization.xml",
+          "modulo": "studio_customization",
+          "hash": "0c4427647841b303b060f6c327667fccf0f07169e172012672b0e0b6e27b5496"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "x_parametros.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 613
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_parametros.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 612
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_parametros.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 614
+        }
+      ],
+      "erros": []
+    },
+    {
+      "modelo": "x_parametros_line_c498a",
+      "views": [
+        {
+          "id": 616,
+          "name": "Default list view for x_parametros_line_c498a",
+          "tipo": "list",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_parametros_line_c498a.list.616.Default_list_view_for_x_parametros_line_c498a.xml",
+          "modulo": "studio_customization",
+          "hash": "c1cd00a1a9516ea1932a4ae266d96968d8561610b75bba53b4c57f9a1ec4b9e2"
+        },
+        {
+          "id": 617,
+          "name": "Default form view for x_parametros_line_c498a",
+          "tipo": "form",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_parametros_line_c498a.form.617.Default_form_view_for_x_parametros_line_c498a.xml",
+          "modulo": "studio_customization",
+          "hash": "6d72900cb244560874215c42e67642fb8788b317f5c7114baa518728a7bd8f33"
+        },
+        {
+          "id": 618,
+          "name": "Default search view for x_parametros_line_c498a",
+          "tipo": "search",
+          "priority": 16,
+          "active": true,
+          "inherit_id": null,
+          "mode": "primary",
+          "arquivo": "x_parametros_line_c498a.search.618.Default_search_view_for_x_parametros_line_c498a.xml",
+          "modulo": "studio_customization",
+          "hash": "beea44c33f5acf8a7182f7139db4d00383d4947cf2e6288a4beba0b4c155afdc"
+        }
+      ],
+      "combinadas": [
+        {
+          "tipo": "form",
+          "arquivo": "x_parametros_line_c498a.form.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 617
+        },
+        {
+          "tipo": "list",
+          "arquivo": "x_parametros_line_c498a.list.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 616
+        },
+        {
+          "tipo": "search",
+          "arquivo": "x_parametros_line_c498a.search.COMBINADA.xml",
+          "metodo": "get_view",
+          "view_id": 618
+        }
+      ],
+      "erros": []
+    }
+  ]
+}

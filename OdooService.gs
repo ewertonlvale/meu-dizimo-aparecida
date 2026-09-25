@@ -285,18 +285,7 @@ const OdooService = {
     // O lock fecha a janela do toque duplo: duas execuções do Apps Script
     // chegando com 400 ms de diferença passariam as duas pela busca antes de
     // qualquer uma criar. É o mesmo padrão de `StateManager.ehPrimeiroContato`.
-    const lock = LockService.getScriptLock();
-    let travado = false;
-    try {
-      lock.waitLock(10000);
-      travado = true;
-    } catch (e) {
-      // Sem o lock ainda vale conferir: pega o caso comum (formulário antigo),
-      // só não protege contra a corrida.
-      console.warn('⚠️ [criarDizimista] Lock não obtido, seguindo sem serializar:', e.message);
-    }
-
-    try {
+    const guardaECria = () => {
       const existente = this.buscarDizimistaPorWhatsapp(dados.whatsapp);
       if (existente) {
         const erro = new Error(
@@ -308,9 +297,14 @@ const OdooService = {
       }
 
       return this._criarDizimista(dados);
-    } finally {
-      if (travado) lock.releaseLock();
-    }
+    };
+
+    return Plataforma.trava.comTrava(`dizimista_${dados.whatsapp}`, 10000, guardaECria, (e) => {
+      // Sem o lock ainda vale conferir: pega o caso comum (formulário antigo),
+      // só não protege contra a corrida.
+      console.warn('⚠️ [criarDizimista] Lock não obtido, seguindo sem serializar:', e.message);
+      return guardaECria();
+    });
   },
 
   /**
@@ -349,18 +343,68 @@ const OdooService = {
     const [dia, mes, ano] = dados.dataNascimento.split('/');
     const dataOdoo = `${ano}-${mes}-${dia}`;
 
-    return this.create('x_dizimista', {
-      x_studio_nome_completo:     dados.nome,
-      x_name:                     dados.nomeUsual,
-      x_studio_endereco:          dados.endereco,
-      x_studio_date:              dataOdoo,
-      x_studio_value:             dados.valorMensal,
-      x_studio_comunidade:        dados.comunidadeId,
-      x_studio_responsavel:       responsavelId,
-      x_studio_notificacao_ativa: false,
-      x_studio_dia_preferido:     dados.diaPreferido || 10
-      // sem x_studio_partner_phone: o membro não tem número próprio
+    // BL-84: toque duplo em "Confirmar" chegava como duas execuções, e as duas
+    // criavam o familiar. Mesmo padrão do `criarDizimista`: sob a trava, confere
+    // antes de criar. O membro não tem telefone próprio, então a identidade é
+    // o nome completo dentro da família — e, achando, devolve o MESMO id: para
+    // quem tocou duas vezes, o resultado é o que ele pediu.
+    const guardaECria = () => {
+      const existente = this.searchRead('x_dizimista', ['id'], [
+        ['x_studio_responsavel',   '=', responsavelId],
+        ['x_studio_nome_completo', '=', dados.nome],
+        ['x_active',               '=', true]
+      ], { limit: 1 });
+      if (existente && existente.length) {
+        console.warn(`⚠️ [criarMembro] "${dados.nomeUsual}" já existe na família ` +
+                     `${responsavelId} (id ${existente[0].id}) — não crio de novo`);
+        return existente[0].id;
+      }
+
+      return this.create('x_dizimista', {
+        x_studio_nome_completo:     dados.nome,
+        x_name:                     dados.nomeUsual,
+        x_studio_endereco:          dados.endereco,
+        x_studio_date:              dataOdoo,
+        x_studio_value:             dados.valorMensal,
+        x_studio_comunidade:        dados.comunidadeId,
+        x_studio_responsavel:       responsavelId,
+        x_studio_notificacao_ativa: false,
+        x_studio_dia_preferido:     dados.diaPreferido || 10
+        // sem x_studio_partner_phone: o membro não tem número próprio
+      });
+    };
+
+    return Plataforma.trava.comTrava(`membro_${responsavelId}`, 10000, guardaECria, (e) => {
+      console.warn('⚠️ [criarMembro] Lock não obtido, seguindo sem serializar:', e.message);
+      return guardaECria();
     });
+  },
+
+  /**
+   * A devolução que ACABOU de ser gravada para este dizimista, se houver. (BL-84)
+   *
+   * Existe para o erro ambíguo: um timeout ou 5xx DEPOIS de o Odoo gravar. O
+   * `create` não se repete sozinho (não é idempotente), mas a mensagem ao
+   * usuário dizia "não foi registrado, reenvie" — e o reenvio duplicava.
+   * Perguntar antes de afirmar resolve os dois lados.
+   *
+   * @param {number} dizimistaId
+   * @param {number|null} valor - quando conhecido, precisa bater
+   * @param {number} [minutos=10]
+   * @returns {Object|null} { id }
+   */
+  devolucaoRecemGravada(dizimistaId, valor, minutos = 10) {
+    // create_date é datetime: o Odoo guarda e compara em UTC (ver BL-83).
+    const desde = Plataforma.relogio.formatar(
+      new Date(Date.now() - minutos * 60000), 'UTC', 'yyyy-MM-dd HH:mm:ss');
+    const dominio = [
+      ['x_studio_dizimista', '=', dizimistaId],
+      ['create_date', '>=', desde]
+    ];
+    if (valor) dominio.push(['x_studio_value', '=', valor]);
+    const regs = this.searchRead('x_devolucao', ['id'], dominio,
+      { order: 'create_date desc', limit: 1 });
+    return (regs && regs[0]) || null;
   },
 
   /**
@@ -626,7 +670,7 @@ const OdooService = {
     this._camposGravaveis = this._camposGravaveis || {};
     if (chave in this._camposGravaveis) return this._camposGravaveis[chave];
 
-    const cache    = CacheService.getScriptCache();
+    const cache    = Plataforma.cache;
     const cacheado = cache.get(chave);
     if (cacheado) {
       this._camposGravaveis[chave] = cacheado === '1';
@@ -685,13 +729,80 @@ const OdooService = {
    * @param {string} nome  - Ex.: 'x_studio_conferencia_pix'
    * @returns {boolean}
    */
+  /**
+   * Quais destes campos existem no modelo? (BL-73)
+   *
+   * Uma RPC para o conjunto, em vez de uma por campo. Vale o mesmo cache do
+   * `campoExiste` — as chaves são as mesmas —, então quem perguntar depois,
+   * de um jeito ou do outro, já encontra a resposta pronta.
+   *
+   * O DETALHE QUE IMPORTA: se a consulta falhar, devolve lista VAZIA. É o
+   * lado seguro aqui — um campo tido como ausente faz o chamador usar o
+   * padrão de fábrica; um campo tido como presente por engano derruba o
+   * `search_read` inteiro de quem montou a lista de campos com ele.
+   *
+   * @param {string} model
+   * @param {string[]} nomes
+   * @returns {string[]} os que existem, na ordem em que foram pedidos
+   */
+  camposExistentes(model, nomes) {
+    this._camposConhecidos = this._camposConhecidos || {};
+    const cache = Plataforma.cache;
+
+    const chaveDe   = (n) => `campo_${model}_${n}`;
+    const resolvido = {};
+    const faltando  = [];
+
+    nomes.forEach((n) => {
+      const chave = chaveDe(n);
+      if (chave in this._camposConhecidos) {
+        resolvido[n] = this._camposConhecidos[chave];
+        return;
+      }
+      const cacheado = cache.get(chave);
+      if (cacheado !== null && cacheado !== undefined) {
+        this._camposConhecidos[chave] = cacheado === '1';
+        resolvido[n] = this._camposConhecidos[chave];
+        return;
+      }
+      faltando.push(n);
+    });
+
+    if (faltando.length) {
+      let achados = null;
+      try {
+        const campos = this.searchRead(
+          'ir.model.fields', ['name'],
+          [['model', '=', model], ['name', 'in', faltando]],
+          { limit: false }
+        );
+        achados = new Set((campos || []).map((c) => c.name));
+      } catch (e) {
+        console.warn(`⚠️ [OdooService] Não consegui verificar campos de ${model}: ${e.message}`);
+      }
+
+      faltando.forEach((n) => {
+        // Consulta falhou: responde "não existe" SEM gravar no cache. Gravar
+        // congelaria um erro de rede por 5 minutos em cima de um campo que
+        // está lá — e o chamador ficaria no padrão de fábrica sem motivo.
+        if (achados === null) { resolvido[n] = false; return; }
+        const existe = achados.has(n);
+        cache.put(chaveDe(n), existe ? '1' : '0', existe ? 21600 : 300);
+        this._camposConhecidos[chaveDe(n)] = existe;
+        resolvido[n] = existe;
+      });
+    }
+
+    return nomes.filter((n) => resolvido[n]);
+  },
+
   campoExiste(model, nome) {
     const chave = `campo_${model}_${nome}`;
 
     this._camposConhecidos = this._camposConhecidos || {};
     if (chave in this._camposConhecidos) return this._camposConhecidos[chave];
 
-    const cache    = CacheService.getScriptCache();
+    const cache    = Plataforma.cache;
     const cacheado = cache.get(chave);
     if (cacheado) {
       this._camposConhecidos[chave] = cacheado === '1';
@@ -773,7 +884,7 @@ const OdooService = {
    * @throws {Error} se não houver como determinar a comunidade
    */
   registrarDevolucao(dizimistaId, dadosAnalise, comprovanteBase64 = null, tipoComprovante = 'imagem', conferencia = '', extras = {}) {
-    const hoje = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
+    const hoje = Plataforma.relogio.formatar(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
 
     // O `split('/')` só faz sentido em dd/mm/aaaa, e precisa CONFERIR que é
     // isso: com qualquer outro formato ele não lança erro — devolve um pedaço
@@ -849,6 +960,17 @@ const OdooService = {
       x_studio_tipo_comprovante:     tipoComprovante
     };
 
+    // BL-62/BL-57: a COMPETÊNCIA, que é o mês a que a devolução se refere.
+    // O campo existia desde sempre e o bot só o LIA — por isso o agrupamento
+    // "Mês Referencia" caía num balde "Nenhum" para tudo que vinha do WhatsApp.
+    // É ela também que dá sentido ao "A devolver": um em aberto com competência
+    // anterior ao mês corrente é uma dívida, e é assim que a lista de atrasados
+    // passa a existir.
+    const competencia = `${dataOdoo.slice(0, 7)}-01`;
+    if (this.campoExiste('x_devolucao', 'x_studio_competencia')) {
+      dados.x_studio_competencia = competencia;
+    }
+
     // Só grava a comunidade quando o campo já aceita escrita. Enquanto for
     // `related`, o Odoo recusaria a escrita INTEIRA e a devolução se perderia
     // — pior que o campo ficar espelhado, que é o que ele já faz sozinho.
@@ -887,9 +1009,81 @@ const OdooService = {
       dados.x_studio_nome_arquivo = `comprovante_${dataOdoo}.${extensao}`;
     }
 
-    console.log(`📊 [OdooService] Criando devolução (tipo: ${tipoComprovante}):`,
-      JSON.stringify({...dados, x_studio_comprovante: comprovanteBase64 ? `[${comprovanteBase64.length} chars]` : null}, null, 2));
+    // BL-84: o log leva o que serve ao diagnóstico, não a pessoa. O payload
+    // inteiro ia para o log — com nome e telefone de quem faz uma oferta.
+    // `x_name` sai junto: na oferta ele é "Oferta de <nome> - R$ ...".
+    const SEM_DADO_PESSOAL = ['x_name', 'x_studio_nome_ofertante', 'x_studio_telefone_ofertante',
+                              'x_studio_comprovante', 'x_studio_nome_arquivo'];
+    const resumo = Object.keys(dados)
+      .filter(k => SEM_DADO_PESSOAL.indexOf(k) < 0)
+      .reduce((o, k) => { o[k] = dados[k]; return o; }, {});
+    resumo.comprovante = comprovanteBase64 ? `[${comprovanteBase64.length} chars]` : null;
+    console.log(`📊 [OdooService] Registrando devolução (tipo: ${tipoComprovante}):`, JSON.stringify(resumo));
+
     return this.create('x_devolucao', dados);
+  },
+
+  /**
+   * Este pagamento precisa que a pessoa escolha o mês? (BL-71)
+   *
+   * A REGRA DE OURO, em uma frase: se não é a primeira devolução e o mês
+   * ANTERIOR não tem devolução nenhuma, pergunte se é deste mês ou do anterior.
+   *
+   * Tudo é relativo à COMPETÊNCIA REGISTRADA, que é o mês da data do
+   * comprovante — não ao dia de hoje. É o que faz o caso mais comum funcionar
+   * sozinho: quem paga no dia 1º de outubro pelo dízimo de setembro tem
+   * competência outubro, setembro vazio, e a pergunta aparece.
+   *
+   * PRIMEIRA DEVOLUÇÃO NÃO PERGUNTA. Não há histórico de onde tirar dúvida, e
+   * perguntar a quem está começando só confunde.
+   *
+   * Registros `A devolver` não contam como devolução — são previsão, não
+   * pagamento. Restam alguns na base, de antes do BL-71.
+   *
+   * @returns {string|null} a competência do mês anterior, ou null se não há dúvida
+   */
+  mesAnteriorSemDevolucao(dizimistaId, competencia, tipo = 'dizimo') {
+    if (!dizimistaId || tipo === 'oferta') return null;
+    if (!this.campoExiste('x_devolucao', 'x_studio_competencia')) return null;
+
+    let [ano, mes] = String(competencia).split('-').map(Number);
+    if (!ano || !mes) return null;
+    if (--mes < 1) { mes = 12; ano--; }
+    const anterior = `${ano}-${String(mes).padStart(2, '0')}-01`;
+
+    try {
+      // Primeira devolução da vida? Então não há dúvida nenhuma a levantar.
+      const anteriores = this.searchRead('x_devolucao', ['id'], [
+        ['x_studio_dizimista',   '=',  dizimistaId],
+        ['x_studio_status',      '!=', STATUS_A_DEVOLVER],
+        ['x_studio_competencia', '<',  competencia]
+      ], { limit: 1 });
+      if (!anteriores || !anteriores.length) return null;
+
+      // Há histórico. O mês imediatamente anterior está coberto?
+      const noAnterior = this.searchRead('x_devolucao', ['id'], [
+        ['x_studio_dizimista',   '=',  dizimistaId],
+        ['x_studio_status',      '!=', STATUS_A_DEVOLVER],
+        ['x_studio_competencia', '=',  anterior]
+      ], { limit: 1 });
+      return (noAnterior && noAnterior.length) ? null : anterior;
+    } catch (e) {
+      console.warn(`⚠️ [Competência] Não consegui olhar o mês anterior: ${e.message}`);
+      return null;
+    }
+  },
+
+  /**
+   * Passa a devolução para a competência escolhida pela pessoa. (BL-71)
+   *
+   * Só grava. Não cria registro para o mês que sobrou, não reabre nada: o bot
+   * não sabe se aquele mês é dívida ou apenas o ritmo de quem devolve de dois
+   * em dois meses.
+   */
+  definirCompetencia(idPago, competencia) {
+    this.write('x_devolucao', idPago, { x_studio_competencia: competencia });
+    console.log(`📅 [Devolução] ${idPago} passou a valer para ${competencia}`);
+    return true;
   },
 
   /**
@@ -927,8 +1121,8 @@ const OdooService = {
    */
   devolucoesDoMes(dizimistaId, tipo = 'dizimo') {
     const hoje = new Date();
-    const primeiro = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
-    const ultimo   = Utilities.formatDate(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
+    const primeiro = Plataforma.relogio.formatar(new Date(hoje.getFullYear(), hoje.getMonth(), 1), TIMEZONE, 'yyyy-MM-dd');
+    const ultimo   = Plataforma.relogio.formatar(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0), TIMEZONE, 'yyyy-MM-dd');
     const regs = this.searchRead(
       'x_devolucao',
       ['x_studio_data_da_devolucao', 'x_studio_value'],
@@ -1099,7 +1293,12 @@ const OdooService = {
    * @returns {number} ID criado
    */
   registrarContatoBot(from) {
-    const agora = Utilities.formatDate(new Date(), 'America/Sao_Paulo', "yyyy-MM-dd HH:mm:ss");
+    // BL-83: em UTC. `x_studio_data_primeiro_contato` é `datetime`, e o Odoo
+    // guarda e interpreta datetime SEMPRE em UTC, convertendo para o fuso de
+    // quem olha na tela. Gravado em hora de São Paulo, aparecia 3 h antes — e
+    // contato depois das 21h caía no dia anterior. (Campo `date` é o oposto:
+    // vai no dia LOCAL, como no x_notificacao_log do BL-01.)
+    const agora = Plataforma.relogio.formatar(new Date(), 'UTC', "yyyy-MM-dd HH:mm:ss");
     return this.create('x_contato_bot', {
       x_name:                         from,
       x_studio_data_primeiro_contato: agora,
@@ -1139,7 +1338,19 @@ const OdooService = {
       'x_parametros',
       ['id', 'x_name', 'x_studio_avatar', 'x_studio_paroquia',
        'x_studio_horario_de', 'x_studio_secretaria_email',
-       'x_studio_secretaria_whatsapp'],
+       'x_studio_secretaria_whatsapp',
+       // BL-69/BL-73: campos opcionais. Se um deles ainda não existir no
+       // Odoo, o searchRead INTEIRO falha — por isso só entram os que o
+       // schema confirma que estão lá. Uma consulta só para todos (BL-73):
+       // eram quatro campos novos, e quatro `campoExiste` de cache frio
+       // custariam quatro RPCs a cada hora, num caminho que roda 24x por dia.
+       ].concat(this.camposExistentes('x_parametros', [
+         'x_studio_dias_comprovante',
+         'x_studio_notif_hora_inicio',
+         'x_studio_notif_hora_fim',
+         'x_studio_notif_intervalo',
+         'x_studio_notif_lote'
+       ])),
       [['x_active', '=', true]],
       { limit: 1 }
     );
@@ -1152,26 +1363,5 @@ const OdooService = {
     console.warn('⚠️ Nenhum parâmetro ativo encontrado');
     return null;
   },
-
-  /**
-   * Busca um parâmetro específico por chave em x_parametros_line.
-   * Defensivo: se o modelo/campo não existir no Odoo, retorna null em vez de
-   * lançar — assim um parâmetro opcional não derruba quem chama.
-   * @returns {string|null}
-   */
-  buscarParametro(chave) {
-    try {
-      const resultado = this.searchRead(
-        'x_parametros_line',
-        ['x_studio_valor'],
-        [['x_studio_chave', '=', chave]],
-        { limit: 1 }
-      );
-      return resultado.length > 0 ? resultado[0].x_studio_valor : null;
-    } catch (e) {
-      console.warn(`⚠️ [OdooService] buscarParametro('${chave}') indisponível: ${e.message}`);
-      return null;
-    }
-  }
 
 };

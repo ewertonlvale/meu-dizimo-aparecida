@@ -53,7 +53,7 @@ const CadastroHandler = {
    */
   conversaAtiva() {
     try {
-      return PropertiesService.getScriptProperties()
+      return Plataforma.propriedades
         .getProperty('CADASTRO_CONVERSA_ATIVO') === 'true';
     } catch (e) {
       return false;
@@ -261,7 +261,7 @@ const CadastroHandler = {
     });
 
     Utils.enviarSimples(from, `Ótimo! Comunidade: *${itemTitle}* ✅\n\nAgora vamos aos seus dados pessoais.`);
-    Utilities.sleep(1000);
+    Plataforma.relogio.dormir(1000);
     Utils.enviarSimples(from, `${this._progresso(2)}\n\n📝 *Nome Completo*\n\nDigite seu nome completo como está no documento:`);
 
 
@@ -313,7 +313,7 @@ const CadastroHandler = {
     const dataFormatada = `${dia}/${mes}/${ano}`;
     StateManager.salvarCampoEMudarEstado(from, 'dataNascimento', dataFormatada, ESTADOS.AGUARDANDO_ENDERECO);
     Utils.enviarSimples(from, `Data registrada: *${dataFormatada}* ✅`);
-    Utilities.sleep(800);
+    Plataforma.relogio.dormir(800);
 
     // Membro: oferece o endereço do responsável (confirmar) ou digitar outro.
     if (StateManager.getCampo(from, 'cadastrandoMembro')) {
@@ -340,7 +340,7 @@ const CadastroHandler = {
     const end = StateManager.getCampo(from, 'responsavelEndereco') || '';
     StateManager.salvarCampoEMudarEstado(from, 'endereco', end, ESTADOS.AGUARDANDO_VALOR_MENSAL);
     Utils.enviarSimples(from, `🏠 Endereço: *mesmo do responsável* ✅`);
-    Utilities.sleep(600);
+    Plataforma.relogio.dormir(600);
     Utils.enviarSimples(from,
       `💰 *Valor Mensal do Dízimo*\n\nQuanto esse familiar costuma devolver mensalmente?\n\n` +
       `Escreva só o valor (ex.: 50 ou 50,00).`
@@ -384,7 +384,7 @@ const CadastroHandler = {
 
     StateManager.salvarMultiplosCampos(from, { valorMensal: valor });
     Utils.enviarSimples(from, `Valor registrado: *R$ ${valor.toFixed(2).replace('.', ',')}* ✅`);
-    Utilities.sleep(1000);
+    Plataforma.relogio.dormir(1000);
 
     // Membro: pula notificações e pergunta o dia da devolução (manter o do
     // responsável ou informar outro).
@@ -431,7 +431,7 @@ const CadastroHandler = {
       StateManager.salvarCampoEMudarEstado(from, 'notificacaoAtiva', false, ESTADOS.AGUARDANDO_FOTO_PERFIL);
       
       Utils.enviarSimples(from, 'Entendido! Você não receberá lembretes automáticos. ✅');
-      Utilities.sleep(1000);
+      Plataforma.relogio.dormir(1000);
       
       // Solicitar uma foto
       Utils.enviarSimples(from,
@@ -459,7 +459,7 @@ const CadastroHandler = {
     // Membro: sem texto de "lembrete" (não recebe notificações) → foto.
     if (StateManager.getCampo(from, 'cadastrandoMembro')) {
       Utils.enviarSimples(from, `📅 Dia da devolução: *${dia}* ✅`);
-      Utilities.sleep(600);
+      Plataforma.relogio.dormir(600);
       this._pedirFotoMembro(from);
       return;
     }
@@ -469,7 +469,7 @@ const CadastroHandler = {
       `✅ Perfeito!\n\n` +
       `Você receberá um lembrete amigável todo dia *${dia}* do mês.`
     );
-    Utilities.sleep(1000);
+    Plataforma.relogio.dormir(1000);
     Utils.enviarSimples(from,
       `📸 *Foto de Perfil*\n\n` +
       `Agora envie sua foto de perfil!\n\n` +
@@ -483,7 +483,7 @@ const CadastroHandler = {
     const dia = StateManager.getCampo(from, 'responsavelDia') || 10;
     StateManager.salvarMultiplosCampos(from, { diaPreferido: dia });
     Utils.enviarSimples(from, `📅 Dia da devolução: *${dia}* ✅`);
-    Utilities.sleep(600);
+    Plataforma.relogio.dormir(600);
     this._pedirFotoMembro(from);
   },
 
@@ -555,7 +555,7 @@ const CadastroHandler = {
         Utils.enviarSimples(from, '✅ Foto recebida!');
         console.log(`✅ Foto de perfil registrada para ${from} (mediaId: ${imagem.id})`);
         
-        Utilities.sleep(1000);
+        Plataforma.relogio.dormir(1000);
         this.mostrarResumo(from);  // ✅ Só avança se deu certo
       } else {
         console.warn('⚠️ Falha ao validar foto');

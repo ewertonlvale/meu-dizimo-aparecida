@@ -297,7 +297,7 @@ const DevolucaoHandler = {
     msg += `🔑 *Chave PIX:* \`${comunidade.x_studio_chave_pix}\`\n\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n\n📸 *Faça um único pagamento do total e envie o comprovante aqui.*\n\nAceito: imagem (foto) ou PDF.`;
 
-    // BL-40: mesmo caminho do individual — card nativo, com o QR como reserva.
+    // BL-40: mesmo caminho do individual — card nativo, com o copia e cola como reserva.
     return this._entregarPagamento(from, comunidade, total, msg,
                                    `dizimo-familia-${responsavel.id}-${Date.now()}`);
   },
@@ -540,7 +540,7 @@ const DevolucaoHandler = {
    *
    * REDE DE SEGURANÇA. Esta é a mensagem por onde o dinheiro passa. Se a Meta
    * recusar o card por qualquer motivo — mudança de política, chave de tipo
-   * indeduzível, indisponibilidade — cai no caminho antigo (QR + copia-e-cola),
+   * indeduzível, indisponibilidade — cai no copia-e-cola (sem QR desde o BL-84),
    * que continua inteiro e testado. Nunca deixar a pessoa em
    * AGUARDANDO_COMPROVANTE sem ter como pagar.
    *
@@ -555,11 +555,11 @@ const DevolucaoHandler = {
       console.warn('⚠️ [Devolução] Card PIX falhou:', e.message);
     }
 
-    console.warn('⚠️ [Devolução] Usando o caminho antigo: QR + copia-e-cola');
+    console.warn('⚠️ [Devolução] Usando a reserva: PIX copia e cola');
 
     let enviou = false;
     try {
-      enviou = MediaService.enviarQrCode(
+      enviou = MediaService.enviarPixCopiaECola(
         from,
         comunidade.x_studio_chave_pix,
         valor,
@@ -568,13 +568,13 @@ const DevolucaoHandler = {
         mensagem
       );
     } catch (e) {
-      console.warn('⚠️ QR Code PIX não pôde ser gerado:', e.message);
+      console.warn('⚠️ PIX copia e cola não pôde ser gerado:', e.message);
     }
 
     // Último recurso: os dados como texto puro. Sem eles a pessoa não tem como
     // pagar, e o estado AGUARDANDO_COMPROVANTE ficaria esperando o impossível.
     if (!enviou) {
-      console.warn('⚠️ [Devolução] QR não saiu; enviando os dados como texto');
+      console.warn('⚠️ [Devolução] Copia e cola não saiu; enviando os dados como texto');
       Utils.enviarSimples(from, mensagem);
     }
 

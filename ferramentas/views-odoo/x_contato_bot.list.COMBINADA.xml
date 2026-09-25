@@ -1,0 +1,10 @@
+<!-- x_contato_bot · list combinada (via get_view) · view 646
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<list decoration-muted="x_studio_cadastrou">
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_name" string="WhatsApp"/>
+  <field name="x_studio_data_primeiro_contato"/>
+  <field name="x_studio_cadastrou" string="Concluiu cadastro"/>
+  <field name="x_studio_etapa_abandono" string="Parou em"/>
+  <field name="x_studio_log_cadastro" string="Histórico" optional="hide"/>
+</list>

@@ -1,0 +1,5 @@
+<!-- x_comunidade · view 600 · Default list view for x_comunidade · base · list · prioridade 16 -->
+<list>
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_name"/>
+</list>

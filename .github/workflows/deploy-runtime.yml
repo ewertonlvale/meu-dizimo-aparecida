@@ -1,0 +1,94 @@
+# ============================================================================
+# deploy-runtime.yml — publica o runtime Node no Cloud Run (BL-74, Fase 2)
+# ============================================================================
+#
+# SÓ À MÃO (Actions → "Deploy do runtime Node" → Run workflow), e só da
+# `staging` ou da `main`. Deploy automático a cada merge fica para quando o
+# runtime receber tráfego — antes disso, publicar é decisão, não efeito.
+#
+# SEM CHAVE: o GitHub recebe um token temporário pelo Workload Identity
+# Federation. Nenhuma credencial de longa duração existe perto deste
+# repositório, que é público. O provedor só aceita ESTE repositório.
+#
+# O SERVIÇO NASCE PRIVADO (--no-allow-unauthenticated) e SEM TRÁFEGO: a Meta
+# continua apontando para o Apps Script. Abrir para a internet é passo da Fase
+# 5, junto com a troca da URL na Meta.
+#
+# O QUE VEM DE ONDE
+#   vars.*     Settings → Secrets and variables → Actions → aba Variables.
+#              Não são segredo, mas ficam fora do código: o repositório é
+#              público, e a URL e o banco do Odoo dizem onde bater.
+#   segredos   Secret Manager da Google — o GitHub nunca os vê.
+
+name: Deploy do runtime Node
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write     # para o token do Workload Identity Federation
+
+concurrency:
+  group: deploy-runtime
+  cancel-in-progress: false   # dois deploys ao mesmo tempo, nunca
+
+env:
+  REGIAO: southamerica-east1
+  REPOSITORIO: meu-dizimo
+  SERVICO: meu-dizimo-runtime
+
+jobs:
+  deploy:
+    name: Deploy
+    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # O harness inteiro ANTES de publicar. Imagem de código vermelho não sobe.
+      - name: Verificar
+        run: node ferramentas/verificar-tudo.mjs
+
+      - name: Autenticar na Google (sem chave)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_NUMERO_PROJETO }}/locations/global/workloadIdentityPools/github/providers/meu-dizimo
+          service_account: meu-dizimo-deploy@${{ vars.GCP_PROJETO }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Construir e enviar a imagem
+        run: |
+          IMAGEM="${REGIAO}-docker.pkg.dev/${{ vars.GCP_PROJETO }}/${REPOSITORIO}/runtime:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGIAO}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGEM" .
+          docker push "$IMAGEM"
+          echo "IMAGEM=$IMAGEM" >> "$GITHUB_ENV"
+
+      # NOTIFICACOES_ATIVAS=false É DE PROPÓSITO. Sem a propriedade, os lembretes
+      # ficam LIGADOS por padrão — e o Apps Script ainda os envia. Um /cron
+      # disparado aqui por engano mandaria o lembrete em dobro para os
+      # dizimistas de verdade. Vira "true" só no corte (Fase 5), junto com a
+      # remoção do acionador do Apps Script.
+      - name: Publicar no Cloud Run
+        run: |
+          gcloud run deploy "$SERVICO" \
+            --image="$IMAGEM" \
+            --region="$REGIAO" \
+            --service-account="meu-dizimo-bot@${{ vars.GCP_PROJETO }}.iam.gserviceaccount.com" \
+            --no-allow-unauthenticated \
+            --min-instances=0 --max-instances=2 \
+            --cpu=1 --memory=512Mi --timeout=300 --concurrency=10 \
+            --set-env-vars="PAPEL=local,ARMAZENAMENTO=upstash,PROCESSADORES=1,NOTIFICACOES_ATIVAS=false" \
+            --update-env-vars="UPSTASH_REDIS_REST_URL=${{ vars.UPSTASH_REDIS_REST_URL }},WHATSAPP_PHONE_ID=${{ vars.WHATSAPP_PHONE_ID }},ODOO_URL=${{ vars.ODOO_URL }},ODOO_DATABASE=${{ vars.ODOO_DATABASE }},ODOO_UID=${{ vars.ODOO_UID }},VERIFY_TOKEN=${{ vars.VERIFY_TOKEN }}" \
+            --set-secrets="WHATSAPP_TOKEN=WHATSAPP_TOKEN:latest,ODOO_API_KEY=ODOO_API_KEY:latest,GOOGLE_VISION_API_KEY=GOOGLE_VISION_API_KEY:latest,WEBHOOK_SECRET=WEBHOOK_SECRET:latest,CRON_TOKEN=CRON_TOKEN:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest"
+
+      - name: Onde ficou
+        run: gcloud run services describe "$SERVICO" --region="$REGIAO" --format="value(status.url)"

@@ -1,0 +1,7 @@
+<!-- x_contato_bot · view 648 · Default search view for x_contato_bot · base · search · prioridade 16 -->
+<search>
+  <field name="x_name"/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_contato_bot" domain="[['x_active', '=', False]]"/>
+  <separator/>
+</search>

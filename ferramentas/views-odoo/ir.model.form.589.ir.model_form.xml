@@ -1,0 +1,18 @@
+<!-- ir.model · view 589 · ir.model form · herda de 47 · form · prioridade 16 -->
+<data>
+  <field name="field_id" position="attributes">
+    <attribute name="context">
+      {'default_model': model}
+    </attribute>
+  </field>
+  <page name="groups" position="after">
+    <page name="ai" string="AI" invisible="ttype in ('binary', 'one2many', 'reference')">
+      <group>
+        <field name="ai" readonly="state == 'base'"/>
+        <field name="model" invisible="1"/>
+        <!-- Used by the `ai_prompt` widget -->
+        <field name="system_prompt" invisible="not ai" readonly="state == 'base'" widget="ai_prompt" options="{                                 'model_reference_field': 'model',                                 'field_reference_field': 'name',                                 'record_selector_relation_field': 'relation'                             }"/>
+      </group>
+    </page>
+  </page>
+</data>

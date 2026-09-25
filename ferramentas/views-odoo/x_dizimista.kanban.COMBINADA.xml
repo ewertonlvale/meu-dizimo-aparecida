@@ -1,0 +1,24 @@
+<!-- x_dizimista · kanban combinada (via get_view) · view 673
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<kanban string="Dizimista">
+  <field name="x_studio_classificacao"/>
+  <templates>
+    <t t-name="card">
+      <div class="w-100">
+        <div class="d-flex align-items-start justify-content-between">
+          <field name="x_name" class="fw-bold fs-5 text-truncate"/>
+          <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_classificacao.raw_value == 'Regular' ? 'success' : record.x_studio_classificacao.raw_value == 'Eventual' ? 'warning' : 'secondary' }}" t-out="record.x_studio_classificacao.value"/>
+        </div>
+        <field name="x_studio_comunidade" class="text-muted small d-block text-truncate"/>
+        <div class="mt-2 d-flex justify-content-between align-items-center">
+          <field name="x_studio_partner_phone" class="small text-truncate"/>
+          <field name="x_studio_value" class="fw-bold"/>
+        </div>
+        <div class="text-muted small mt-1" invisible="x_studio_notificacao_ativa">
+          🔕 não recebe lembretes
+        </div>
+      </div>
+    </t>
+  </templates>
+  <field name="x_studio_notificacao_ativa" invisible="True" readonly="True" data-used-by="invisible='x_studio_notificacao_ativa' (div,None)"/>
+</kanban>

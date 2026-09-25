@@ -197,7 +197,7 @@ function criarCamposOferta() {
  * deste projeto, e existe para que isto não rode por engano em produção.
  */
 function tornarComunidadeGravavel() {
-  const modoTeste = PropertiesService.getScriptProperties().getProperty('MODO_TESTE');
+  const modoTeste = Plataforma.propriedades.getProperty('MODO_TESTE');
   if (modoTeste !== 'true') {
     Logger.log('🔒 Bloqueado: defina MODO_TESTE = "true" nas Script Properties.');
     Logger.log('   Esta função altera um campo com dados gravados.');

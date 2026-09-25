@@ -1,0 +1,50 @@
+<!-- res.users · view 638 · Odoo Studio: res.users.simplified.form customization · herda de 166 · form · prioridade 99 -->
+<data>
+  <xpath expr="/form/sheet" position="before">
+    <header/>
+  </xpath>
+  <xpath expr="/form" position="attributes">
+    <attribute name="delete">
+      false
+    </attribute>
+    <attribute name="duplicate">
+      false
+    </attribute>
+  </xpath>
+  <xpath expr="/form/sheet/div" position="before">
+    <group name="studio_group_1p9_1jhpqe7n3">
+      <group name="studio_group_1p9_left"/>
+      <group name="studio_group_1p9_right"/>
+    </group>
+  </xpath>
+  <xpath expr="/form//field[@name='phone']" position="attributes">
+    <attribute name="options">
+      {"enable_sms":false}
+    </attribute>
+  </xpath>
+  <xpath expr="/form/sheet/group[@name='access_groups']/div" position="after">
+    <field name="x_studio_comunidades" widget="many2many_tags" required="False"/>
+  </xpath>
+  <xpath expr="//group[@name='access_groups']" position="attributes">
+    <attribute name="invisible">
+      0
+    </attribute>
+  </xpath>
+  <xpath expr="/form//label[@for='group_ids']" position="attributes">
+    <attribute name="groups"/>
+  </xpath>
+  <xpath expr="/form/sheet/group[@name='access_groups']/div" position="attributes">
+    <attribute name="groups"/>
+  </xpath>
+  <xpath expr="/form//field[@name='group_ids']" position="attributes">
+    <attribute name="domain">
+      ["|", ("name", "=", "Secretaria Paroquial"), ("name", "=", "Acesso Comunidade")]
+    </attribute>
+    <attribute name="force_save">
+      0
+    </attribute>
+    <attribute name="readonly">
+      False
+    </attribute>
+  </xpath>
+</data>

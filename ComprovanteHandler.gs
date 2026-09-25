@@ -45,18 +45,42 @@ const ComprovanteHandler = {
       return;
     }
 
-    // BL-37: o "⏳ Analisando comprovante..." era uma mensagem cobrada para
-    // dizer "estou trabalhando". O indicador de digitação diz o mesmo de graça
-    // — e melhor, porque é um balão vivo em vez de uma linha parada. Só quando
-    // ele não sai é que o texto volta: o OCR leva segundos, e silêncio total
-    // parece travamento.
-    if (!Utils.sinalizarProcessando(messageId)) {
+    // BL-84: um comprovante por vez, por pessoa. Duas fotos mandadas em
+    // sequência chegavam como duas execuções, as duas ainda em
+    // AGUARDANDO_COMPROVANTE — e as duas gravavam a devolução. A marca é
+    // conferida e posta sob a trava, para as duas não passarem juntas; sem a
+    // trava, segue como antes (melhor processar que recusar um comprovante).
+    const marca = `comprovante_em_curso_${from}`;
+    const reservou = Plataforma.trava.comTrava(`comprovante_${from}`, 5000, () => {
+      if (Plataforma.cache.get(marca)) return false;
+      Plataforma.cache.put(marca, '1', 300);   // 5 min: se a execução morrer, destrava sozinha
+      return true;
+    }, () => true);
+
+    if (!reservou) {
+      console.warn(`⏸️ [Comprovante] ${from} mandou outro arquivo enquanto o anterior era analisado — ignorado`);
       Utils.enviarSimples(from,
-        `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+        '⏳ Ainda estou analisando o comprovante que você mandou antes.\n\n' +
+        'Aguarde a resposta dele — não precisa enviar de novo. 🙏');
+      return;
     }
 
-    const resultado = this._processarArquivo(from, arquivo, tipo);
-    this._tratarResultado(from, resultado);
+    try {
+      // BL-37: o "⏳ Analisando comprovante..." era uma mensagem cobrada para
+      // dizer "estou trabalhando". O indicador de digitação diz o mesmo de graça
+      // — e melhor, porque é um balão vivo em vez de uma linha parada. Só quando
+      // ele não sai é que o texto volta: o OCR leva segundos, e silêncio total
+      // parece travamento.
+      if (!Utils.sinalizarProcessando(messageId)) {
+        Utils.enviarSimples(from,
+          `⏳ *Analisando ${tipo === 'pdf' ? 'PDF' : 'comprovante'}...*\n\nAguarde um momento.`);
+      }
+
+      const resultado = this._processarArquivo(from, arquivo, tipo);
+      this._tratarResultado(from, resultado);
+    } finally {
+      Plataforma.cache.remove(marca);
+    }
   },
 
   // ==========================================================================
@@ -69,7 +93,10 @@ const ComprovanteHandler = {
     if (mime.startsWith('image/'))                       return 'imagem';
     if (mime === 'application/pdf')                      return 'pdf';
     if (arquivo.filename?.toLowerCase().endsWith('.pdf')) return 'pdf';
-    if (Object.prototype.hasOwnProperty.call(arquivo, 'sha256')) return 'imagem';
+    // BL-84: o `sha256` só serve de pista quando NÃO há tipo declarado. Todo
+    // documento do WhatsApp traz sha256 — um .docx ou .xlsx virava "imagem",
+    // ia para o OCR e voltava com o motivo técnico da falha na tela da pessoa.
+    if (!mime && Object.prototype.hasOwnProperty.call(arquivo, 'sha256')) return 'imagem';
 
     return null;
   },
@@ -229,6 +256,91 @@ const ComprovanteHandler = {
     ]);
   },
 
+  /**
+   * Pergunta o mês DEPOIS de registrar, e só quando há dúvida real. (BL-62)
+   *
+   * A dúvida existe quando a pessoa tinha um mês em aberto ANTERIOR ao que
+   * acabou de ser registrado: pagou em dezembro tendo setembro em aberto. O bot
+   * não tem como saber de qual mês é o pagamento, e adivinhar seria inventar um
+   * fato sobre dinheiro.
+   *
+   * ⚠️ SÓ MANDA MENSAGEM QUANDO HÁ DÚVIDA. No caso comum — a competência do
+   *    pagamento bate com o mês em aberto, ou não há mês em aberto — nada é
+   *    enviado, e a contagem de mensagens do fluxo normal não muda. O harness
+   *    guarda essa contagem.
+   *
+   * Os dois ids viajam DENTRO do id do botão, e não em sessão. É o que permite
+   * a correção não depender de estado nenhum — a pessoa pode tocar em Corrigir
+   * horas depois, de outro aparelho, e funciona.
+   *
+   * @private
+   */
+  _ofereceCorrigirMes(from, devolucaoId, dizimistaId) {
+    if (!devolucaoId || !dizimistaId) return;
+    try {
+      const reg = OdooService.searchRead('x_devolucao', ['x_studio_competencia'],
+        [['id', '=', devolucaoId]], { limit: 1 });
+      const competencia = reg && reg[0] && reg[0].x_studio_competencia;
+      if (!competencia) return;
+
+      const anterior = OdooService.mesAnteriorSemDevolucao(dizimistaId, competencia);
+      if (!anterior) return;   // primeira devolução, ou o mês anterior já coberto
+
+      // Duas opções, sempre. O mês registrado vem primeiro: é o palpite do
+      // bot, e quem concorda toca no primeiro botão sem ler o resto.
+      Utils.enviarMenu(from,
+        `📅 Registrei este dízimo como referente a *${Utils.mesPorExtenso(competencia)}*.\n\n`
+        + `Como não vi devolução sua de *${Utils.mesPorExtenso(anterior)}*, quero confirmar: `
+        + 'a qual mês ele se refere?',
+        [
+          { id: `compm_${devolucaoId}_${competencia}`, title: Utils.mesPorExtenso(competencia).substring(0, 20) },
+          { id: `compm_${devolucaoId}_${anterior}`,    title: Utils.mesPorExtenso(anterior).substring(0, 20) },
+        ]);
+    } catch (e) {
+      // Nunca derruba nada: a devolução já está registrada e confirmada. O pior
+      // que acontece é a pessoa não receber a pergunta.
+      console.warn(`⚠️ [Competência] Não consegui oferecer a escolha: ${e.message}`);
+    }
+  },
+
+  /**
+   * A pessoa escolheu o mês de referência. (BL-71)
+   *
+   * O id do botão carrega o registro e o mês — nada depende de sessão, e por
+   * isso a escolha funciona horas depois, com a sessão já expirada. É o caso
+   * normal: a devolução é encerrada antes de a pergunta sair.
+   *
+   * @param {string} buttonId - `compm_<id>_<aaaa-mm-dd>`
+   */
+  corrigirMes(from, buttonId) {
+    const m = String(buttonId).match(/^compm_(\d+)_(\d{4}-\d{2}-\d{2})$/);
+    if (!m) {
+      // Inclui o formato antigo `comp_<id>_<id>`, de mensagens que saíram
+      // antes do BL-71 e ainda estão na conversa de alguém.
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ Essa opção não vale mais. Sua devolução *está registrada* — se o mês de '
+        + 'referência estiver errado, a secretaria ajusta.');
+      return;
+    }
+    try {
+      const id = Number(m[1]);
+      const atual = OdooService.searchRead('x_devolucao', ['x_studio_competencia'],
+        [['id', '=', id]], { limit: 1 });
+      if (atual && atual[0] && atual[0].x_studio_competencia === m[2]) {
+        Utils.enviarComBotaoMenu(from, '👍 Perfeito, deixo como está. Obrigado!');
+        return;
+      }
+      OdooService.definirCompetencia(id, m[2]);
+      Utils.enviarComBotaoMenu(from,
+        `✅ Pronto! Seu dízimo passou a valer para *${Utils.mesPorExtenso(m[2])}*.`);
+    } catch (e) {
+      console.error(`❌ [Competência] Falha ao definir o mês: ${e.message}`);
+      Utils.enviarComBotaoMenu(from,
+        '⚠️ Não consegui mudar o mês agora. Sua devolução *continua registrada* — ' +
+        'apenas o mês de referência não mudou. Fale com a secretaria.');
+    }
+  },
+
   _conferirComprovante(dados, comunidade) {
     dados = dados || {};
     comunidade = comunidade || {};
@@ -241,6 +353,15 @@ const ComprovanteHandler = {
     const rec = dados.recebedor || {};
     const nomeDif  = this._textoDivergente(rec.nome,  comunidade.x_studio_titular_conta);
     const bancoDif = this._textoDivergente(rec.banco, comunidade.x_studio_banco);
+
+    // BL-69: a IDADE do comprovante, antes do conteúdo dele.
+    //
+    // Vem primeiro porque não depende de nada que a comunidade tenha
+    // cadastrado — um comprovante de três meses é suspeito com chave certa ou
+    // errada. Mas NÃO passa por cima de chave divergente, que é mais grave:
+    // por isso só decide quando a chave conferiu ou não foi lida.
+    const idade = this._conferirIdade(dados.data);
+    if (idade && chave.motivo !== 'divergente') return idade;
 
     if (chave.motivo === 'ok') {
       if (nomeDif)  return { conferido: false, motivo: 'titular_divergente' };
@@ -255,6 +376,54 @@ const ComprovanteHandler = {
     if (nomeDif && bancoDif) return { conferido: false, motivo: 'tudo_divergente' };
 
     return chave;
+  },
+
+  /**
+   * O comprovante é velho demais, ou tem data no futuro? (BL-69)
+   *
+   * Compara com HOJE — não há outro relógio confiável. O E2E do PIX carrega a
+   * data, mas é a mesma informação que já foi lida.
+   *
+   * O limite vem de `x_studio_dias_comprovante` em x_parametros, com
+   * DIAS_COMPROVANTE_ANTIGO_PADRAO de fábrica. É parâmetro, e não número no
+   * código, porque quem sabe se dois meses é muito ou pouco é a paróquia.
+   *
+   * Data ILEGÍVEL não acusa nada. O BL-52 fez a leitura funcionar em vários
+   * layouts, mas ela ainda falha — e chamar de "antigo" um comprovante cuja
+   * data não conseguimos ler seria acusar alguém do nosso próprio limite.
+   *
+   * @param {string} dataBR - 'dd/mm/aaaa', como o VisionService entrega
+   * @returns {{conferido: boolean, motivo: string}|null} null quando está em dia
+   * @private
+   */
+  _conferirIdade(dataBR) {
+    const m = String(dataBR || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;   // sem data legível não se acusa nada
+
+    const doComprovante = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    if (isNaN(doComprovante.getTime())) return null;
+
+    const hoje = new Date();
+    // Zera a hora dos dois lados: o que interessa é a diferença de DIAS, e um
+    // comprovante das 23h comparado com 8h da manhã viraria um dia a mais.
+    hoje.setHours(0, 0, 0, 0);
+    doComprovante.setHours(0, 0, 0, 0);
+
+    const dias = Math.round((hoje - doComprovante) / 86400000);
+    if (dias < 0) return { conferido: false, motivo: 'comprovante_futuro' };
+
+    let limite = DIAS_COMPROVANTE_ANTIGO_PADRAO;
+    try {
+      const p = OdooService.buscarParametros() || {};
+      const cfg = Number(p.x_studio_dias_comprovante);
+      // Zero ou negativo reprovaria todo mundo; um número absurdo não reprova
+      // ninguém. O campo é editável por quem não escreveu isto.
+      if (cfg >= 1 && cfg <= 365) limite = cfg;
+    } catch (e) {
+      console.warn(`⚠️ [Idade] Não li o parâmetro de dias, usando ${limite}: ${e.message}`);
+    }
+
+    return dias > limite ? { conferido: false, motivo: 'comprovante_antigo' } : null;
   },
 
   /**
@@ -348,18 +517,38 @@ const ComprovanteHandler = {
     // Cria uma devolução por membro (valor = valor do membro).
     const tipoComprovante = resultado.tipo === 'pdf' ? 'pdf' : 'imagem';
     const registrados = [];
+    const criados = [];
     if (responsavel) {
       for (const m of lote) {
         try {
+          // O VALOR DO COMPROVANTE MANDA, quando há um membro só. (BL-72)
+          //
+          // O valor que a pessoa escolhe na conversa é uma INCLINAÇÃO: ela
+          // devolve o que quiser. Registrar os R$ 100 escolhidos quando o
+          // comprovante mostra R$ 400 põe no Odoo um número que não
+          // corresponde a dinheiro nenhum — e o relatório do mês fica R$ 300
+          // menor que o extrato.
+          //
+          // É a mesma regra do BL-53, que valia só para oferta. O caminho do
+          // dizimista único já fazia assim; o lote de família não.
+          //
+          // ⚠️ SÓ COM UM MEMBRO. Com vários, o comprovante traz um total e não
+          //    há como dividi-lo entre as pessoas — ali a alocação da conversa
+          //    é a única informação que existe.
+          const lido = resultado.dados && resultado.dados.valor;
+          const valorMembro = (lote.length === 1 && lido > 0) ? lido : (m.valor || 0);
           const dadosMembro = {
-            valor: m.valor || 0,
+            valor: valorMembro,
             data:  resultado.dados && resultado.dados.data,
             tipo:  resultado.dados && resultado.dados.tipo
           };
           const devId = OdooService.registrarDevolucao(
             m.id, dadosMembro, resultado.arquivoOriginalBase64, tipoComprovante, conferencia
           );
-          if (devId) registrados.push(m.nome);
+          if (devId) {
+            registrados.push(m.nome);
+            criados.push({ id: devId, dizimistaId: m.id });
+          }
         } catch (e) {
           erroOdoo = true;
           console.error(`❌ [Família] Falha ao registrar membro id=${m.id} (${m.nome}): ${e.message}`);
@@ -375,6 +564,17 @@ const ComprovanteHandler = {
       const fecho = '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!';
       this._responderDesfecho(from,
         `${base}\n\n${this._fraseDesfecho(conferencia, 'Ela')}${fecho}`, conferencia);
+
+      // BL-71: a pergunta do mês também aqui, mas SÓ quando o lote tem um
+      // membro — que é o caso de quem abre o fluxo de família e escolhe uma
+      // pessoa só. Lote de um não é lote.
+      //
+      // Com vários, uma pergunta por membro viraria uma rajada de mensagens, e
+      // uma pergunta única não teria resposta: cada pessoa pode estar num mês
+      // diferente. Família de verdade corrige pela tela do Odoo.
+      if (criados.length === 1) {
+        this._ofereceCorrigirMes(from, criados[0].id, criados[0].dizimistaId);
+      }
       return;
     }
 
@@ -560,9 +760,12 @@ const ComprovanteHandler = {
         return;
       }
 
+      // BL-84: o motivo técnico fica no log, não na tela — "Motivo: Vision API
+      // HTTP 403" não ajuda quem está devolvendo o dízimo, e expõe o bot.
+      console.error(`🎯 [_tratarResultado] Motivo da falha: ${resultado.erro || 'desconhecido'}`);
       MenuHandler.erro(from,
-        `Não consegui processar o comprovante.\n\n_Motivo: ${resultado.erro || 'Erro desconhecido'}_\n\n` +
-        'Tente novamente ou entre em contato com a secretaria.'
+        'Não consegui ler este comprovante, e ele *ainda não foi registrado*.\n\n' +
+        'Tente enviar de novo — uma *foto* nítida ou o *PDF* do banco — ou fale com a secretaria.'
       );
       return;
     }
@@ -594,17 +797,25 @@ const ComprovanteHandler = {
     // antes dele.
     const blocoDados = this._blocoDados(dados);
 
+    // BL-77: o caminho é decidido pelo ESTADO da conversa, não pela presença de
+    // um campo na sessão. `ofertaComunidadeId` é gravado assim que a pessoa
+    // toca em Oferta — antes de escolher qualquer coisa — e nada o apagava.
+    // Quem tocava em Oferta, desistia e ia para Dízimo tinha o dízimo gravado
+    // como oferta: fora do relatório de dízimo, e com "Oferta recebida" na tela.
+    // O estado é trocado a cada passo do menu, então não sobra de fluxo antigo.
+    const estado = StateManager.getEstado(from);
+
     // ===== CONTEXTO DE OFERTA (BL-41) =====
     // Precisa vir ANTES da busca por dizimista: a oferta pode ser de quem o bot
     // nunca viu, e o caminho normal responderia "não encontrei seu cadastro" —
     // depois de a pessoa já ter pagado.
-    if (StateManager.getCampo(from, 'ofertaComunidadeId')) {
+    if (estado === ESTADOS.AGUARDANDO_COMPROVANTE_OFERTA) {
       return this._tratarResultadoOferta(from, resultado, blocoDados);
     }
 
     // ===== CONTEXTO DE FAMÍLIA: uma devolução por membro selecionado =====
     const lote = StateManager.getCampo(from, 'devolucaoLote');
-    if (lote && lote.length) {
+    if (estado === ESTADOS.AGUARDANDO_COMPROVANTE_FAMILIA && lote && lote.length) {
       return this._tratarResultadoFamilia(from, resultado, lote, blocoDados);
     }
 
@@ -662,9 +873,26 @@ const ComprovanteHandler = {
         );
         console.log('🎯 [_tratarResultado] ✅ Devolução registrada! ID:', devolucaoId);
       } catch (e) {
-        erroOdoo = true;
         console.error('🎯 [_tratarResultado] ❌ ERRO ao registrar no Odoo:', e.message);
         console.error('🎯 [_tratarResultado] Stack:', e.stack);
+
+        // BL-84: o erro pode ter vindo DEPOIS da gravação (timeout, 5xx). Antes
+        // de dizer "não foi registrado, reenvie" — que duplicava a devolução
+        // —, pergunta ao Odoo. Se a consulta também falhar, vale o aviso de
+        // instabilidade: com o Odoo fora, a gravação quase certamente não
+        // aconteceu.
+        try {
+          const recente = OdooService.devolucaoRecemGravada(
+            dizimista.id, resultado.dados && resultado.dados.valor);
+          if (recente) {
+            devolucaoId = recente.id;
+            console.warn(`♻️ [_tratarResultado] O erro veio depois da gravação — ` +
+                         `devolução ${devolucaoId} existe; tratando como sucesso`);
+          }
+        } catch (eConsulta) {
+          console.warn('⚠️ [_tratarResultado] Não consegui conferir se gravou:', eConsulta.message);
+        }
+        if (!devolucaoId) erroOdoo = true;
       }
     }
 
@@ -683,6 +911,7 @@ const ComprovanteHandler = {
         '\n\n🙏 Obrigado pela sua fidelidade! Deus abençoe!',
         motivoConferencia
       );
+      this._ofereceCorrigirMes(from, devolucaoId, dizimista && dizimista.id);
       return;
     }
 

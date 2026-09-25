@@ -1,0 +1,5 @@
+<!-- x_dizimista · view 597 · Default pivot view for x_dizimista · base · pivot · prioridade 16 -->
+<pivot sample="1">
+  <field name="x_studio_value" type="measure"/>
+  <field name="x_studio_date" type="row"/>
+</pivot>

@@ -1,0 +1,9 @@
+<!-- x_contato_bot · view 646 · Default list view for x_contato_bot · base · list · prioridade 16 -->
+<list decoration-muted="x_studio_cadastrou">
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_name" string="WhatsApp"/>
+  <field name="x_studio_data_primeiro_contato"/>
+  <field name="x_studio_cadastrou" string="Concluiu cadastro"/>
+  <field name="x_studio_etapa_abandono" string="Parou em"/>
+  <field name="x_studio_log_cadastro" string="Histórico" optional="hide"/>
+</list>

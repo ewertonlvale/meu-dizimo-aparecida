@@ -154,7 +154,7 @@ const MediaService = {
       // raro. Mantida em 3s de propósito: é margem para o WhatsApp registrar a
       // mídia recém-enviada, e encurtá-la sem evidência arriscaria o envio —
       // o ganho real veio de não passar mais por aqui a cada primeiro contato.
-      Utilities.sleep(3000);
+      Plataforma.relogio.dormir(3000);
 
       const resultado = this._enviarMensagemMidia(to, 'image', { id: mediaId, caption });
       console.log('📤 Resposta envio imagem:', resultado ? resultado.getContentText() : 'null');
@@ -180,8 +180,8 @@ const MediaService = {
   subirImagem(base64Data) {
     const config = getConfig();
 
-    const imageBytes = Utilities.base64Decode(base64Data);
-    const blob       = Utilities.newBlob(imageBytes, 'image/png', 'image.png');
+    const imageBytes = Plataforma.bytes.deBase64(base64Data);
+    const blob       = Plataforma.bytes.blob(imageBytes, 'image/png', 'image.png');
 
     const uploadResponse = Utils.fetchComRetry(
       getWhatsAppUrl(`${config.WHATSAPP_PHONE_ID}/media`),
@@ -245,7 +245,7 @@ const MediaService = {
    */
   _mediaIdEmCache(chaveCache, base64Data) {
     try {
-      const bruto = PropertiesService.getScriptProperties().getProperty(`media_id_${chaveCache}`);
+      const bruto = Plataforma.propriedades.getProperty(`media_id_${chaveCache}`);
       if (!bruto) return null;
 
       const guardado = JSON.parse(bruto);
@@ -261,7 +261,7 @@ const MediaService = {
   /** @private */
   _guardarMediaId(chaveCache, base64Data, id) {
     try {
-      PropertiesService.getScriptProperties().setProperty(
+      Plataforma.propriedades.setProperty(
         `media_id_${chaveCache}`,
         JSON.stringify({ id, digital: this._digitalImagem(base64Data), em: Date.now() })
       );
@@ -273,7 +273,7 @@ const MediaService = {
   /** @private */
   _descartarMediaId(chaveCache) {
     try {
-      PropertiesService.getScriptProperties().deleteProperty(`media_id_${chaveCache}`);
+      Plataforma.propriedades.deleteProperty(`media_id_${chaveCache}`);
     } catch (e) { /* nada a fazer */ }
   },
 
@@ -302,8 +302,8 @@ const MediaService = {
     const config = getConfig();
 
     try {
-      const bytes = Utilities.base64Decode(base64Data);
-      const blob  = Utilities.newBlob(bytes, mimeType, filename);
+      const bytes = Plataforma.bytes.deBase64(base64Data);
+      const blob  = Plataforma.bytes.blob(bytes, mimeType, filename);
 
       // 1. Upload do arquivo
       const uploadResponse = Utils.fetchComRetry(
@@ -325,7 +325,7 @@ const MediaService = {
       }
 
       console.log(`✅ Upload documento concluído. Media ID: ${uploadResult.id}`);
-      Utilities.sleep(2000);
+      Plataforma.relogio.dormir(2000);
 
       // 2. Enviar mensagem com o documento
       const resultado = this._enviarMensagemMidia(to, 'document', {
@@ -404,7 +404,7 @@ const MediaService = {
       }
 
       const blob     = fileResponse.getBlob();
-      const base64   = Utilities.base64Encode(fileResponse.getContent());
+      const base64   = Plataforma.bytes.paraBase64(fileResponse.getContent());
       const mimeType = blob.getContentType();
 
       console.log('✅ Arquivo baixado. Tipo:', mimeType, '| Tamanho:', blob.getBytes().length, 'bytes');
@@ -538,46 +538,32 @@ const MediaService = {
   // ==========================================================================
 
   /**
-   * Gera e envia o QR Code PIX para o usuário.
+   * Envia os dados de pagamento e o PIX copia e cola — a rede de segurança do
+   * card nativo (DevolucaoHandler._entregarPagamento).
    *
-   * BL-37 — A LEGENDA CARREGA OS DADOS DE PAGAMENTO.
-   * Antes eram três mensagens: os dados da comunidade, a imagem do QR com uma
-   * legenda genérica ("escaneie pelo app do banco") e o copia-e-cola. A legenda
-   * da imagem estava sendo usada para dizer o óbvio enquanto uma mensagem
-   * inteira, cobrada, carregava os dados. Agora os dados VÃO na legenda, e as
-   * três viram duas — sem tirar nada da tela e sem perder o QR Code.
+   * Duas mensagens: a primeira com os dados de pagamento (ou a instrução), a
+   * segunda com o código SOZINHO (ver o comentário no fim desta função).
    *
-   * O copia-e-cola continua sozinho: é o motivo de ele existir (ver o comentário
-   * no fim desta função).
+   * Era `enviarQrCode`, e a primeira mensagem era a imagem do QR com os dados
+   * na legenda (BL-37). O QR saiu no BL-84 — ver o comentário no passo 1.
    *
    * @param {string} to            - Número do destinatário
    * @param {string} chavePix      - Chave PIX da comunidade
    * @param {number} valor         - Valor sugerido (opcional)
    * @param {string} recebedorNome - Nome do recebedor (ex.: titular da conta)
    * @param {string} cidade        - Cidade do recebedor (opcional)
-   * @param {string} [legenda]     - Texto que vai na legenda da imagem. Quando
-   *   omitido, usa a instrução genérica.
+   * @param {string} [legenda]     - Os dados de pagamento. Quando omitido, usa
+   *   a instrução genérica.
    * @returns {boolean} false se nada foi enviado — quem chamou precisa saber,
-   *   porque agora a legenda pode ser a única cópia dos dados de pagamento.
+   *   porque a legenda pode ser a única cópia dos dados de pagamento.
    */
-  enviarQrCode(to, chavePix, valor, recebedorNome, cidade, legenda) {
+  enviarPixCopiaECola(to, chavePix, valor, recebedorNome, cidade, legenda) {
     // A chave pode ser um CPF — não vai para o log (mesmo critério do VisionService).
-    console.log('💳 Gerando QR Code PIX...');
-
-    // Legenda de imagem no WhatsApp tem teto de 1024 caracteres, e a mensagem
-    // de pagamento cresce com o nome do titular, o do banco e a linha do
-    // histórico. Estourar o teto faria a API recusar a imagem INTEIRA — os
-    // dados de pagamento sumiriam junto. Perto do teto, a legenda volta a ser
-    // mensagem própria: gasta uma mensagem, mas nada se perde.
-    if (legenda && legenda.length > 950) {
-      console.warn(`⚠️ [QR] Legenda com ${legenda.length} caracteres — enviando à parte`);
-      Utils.enviarSimples(to, legenda);
-      legenda = null;
-    }
+    console.log('💳 Gerando PIX copia e cola...');
 
     const instrucao = legenda ||
-      ('💳 *QR Code PIX*\n\nEscaneie pelo app do seu banco — ou use o ' +
-       '*copia e cola* que vou enviar na próxima mensagem. 👇');
+      ('💳 *PIX copia e cola*\n\nCopie o código da próxima mensagem e cole ' +
+       'no app do seu banco, em *Pix copia e cola*. 👇');
 
     let pixPayload;
     try {
@@ -596,26 +582,16 @@ const MediaService = {
       return true;
     }
 
-    // 1. QR Code — depende de serviço externo sem SLA, então é o passo opcional.
-    //    Se falhar, o usuário ainda recebe o copia e cola, que é o que permite pagar.
-    const semImagem = instrucao + (legenda
-      ? '\n\n_(Não consegui gerar a imagem do QR Code; use o código abaixo.)_ 👇'
-      : '');
-    try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixPayload)}`;
-      const response = Utils.fetchComRetry(qrUrl, { muteHttpExceptions: true },
-        { idempotente: true, rotulo: 'QR Code' });
-
-      if (response.getResponseCode() === 200) {
-        this.enviarImagemBase64(to, Utilities.base64Encode(response.getContent()), instrucao);
-      } else {
-        console.warn('⚠️ API QR Code falhou, status:', response.getResponseCode());
-        Utils.enviarSimples(to, semImagem);
-      }
-    } catch (error) {
-      console.warn('⚠️ Não foi possível gerar QR Code:', error.message);
-      Utils.enviarSimples(to, semImagem);
-    }
+    // 1. As instruções (ou a legenda com os dados de pagamento).
+    //
+    // BL-84: a imagem do QR Code saiu. Ela era gerada por `api.qrserver.com`,
+    // um serviço de terceiros sem contrato, que recebia o código PIX INTEIRO —
+    // chave, titular e valor. A chave de uma comunidade pode ser o CPF de uma
+    // pessoa física, e isso é dado pessoal indo para fora sem base nenhuma.
+    // O caminho principal (card nativo, BL-40) já tinha aberto mão do QR
+    // escaneável pela mesma troca; esta é a rede de segurança dele, e agora
+    // segue a mesma decisão. Continuam 2 mensagens, e ninguém fica sem pagar.
+    Utils.enviarSimples(to, instrucao);
 
     // 2. O payload vai SOZINHO numa mensagem: assim um toque longo → Copiar leva
     //    exatamente o código, sem o usuário ter de selecionar o trecho à mão num

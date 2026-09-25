@@ -1,0 +1,26 @@
+<!-- x_notificacao_log · form combinada (via get_view) · view 620
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<form>
+  <header/>
+  <sheet string="Notificaçao Log">
+    <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
+    <field name="x_active" invisible="1"/>
+    <div class="oe_title">
+      <h1>
+        <field name="x_name" required="1" placeholder="Name..."/>
+      </h1>
+    </div>
+    <group name="studio_group_59ed0e">
+      <group name="studio_group_59ed0e_left">
+        <field name="x_studio_dizimista" options="{'create_name_field': 'x_name'}" can_create="True" can_write="True"/>
+        <field name="x_studio_tipo"/>
+        <field name="x_studio_data_envio"/>
+        <field name="x_studio_mes_referencia"/>
+        <field name="x_studio_status_envio"/>
+        <field name="x_studio_mensagem_erro"/>
+      </group>
+      <group name="studio_group_59ed0e_right"/>
+    </group>
+  </sheet>
+  <chatter/>
+</form>

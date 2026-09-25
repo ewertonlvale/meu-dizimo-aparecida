@@ -66,10 +66,10 @@ BL-22 era "usar chaves por usuário e varrer por prefixo na trigger", o que é
 | `estado_${from}` | 1 h | Estado atual da conversa |
 | `dados_${from}` | 1 h | Dados temporários do cadastro |
 | `log_cadastro_${from}` | 1 h | Transcrição do cadastro (truncada em 90 KB) |
-| `sessao_inicio_${from}` | 1 h | Timestamp de início da sessão |
+| `sessao_inicio_${from}` | 2 h | Timestamp de início da sessão. Vive o dobro da sessão (60 min) de propósito — BL-84 |
 | `aviso_sessao_${from}` | 10 min | Marca que o aviso de expiração já foi enviado |
 | `contato_${from}` | 6 h | Número já conhecido (evita ida ao Odoo por mensagem) |
-| `msg_${messageId}` | 10 min | Idempotência do webhook |
+| `msg_${messageId}` | 6 h | Idempotência do webhook (BL-78: eram 10 min, e a Meta reentrega por horas) |
 | `taxa_min_${from}_${balde}` · `taxa_hora_${from}_${balde}` | 2 min / 2 h | Freio de gasto por pessoa. O **balde de tempo na chave** é essencial: `cache.put` renova o TTL, então chave fixa nunca expiraria |
 | `taxa_aviso_${from}` | 1 h | Garante um aviso por hora — o aviso também é mensagem cobrada |
 | `tentativas_relatorio_${from}` · `bloqueio_relatorio_${from}` | — | Controle de acesso ao relatório |
@@ -91,14 +91,14 @@ nesta tabela e defina **quem a apaga**. Sem isso ela vaza para sempre.
 ## 2. Chamadas externas
 
 **Regra:** todo acesso HTTP passa por **`Utils.fetchComRetry(url, options, { idempotente, rotulo })`**.
-Não chame `UrlFetchApp.fetch` diretamente — isso escapa da contagem de cota (BL-25) e do
+Não chame `Plataforma.http.fetch` diretamente — isso escapa da contagem de cota (BL-25) e do
 retry (BL-24). A única exceção é `RegistrarNumero.gs`, utilitário manual de setup.
 
 ### A política de retry depende de idempotência
 
 | Situação | Repete? | Por quê |
 |---|---|---|
-| **429** (throttling) | Sempre | Recusada *antes* de executar; repetir nunca duplica |
+| **429** (throttling), e o **400 de limite da Meta** (códigos 4, 80007, 130429, 131056 — BL-84) | Sempre | Recusada *antes* de executar; repetir nunca duplica |
 | **5xx / exceção de rede**, `idempotente: true` | Sim | Leituras, `write`, OCR e downloads não têm efeito colateral |
 | **5xx / exceção de rede**, `idempotente: false` | **Não** | O servidor pode ter processado antes de falhar |
 
@@ -109,6 +109,28 @@ cada chamada.
 
 Teto de 3 tentativas com backoff de 1 s e 2 s, baixo de propósito: cada espera consome o
 orçamento de 6 min por execução.
+
+### 2.1 A Plataforma (BL-74, Fase 1)
+
+**Nenhum `.gs` do deploy chama as APIs do Apps Script direto** — `CacheService`,
+`PropertiesService`, `UrlFetchApp`, `Utilities`, `LockService`, `ContentService` e `ScriptApp`
+só aparecem em `Plataforma.gs`. O `conta-mensagens.js` reprova se isso voltar. É o que permite
+trocar o runtime (Cloud Run + Redis) sem tocar nos handlers.
+
+| Em vez de | Use |
+|---|---|
+| `CacheService.getScriptCache()` | `Plataforma.cache` |
+| `PropertiesService.getScriptProperties()` | `Plataforma.propriedades` |
+| `UrlFetchApp.fetch` | `Utils.fetchComRetry` (ou, no setup, `Plataforma.http.fetch`) |
+| `Utilities.sleep` / `formatDate` | `Plataforma.relogio.dormir` / `formatar` |
+| `Utilities.base64Encode` / `base64Decode` / `newBlob` / `getUuid` | `Plataforma.bytes.*` |
+| `LockService` | `Plataforma.trava.comTrava(chave, esperaMs, fn, aoFalhar)` |
+| `ScriptApp` | `Plataforma.gatilhos.*` |
+| `ContentService.createTextOutput` | `Plataforma.resposta.texto` |
+
+As regras das seções 1 e 3 continuam valendo — a fachada repassa a semântica do Apps Script,
+com os mesmos limites. A única proteção a mais: `Plataforma.propriedades.setProperties` **não
+repassa** o segundo argumento, então o `true` que apagaria o store não passa.
 
 ---
 
@@ -169,13 +191,15 @@ na Meta *antes* de republicar.
 
 | Arquivo | Responsabilidade |
 |---|---|
+| `Plataforma.gs` | **Único** ponto de contato com as APIs do Apps Script (cache, propriedades, HTTP, relógio, trava, gatilhos) — ver seção 2.1 |
+| `servidor/` | O runtime Node (BL-74, Fase 2): roda os mesmos `.gs` fora do Apps Script, com a Plataforma de `servidor/plataforma/`. Ainda **sem tráfego** — ver `MIGRACAO-NIVEL-1.md` |
 | `Webhook.gs` | Entrada (GET de verificação, POST de mensagens), autenticação, idempotência |
 | `Router.gs` | Despacha por estado da conversa |
 | `StateManager.gs` | Estado, dados temporários, sessões, primeiro contato |
 | `CadastroHandler.gs` · `DevolucaoHandler.gs` · `ComprovanteHandler.gs` · `RelatorioHandler.gs` · `MenuHandler.gs` | Fluxos de conversa |
 | `OdooService.gs` | Toda a comunicação JSON-RPC com o Odoo |
 | `VisionService.gs` | OCR de comprovantes e extração de valor/chave/data |
-| `MediaService.gs` | Upload/download de mídia e QR Code PIX |
+| `MediaService.gs` | Upload/download de mídia, card PIX e PIX copia e cola (sem QR desde o BL-84) |
 | `FlowHandler.gs` | Recebe e revalida a resposta de WhatsApp Flow (`nfm_reply`) — ver [FLOW-CADASTRO.md](FLOW-CADASTRO.md) |
 | `AuditoriaNumeros.gs` | Relatório dos números de WhatsApp gravados no Odoo (BL-32) — só lê |
 | `ferramentas/odoo-dump.mjs` | Extrai o schema do Odoo (modelos, campos, regras). Roda fora do Apps Script; **exige `--url`, `--db`, `--uid` e `ODOO_API_KEY`** — nada vem preenchido, porque o repositório é público |

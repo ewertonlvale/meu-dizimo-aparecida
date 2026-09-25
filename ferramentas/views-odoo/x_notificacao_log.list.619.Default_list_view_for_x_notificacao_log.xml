@@ -1,0 +1,13 @@
+<!-- x_notificacao_log · view 619 · Default list view for x_notificacao_log · base · list · prioridade 16 -->
+<list decoration-danger="x_studio_status_envio == 'erro'">
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_studio_data_envio"/>
+  <field name="x_studio_dizimista"/>
+  <field name="x_studio_tipo"/>
+  <field name="x_studio_mes_referencia" optional="show"/>
+  <field name="x_studio_status_envio" widget="badge"
+         decoration-success="x_studio_status_envio == 'sucesso'"
+         decoration-danger="x_studio_status_envio == 'erro'"/>
+  <field name="x_studio_mensagem_erro" optional="show"/>
+  <field name="x_name" optional="hide"/>
+</list>

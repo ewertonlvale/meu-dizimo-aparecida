@@ -1,0 +1,51 @@
+<!-- res.users · form combinada (via get_view) · view 166
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<form string="Users" delete="false" duplicate="false">
+  <header/>
+  <sheet>
+    <group name="studio_group_1p9_1jhpqe7n3">
+      <group name="studio_group_1p9_left"/>
+      <group name="studio_group_1p9_right"/>
+    </group>
+    <div class="d-flex gap-3 flex-column flex-sm-row mb-3">
+      <div class="text-center">
+        <field name="image_1920" widget="contact_image" options="{'preview_image': 'avatar_128', 'zoom': true, 'size': [130,130], 'img_class': 'border rounded h-100 object-fit-contain'}" on_change="1"/>
+        <field name="avatar_128" invisible="1" on_change="1"/>
+        <!-- Needed in contact_image widget -->
+      </div>
+      <group class="d-flex flex-column gap-md-0 w-100">
+        <label for="name" class="d-md-none"/>
+        <h1 class="d-flex align-items-baseline w-100">
+          <field name="name" class="w-100" placeholder="e.g. John Doe" required="1" on_change="1"/>
+        </h1>
+        <label for="login" class="d-md-none"/>
+        <div class="d-flex align-items-baseline w-md-50 gap-2">
+          <field name="email" invisible="1" on_change="1"/>
+          <!-- needed to update partner's email from on_change_login() -->
+          <i class="d-none d-md-inline-flex fa fa-envelope" title="Email"/>
+          <field name="email_domain_placeholder" invisible="1"/>
+          <!-- needed to compute the placeholder whenever the dialog opens -->
+          <field name="login" options="{'placeholder_field': 'email_domain_placeholder'}" on_change="1"/>
+        </div>
+        <label for="phone" class="d-md-none"/>
+        <div class="d-flex align-items-baseline w-md-50 gap-2">
+          <i class="d-none d-md-inline-flex fa fa-phone" title="Phone"/>
+          <field name="phone" widget="phone" placeholder="Phone" options="{&quot;enable_sms&quot;:false}" on_change="1"/>
+        </div>
+        <label for="company_id" class="d-md-none"/>
+        <div class="d-flex align-items-baseline w-md-50 gap-2">
+          <i class="d-none d-md-inline-flex fa fa-building" title="Company"/>
+          <field name="company_id" context="{'user_preference': 0}" placeholder="Company" can_create="True" can_write="True"/>
+        </div>
+      </group>
+    </div>
+    <group name="access_groups" invisible="0">
+      <label for="group_ids" string="Access Rights"/>
+      <div>
+        <field name="group_ids" readonly="False" widget="many2many_tags" style="display: inline;" domain="[&quot;|&quot;, (&quot;name&quot;, &quot;=&quot;, &quot;Secretaria Paroquial&quot;), (&quot;name&quot;, &quot;=&quot;, &quot;Acesso Comunidade&quot;)]" force_save="0" on_change="1" can_create="True" can_write="True"/>
+        You will be able to define additional access rights by editing the newly created user under the Settings / Users menu.
+      </div>
+      <field name="x_studio_comunidades" widget="many2many_tags" required="False" can_create="True" can_write="True"/>
+    </group>
+  </sheet>
+</form>

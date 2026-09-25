@@ -1,0 +1,18 @@
+<!-- x_devolucao · list combinada (via get_view) · view 603
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<list create="&#10;      true&#10;    " default_order="&#10;      x_studio_data_da_devolucao desc&#10;    " delete="&#10;      true&#10;    " duplicate="&#10;      false&#10;    " multi_edit="&#10;      false&#10;    ">
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_studio_dizimista" optional="show" can_create="True" can_write="True"/>
+  <field name="x_studio_tipo_contribuicao" optional="show"/>
+  <field name="x_studio_comunidade" optional="show" can_create="True" can_write="True"/>
+  <field name="x_studio_competencia" optional="show"/>
+  <field name="x_studio_data_da_devolucao" optional="show"/>
+  <field name="x_studio_forma_de_pagamento" optional="show"/>
+  <field name="x_studio_conferencia_pix" optional="show" string="Conferência"/>
+  <field name="x_studio_currency_id" column_invisible="&#10;      True&#10;    " optional="&#10;      show&#10;    " can_create="True" can_write="True"/>
+  <field name="x_studio_value" sum="Total"/>
+  <field name="x_studio_status" optional="show" widget="badge" string="Leitura do bot" decoration-success="x_studio_status == 'Confirmado'" decoration-danger="x_studio_status == 'Rejeitado'" decoration-warning="x_studio_status == 'Pendente'"/>
+  <!-- As duas colunas juntas, de propósito (BL-60). Uma é o que o bot leu no comprovante; a outra é o que o coordenador viu no extrato. É a LINHA em que elas discordam — bot diz Confirmado, coordenador diz Não recebido — que a paróquia precisa achar, e ela só existe se as duas estiverem à vista lado a lado. -->
+  <field name="x_studio_validacao" optional="show" widget="badge" string="Validação" decoration-success="x_studio_validacao == 'validado'" decoration-danger="x_studio_validacao == 'nao_recebido'" decoration-muted="x_studio_validacao == 'a_validar'"/>
+  <field name="write_date" optional="hide" string="Última alteração"/>
+</list>

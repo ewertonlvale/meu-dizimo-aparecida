@@ -168,6 +168,30 @@ const CONFERENCIA = {
     avisoRegistro:    '⚠️ CONFERIR: banco de destino diverge do cadastrado',
     textoCoordenador: 'o banco de destino *diverge* do cadastrado na comunidade'
   },
+  // BL-69: a IDADE do comprovante, e não o conteúdo dele.
+  //
+  // Os dois entram como `alertaDoador`, então `statusDaDevolucao` os leva a
+  // "Não confere". É mais duro que o resto da tabela de propósito: chave que
+  // não bate pode ser layout de banco que não entendemos, mas data é data.
+  //
+  // ⚠️ Por isso mesmo, estes dois SÓ valem quando a chave conferiu ou não foi
+  //    lida. Divergência de chave é mais grave e continua mandando — ver
+  //    `_conferirComprovante`.
+  comprovante_antigo: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    avisoRegistro:    '⚠️ CONFERIR: comprovante antigo',
+    textoCoordenador: 'a data do comprovante é bem anterior ao pagamento de hoje'
+  },
+  comprovante_futuro: {
+    exigeConferencia: true,
+    alertaDoador:     true,
+    // Data posterior a hoje é impossível. Ou o comprovante foi adulterado, ou
+    // a leitura errou — e nos dois casos alguém precisa olhar.
+    avisoRegistro:    '🚨 CONFERIR: comprovante com data no futuro',
+    textoCoordenador: 'a data do comprovante está no futuro'
+  },
+
   tudo_divergente: {
     exigeConferencia: true,
     alertaDoador:     true,
@@ -205,6 +229,111 @@ function statusDaDevolucao(codigo) {
   if (alertaDoador(codigo))     return 'Rejeitado';
   return 'Pendente';
 }
+
+/**
+ * O estado "A devolver", que o bot NÃO cria mais. (BL-71)
+ *
+ * A previsibilidade automática — abrir o mês seguinte a cada devolução — foi
+ * removida. Ela resolvia um problema e criava três: mês fantasma para quem
+ * devolve de dois em dois meses, pergunta disparando em toda devolução, e um
+ * buraco sem rastro quando alguém pulava um mês. A regra de ouro do BL-71
+ * cobre o que importava com duas opções e nenhum registro inventado.
+ *
+ * A constante fica porque o VALOR continua existindo no Odoo — há registros
+ * criados antes desta mudança, e o coordenador pode criar um à mão. O bot só
+ * precisa saber IGNORÁ-LOS: `A devolver` é previsão, não pagamento, e quem
+ * conta "o mês anterior teve devolução?" não pode confundir os dois.
+ */
+const STATUS_A_DEVOLVER = 'A devolver';
+
+/**
+ * A partir de quantos dias um comprovante é velho demais. (BL-69)
+ *
+ * Vem de `x_studio_dias_comprovante` em x_parametros; este é o padrão de
+ * fábrica, usado enquanto o campo não existir ou vier vazio.
+ *
+ * POR QUE 60, E NÃO 30 NEM 90
+ *   5 dias pegaria quem paga no dia 1º pelo mês anterior — falso positivo
+ *   garantido, todo mês. 30 dias é apertado para quem pagou e esqueceu de
+ *   mandar. 90 já passou da janela de 3 meses que a classificação usa: um
+ *   comprovante assim não diz mais nada sobre o mês corrente.
+ *
+ *   Dois meses é onde deixa de ser plausível como "dízimo deste mês".
+ */
+const DIAS_COMPROVANTE_ANTIGO_PADRAO = 60;
+
+/**
+ * O escalonamento do disparo de lembretes. (BL-73)
+ *
+ * O PROBLEMA QUE ISTO RESOLVE não é a saída — o envio já é sequencial, com
+ * 2 s entre mensagens. É a ONDA DE VOLTA: quem recebe o lembrete responde
+ * nos minutos seguintes, e cada resposta é uma execução do webhook, sob o
+ * teto de ~30 simultâneas do Apps Script (BL-21). Notificar 500 pessoas de
+ * uma vez não trava o envio; trava a conversa de todo mundo depois dele.
+ *
+ * A saída é a que a própria auditoria do BL-01 já recomendava: lotes menores,
+ * espalhados no dia. Quatro números, e todos vêm de `x_parametros` — quem
+ * sabe se 20 por vez é muito ou pouco é a paróquia, não quem escreveu isto.
+ *
+ *   horaInicio / horaFim   a janela em que se pode tocar o telefone de alguém.
+ *                          `horaFim` é EXCLUSIVO, como sempre foi aqui: 17
+ *                          quer dizer que o último disparo acontece ANTES das
+ *                          17h. Para incluir a hora das 17h, ponha 18.
+ *   intervaloHoras         de quantas em quantas horas um lote sai.
+ *   lote                   quantos lembretes por disparo.
+ *
+ * COM OS PADRÕES: disparos às 9h, 11h, 13h e 15h, 20 pessoas cada — 80 por
+ * dia. Uma paróquia com 500 dizimistas no mesmo dia de vencimento leva ~6
+ * dias para percorrer todos, e a repescagem de `buscarDizimistasElegiveis`
+ * (que notifica a PARTIR do dia, não só nele) é justamente o que faz esse
+ * arrasto funcionar em vez de perder gente.
+ *
+ * O ACIONADOR CONTINUA DE HORA EM HORA. O intervalo é decidido aqui, a cada
+ * execução, e não na instalação do acionador — senão mudar o número no Odoo
+ * não valeria nada sem alguém abrir o editor do Apps Script e reinstalar.
+ */
+const NOTIFICACAO_PADRAO = {
+  horaInicio:     9,
+  horaFim:        17,   // exclusivo
+  intervaloHoras: 2,
+  lote:           20
+};
+
+/**
+ * Os limites de cada parâmetro de notificação, e o que fazer fora deles.
+ *
+ * Todo campo aqui é editável por quem não escreveu o código, e cada um tem um
+ * jeito de virar desastre: lote 0 nunca notifica ninguém, lote 500 traz de
+ * volta exatamente a rajada que isto existe para evitar, hora 25 não existe.
+ * Fora da faixa, vale o padrão de fábrica — a mesma decisão do BL-69.
+ */
+const NOTIFICACAO_LIMITES = {
+  horaInicio:     { min: 0, max: 23 },
+  horaFim:        { min: 1, max: 24 },
+  intervaloHoras: { min: 1, max: 12 },
+  lote:           { min: 1, max: 200 }
+};
+
+/**
+ * BL-84: falhas de envio que encerram as tentativas do mês para uma pessoa.
+ *
+ * Só envio com SUCESSO contava como "já notificado". Um número com erro
+ * permanente (fora do WhatsApp, bloqueado) era tentado de novo a cada degrau,
+ * e — como a ordem é por dia preferido — ocupava sempre o começo do lote. Com
+ * `lote` desses números, ninguém mais recebia lembrete. Duas tentativas dão
+ * margem a uma falha passageira sem deixar o lote travar.
+ */
+const NOTIFICACAO_MAX_FALHAS_MES = 2;
+
+/**
+ * BL-84: tempo máximo do laço de envio, contado do início da rotina.
+ *
+ * O Apps Script mata a execução aos 6 min. Com `lote` até 200 e 2 s de pausa
+ * entre envios, um lote cheio passava disso — e quem já tinha recebido mas
+ * ainda não tinha o log gravado era lembrado de novo no disparo seguinte.
+ * Parando em 4,5 min, o que sobrar sai no próximo degrau pela repescagem.
+ */
+const NOTIFICACAO_ORCAMENTO_MS = 270000;
 
 /**
  * Este resultado merece AVISAR A PESSOA de que os dados não conferem? (BL-46)
@@ -298,7 +427,7 @@ function getWhatsAppUrl(path) {
  *                      WHATSAPP_NUMERO_EXIBICAO }
  */
 function getConfig() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
 
   const config = {
     WHATSAPP_TOKEN:    props.getProperty('WHATSAPP_TOKEN'),
@@ -336,7 +465,7 @@ function getConfig() {
  * @returns {string|null} Segredo configurado, ou null se não definido.
  */
 function getWebhookSecret() {
-  return PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
+  return Plataforma.propriedades.getProperty('WEBHOOK_SECRET');
 }
 
 // ============================================================================
@@ -349,20 +478,38 @@ function getWebhookSecret() {
  * @returns {Object} { url, database, uid, apiKey }
  */
 function getOdooConfig() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
 
+  // SEM PADRÃO PARA NENHUM DELES. (BL-17)
+  //
+  // 1. O `|| 2` do uid era uma armadilha: propriedade ausente ou com lixo caía
+  //    silenciosamente no ADMINISTRADOR. O item inteiro deste backlog é tirar o
+  //    bot de administrador, e um padrão que o devolve para lá apaga o trabalho
+  //    sem avisar. Falta a propriedade? Estoura, e alguém conserta.
+  //
+  // 2. A URL e o banco estavam escritos aqui, e este repositório é PÚBLICO.
+  //    A URL não é credencial, mas diz a quem quiser onde apontar uma tentativa
+  //    de força bruta, e confirma o nome do banco. Passa a vir só das Script
+  //    Properties, que não vão para o git.
   const config = {
-    url:      props.getProperty('ODOO_URL')      || 'https://meu-dizimo.odoo.com/',
-    database: props.getProperty('ODOO_DATABASE') || 'meu-dizimo',
-    uid:      parseInt(props.getProperty('ODOO_UID')) || 2,
+    url:      props.getProperty('ODOO_URL'),
+    database: props.getProperty('ODOO_DATABASE'),
+    uid:      parseInt(props.getProperty('ODOO_UID'), 10),
     apiKey:   props.getProperty('ODOO_API_KEY')
   };
 
-  if (!config.apiKey) {
+  const faltando = ['url', 'database', 'uid', 'apiKey']
+    .filter((k) => !config[k] || (k === 'uid' && isNaN(config.uid)));
+  if (faltando.length) {
+    const nomes = { url: 'ODOO_URL', database: 'ODOO_DATABASE', uid: 'ODOO_UID', apiKey: 'ODOO_API_KEY' };
     throw new Error(
-      '❌ ERRO: ODOO_API_KEY não configurada!\n\nExecute setupProperties() no arquivo Setup.gs'
+      `❌ Faltam Script Properties do Odoo: ${faltando.map((k) => nomes[k]).join(', ')}\n\n`
+      + 'Rode verificarProperties() (Setup.gs) para ver o que está configurado.\n'
+      + 'Nenhuma delas tem valor padrão, de propósito — ver a nota acima.'
     );
   }
+
+
 
   return config;
 }
@@ -378,7 +525,7 @@ function getOdooConfig() {
  * @returns {Object} { API_KEY, ENDPOINT, ENDPOINT_FILES }
  */
 function getVisionConfig() {
-  const props = PropertiesService.getScriptProperties();
+  const props = Plataforma.propriedades;
   const apiKey = props.getProperty('GOOGLE_VISION_API_KEY');
 
   if (!apiKey) {

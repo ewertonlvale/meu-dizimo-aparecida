@@ -1,0 +1,80 @@
+<!-- x_comunidade · view 609 · Odoo Studio: Default form view for x_comunidade customization · herda de 601 · form · prioridade 99 -->
+<data>
+  <xpath expr="/form//group[@name='studio_group_22eae5']" position="after">
+    <notebook name="studio_notebook_8fu_1jhobjioi">
+      <page string="Dizimistas" name="studio_page_8fu">
+        <group name="studio_group_8fu">
+          <group name="studio_group_8fu_left"/>
+          <group name="studio_group_8fu_right"/>
+        </group>
+        <field name="x_studio_dizimistas"/>
+      </page>
+      <page string="Devoluções" name="studio_page_3g1_1jhobldgd">
+        <group name="studio_group_3g1">
+          <group name="studio_group_3g1_left"/>
+          <group name="studio_group_3g1_right"/>
+        </group>
+        <field name="x_studio_devolucoes"/>
+      </page>
+      <page string="Usuários Pastoral" name="studio_page_29o_1jhok4sk1">
+        <group name="studio_group_29o">
+          <group name="studio_group_29o_left"/>
+          <group name="studio_group_29o_right"/>
+        </group>
+        <field name="x_studio_usuarios"/>
+      </page>
+    </notebook>
+  </xpath>
+  <xpath expr="/form//group[@name='studio_group_22eae5_left']" position="inside">
+    <field name="x_studio_coordenador"/>
+    <field name="x_studio_whatsapp_coordenador"/>
+    <separator string="Recebimento PIX"/>
+    <field name="x_studio_chave_pix"/>
+    <field name="x_studio_titular_conta"/>
+    <field name="x_studio_banco"/>
+    <field name="x_studio_chave_acesso" groups="base.group_system"/>
+  </xpath>
+  <xpath expr="/form//group[@name='studio_group_22eae5_right']" position="inside">
+    <separator string="Endereço"/>
+    <field name="x_studio_partner_id" options="{'no_quick_create': True}"/>
+    <!-- Os cinco campos abaixo são RELACIONADOS ao parceiro: escrever neles
+         escreve nele. Sem parceiro escolhido não há onde gravar, e o texto
+         digitado sumiria ao salvar sem dizer por quê. Por isso só aparecem
+         depois que há um, e no lugar deles fica a instrução. -->
+    <div colspan="2" class="text-muted fst-italic" invisible="x_studio_partner_id">
+      Escolha ou crie um contato acima para informar o endereço.
+    </div>
+    <field name="x_studio_rua"         invisible="not x_studio_partner_id"/>
+    <field name="x_studio_complemento" invisible="not x_studio_partner_id"/>
+    <field name="x_studio_cidade"      invisible="not x_studio_partner_id"/>
+    <field name="x_studio_uf"          invisible="not x_studio_partner_id"/>
+    <field name="x_studio_cep"         invisible="not x_studio_partner_id"/>
+    <!-- O mapa prefere a coordenada gravada; só geocodifica o endereço quando
+         ela falta. Deixar as duas à vista é o que permite acertar na porta em
+         vez de aceitar o centroide do bairro que o Nominatim devolve. -->
+    <!-- O Odoo em português lê PONTO como separador de milhar. Colar
+         "-5.1162917" do Google Maps vira -51162917, e o pino some do mapa sem
+         erro nenhum. A instrução diz a vírgula porque o formato certo não é
+         adivinhável a partir do que o Google entrega. -->
+    <div colspan="2" class="text-muted small mt-2" invisible="not x_studio_partner_id">
+      Coordenada (opcional): no Google Maps, botão direito sobre o local copia o
+      par de números. Troque o ponto por <b>vírgula</b> ao colar — aqui
+      <code>-5.1162917</code> precisa virar <code>-5,1162917</code>.
+      Em branco, o mapa tenta adivinhar pelo endereço.
+    </div>
+    <field name="x_studio_latitude"    invisible="not x_studio_partner_id"/>
+    <field name="x_studio_longitude"   invisible="not x_studio_partner_id"/>
+    <!-- O QR Code SAIU DA TELA (BL-63).
+         Era uma imagem que alguém colava no cadastro, e que o bot nunca leu:
+         `x_studio_qr_code` não aparece uma única vez no Apps Script. Quem gera
+         o QR é o MediaService, na hora do pagamento, montando o BR Code a
+         partir de `x_studio_chave_pix` — e o card nativo da Meta nem imagem
+         usa. Pedir a imagem no cadastro era pedir um dado que só podia
+         envelhecer: trocada a chave, a figura continuaria mostrando a antiga.
+
+         O CAMPO CONTINUA EXISTINDO no Odoo, com as imagens que já estiverem
+         nele. Tirar da tela é reversível; apagar campo de imagem não é, e essa
+         decisão não é de uma revisão de formulário. Se a paróquia usa essa
+         figura para IMPRIMIR cartaz, basta devolver estas duas linhas. -->
+  </xpath>
+</data>

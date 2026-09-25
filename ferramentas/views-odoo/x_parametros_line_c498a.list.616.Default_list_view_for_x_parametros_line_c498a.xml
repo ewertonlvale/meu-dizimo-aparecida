@@ -1,0 +1,5 @@
+<!-- x_parametros_line_c498a · view 616 · Default list view for x_parametros_line_c498a · base · list · prioridade 16 -->
+<list default_order="x_studio_sequence asc,id desc">
+  <field name="x_studio_sequence" widget="handle"/>
+  <field name="x_name"/>
+</list>

@@ -260,8 +260,8 @@ maioria, ganha um botão que nem depende de toque longo.
 exigindo PSP (R$ 150–500/mês, ver BL-40), então o comprovante e o OCR ficam.
 
 **Rede de segurança:** esta é a mensagem por onde o dinheiro passa. Se a Meta
-recusar o card por qualquer motivo, o código cai sozinho no caminho antigo — QR
-+ copia-e-cola —, que continua inteiro. Custa 2 mensagens a mais e é o preço
+recusar o card por qualquer motivo, o código cai sozinho na reserva — dados de pagamento
++ copia-e-cola, sem o QR desde o BL-84 (ele ia para um serviço de terceiros) —, que continua inteiro. Custa 2 mensagens a mais e é o preço
 certo a pagar. O harness cobre os dois caminhos.
 
 ### O indicador de digitação, e o que acontece se ele falhar
@@ -575,7 +575,7 @@ código 1 se divergir.
 
 Além da contagem, ele guarda o que as fusões do BL-37 poderiam ter derrubado:
 
-- a legenda do QR carrega banco, titular, chave e instrução;
+- a mensagem de dados da reserva (antes, a legenda do QR) carrega banco, titular, chave e instrução;
 - o copia-e-cola chega **exatamente** igual ao payload EMV, sem nada em volta;
 - o resultado mostra valor, data e chave lidos pelo OCR;
 - uma legenda acima do teto de 1024 caracteres não derruba os dados;

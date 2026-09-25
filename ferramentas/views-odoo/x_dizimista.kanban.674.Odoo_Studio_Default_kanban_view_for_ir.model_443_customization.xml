@@ -1,0 +1,26 @@
+<!-- x_dizimista · view 674 · Odoo Studio: Default kanban view for ir.model(443,) customization · herda de 673 · kanban · prioridade 99 -->
+<data>
+  <xpath expr="/kanban/templates" position="before">
+    <field name="x_studio_classificacao"/>
+  </xpath>
+  <xpath expr="/kanban/templates" position="replace">
+    <templates>
+      <t t-name="card">
+        <div class="w-100">
+          <div class="d-flex align-items-start justify-content-between">
+            <field name="x_name" class="fw-bold fs-5 text-truncate"/>
+            <span t-attf-class="badge rounded-pill text-bg-{{ record.x_studio_classificacao.raw_value == 'Regular' ? 'success' : record.x_studio_classificacao.raw_value == 'Eventual' ? 'warning' : 'secondary' }}" t-out="record.x_studio_classificacao.value"/>
+          </div>
+          <field name="x_studio_comunidade" class="text-muted small d-block text-truncate"/>
+          <div class="mt-2 d-flex justify-content-between align-items-center">
+            <field name="x_studio_partner_phone" class="small text-truncate"/>
+            <field name="x_studio_value" class="fw-bold"/>
+          </div>
+          <div class="text-muted small mt-1" invisible="x_studio_notificacao_ativa">
+            🔕 não recebe lembretes
+          </div>
+        </div>
+      </t>
+    </templates>
+  </xpath>
+</data>

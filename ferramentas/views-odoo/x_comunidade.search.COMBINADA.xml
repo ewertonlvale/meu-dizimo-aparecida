@@ -1,0 +1,8 @@
+<!-- x_comunidade · search combinada (via get_view) · view 602
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<search>
+  <field name="x_name"/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_comunidade" domain="[['x_active', '=', False]]"/>
+  <separator/>
+</search>

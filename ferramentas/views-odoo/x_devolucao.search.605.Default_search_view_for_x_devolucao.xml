@@ -1,0 +1,15 @@
+<!-- x_devolucao · view 605 · Default search view for x_devolucao · base · search · prioridade 16 -->
+<search>
+  <field name="x_name"/>
+  <field name="x_studio_dizimista"/>
+  <field name="x_studio_comunidade"/>
+  <separator/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_dizimista" domain="[['x_active', '=', False]]"/>
+  <separator/>
+  <filter name="groupby_x_comunidade" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}" domain="[]"/>
+  <searchpanel>
+    <field name="x_studio_status" select="multi" enable_counters="1" icon="fa-check-circle" expand="1"/>
+    <field name="x_studio_comunidade" select="one" enable_counters="1" icon="fa-users"/>
+  </searchpanel>
+</search>

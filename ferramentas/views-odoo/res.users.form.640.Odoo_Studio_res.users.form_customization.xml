@@ -1,0 +1,50 @@
+<!-- res.users · view 640 · Odoo Studio: res.users.form customization · herda de 167 · form · prioridade 160 -->
+<data>
+  <xpath expr="/form" position="attributes">
+    <attribute name="create">
+      true
+    </attribute>
+    <attribute name="edit">
+      true
+    </attribute>
+  </xpath>
+  <xpath expr="/form//page[@name='page_security']" position="after">
+    <page string="Comunidade" name="studio_page_7pd_1jhokhkrk" invisible="True">
+      <group name="studio_group_7pd">
+        <group name="studio_group_7pd_left"/>
+        <group name="studio_group_7pd_right"/>
+      </group>
+    </page>
+    <page string="Grupos" name="studio_page_2md_1jhp0i84m" invisible="False">
+      <group name="studio_group_2md">
+        <group name="studio_group_2md_left"/>
+        <group name="studio_group_2md_right"/>
+      </group>
+      <field name="all_group_ids"/>
+    </page>
+  </xpath>
+  <xpath expr="/form/sheet/notebook/page[@name='access_rights']/field[@name='group_ids']" position="replace"/>
+  <xpath expr="/form//field[@name='group_ids']" position="after">
+    <group name="studio_group_8to_1jhpp0f7v" string="Comunidades">
+      <group name="studio_group_8to_left"/>
+      <group name="studio_group_8to_right"/>
+    </group>
+    <field name="x_studio_comunidades"/>
+  </xpath>
+  <xpath expr="/form//field[@name='role']" position="attributes">
+    <attribute name="groups">
+      base.group_no_one
+    </attribute>
+  </xpath>
+  <xpath expr="/form//field[@name='company_ids']" position="attributes">
+    <attribute name="invisible">
+      companies_count &lt;= 0
+    </attribute>
+  </xpath>
+  <xpath expr="/form//field[@name='group_ids']" position="attributes">
+    <attribute name="groups"/>
+    <attribute name="invisible">
+      False
+    </attribute>
+  </xpath>
+</data>

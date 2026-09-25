@@ -31,8 +31,22 @@
 const fs   = require('fs');
 const path = require('path');
 const vm   = require('vm');
+const nodeCrypto = require('node:crypto');
 
 const RAIZ = path.join(__dirname, '..');
+
+// Toda leitura de fonte passa por aqui. No Windows, com `core.autocrlf=true`,
+// o Git entrega os arquivos com CRLF — e as expressões deste harness, escritas
+// com `\n`, deixavam de casar SÓ na máquina de quem desenvolve, enquanto o CI
+// (Linux, LF) seguia verde. É a divergência que o verificar-tudo existe para
+// impedir. Normalizar na leitura vale para qualquer checkout.
+const lerTexto = (caminho) => fs.readFileSync(caminho, 'utf8').replace(/\r\n/g, '\n');
+
+// A fachada do Apps Script (BL-74, Fase 1). Todo contexto que EXECUTA `.gs` do
+// deploy a carrega primeiro: os `.gs` só falam com a Plataforma, e ela delega
+// aos stubs de CacheService, PropertiesService etc. de cada cenário — assim o
+// harness exercita a fachada de verdade, não um dublê dela.
+const PLATAFORMA = lerTexto(path.join(RAIZ, 'Plataforma.gs'));
 
 // ---------------------------------------------------------------------------
 // A borda: tudo o que sai do processo vira contador
@@ -58,7 +72,7 @@ function extratoresDoVision() {
   };
   vm.createContext(ctx);
   return vm.runInContext(
-    fs.readFileSync(path.join(RAIZ, 'VisionService.gs'), 'utf8') + '\n;VisionService',
+    lerTexto(path.join(RAIZ, 'VisionService.gs')) + '\n;VisionService',
     ctx, { filename: 'VisionService.gs' }
   );
 }
@@ -140,7 +154,7 @@ function montarContexto(cenario) {
         setProperty: () => {}, deleteProperty: () => {}, setProperties: () => {}
       })
     },
-    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
     UrlFetchApp: { fetch: () => { throw new Error('o teste não deve tocar a rede'); } }
   };
   vm.createContext(ctx);
@@ -150,6 +164,7 @@ function montarContexto(cenario) {
   // tudo é carregado num script só e os objetos são devolvidos no fim — é a
   // forma de alcançá-los sem tocar nos arquivos do projeto.
   const ARQUIVOS = [
+    'Plataforma.gs',
     'Config.gs', 'Utils.gs', 'OdooService.gs', 'MediaService.gs',
     'MenuHandler.gs', 'CadastroHandler.gs', 'DevolucaoHandler.gs', 'ComprovanteHandler.gs',
     'OfertaHandler.gs', 'TestePixNativo.gs',
@@ -159,7 +174,7 @@ function montarContexto(cenario) {
     'Router.gs'
   ];
   const fontes = ARQUIVOS
-    .map(a => fs.readFileSync(path.join(RAIZ, a), 'utf8'))
+    .map(a => lerTexto(path.join(RAIZ, a)))
     .join('\n;\n');
 
   const mod = vm.runInContext(
@@ -245,6 +260,15 @@ function montarContexto(cenario) {
             ? [{ id: 2, related: false, readonly: false }]
             : [{ id: 2, related: 'x_studio_dizimista.x_studio_comunidade', readonly: true }];
         }
+        // Qualquer outro campo opcional: o cenário diz quais existem.
+        //
+        // Antes daqui, este ramo devolvia [] para tudo que não fosse um dos
+        // casos acima — e a consequência era pior que um teste faltando: TODO
+        // caminho guardado por `campoExiste` era pulado no harness e parecia
+        // coberto. Foi assim que o BL-62 nasceu verde sem nunca ter rodado.
+        if ((cenario.camposOdoo || []).indexOf(quer) >= 0) {
+          return [{ id: 3, name: quer, related: false, readonly: false }];
+        }
         return [];
       }
       // Quem já escreveu ao bot: é aqui que mora o `wa_id` de verdade. O
@@ -268,6 +292,48 @@ function montarContexto(cenario) {
         return cenario.familia || (cenario.dizimista ? [cenario.dizimista] : []);
       }
       if (modelo === 'x_devolucao') {
+        // BL-84: a conferência "gravou apesar do erro?" pergunta por create_date.
+        if ((dominio || []).some(d => d[0] === 'create_date')) return cenario.recemGravada || [];
+        // BL-62: a busca pelo mês em aberto e a que confere se o mês seguinte
+        // já existe. Vêm antes das outras porque as duas citam competência, e
+        // cair no ramo do histórico daria resposta errada em silêncio.
+        // Busca por id: é como a oferta de corrigir descobre a competência do
+        // registro que acabou de ser gravado, e como a troca lê as duas.
+        const porId = (dominio || []).find(d => d[0] === 'id');
+        if (porId) {
+          const fonte = cenario.devolucaoPorId;
+          const lista = Array.isArray(fonte) ? fonte : (fonte ? [fonte] : []);
+          return porId[1] === 'in'
+            ? lista.filter(r => (porId[2] || []).indexOf(r.id) >= 0)
+            : lista.filter(r => r.id === porId[2]);
+        }
+        const porCompetencia = (dominio || []).find(d => d[0] === 'x_studio_competencia');
+        if (porCompetencia) {
+          // O OPERADOR IMPORTA, e ignorá-lo mentia nos dois sentidos: a busca
+          // pelo mês anterior usa '<' e não achava nada, enquanto o mês igual
+          // ao pago era devolvido como se fosse anterior. Um fake que trata
+          // todo domínio como igualdade não testa a consulta — testa a si mesmo.
+          // TODAS as condições de competência, não a primeira. A busca pelo
+          // mês devido usa duas — "< mês corrente" E "!= o que foi pago" — e
+          // um fake que honra só a primeira aprovaria de olhos fechados a
+          // versão que perguntava em toda devolução.
+          const compara = (v, op, alvo) =>
+              op === '<'  ? v <  alvo
+            : op === '<=' ? v <= alvo
+            : op === '>'  ? v >  alvo
+            : op === '>=' ? v >= alvo
+            : op === '!=' ? v !== alvo
+            : v === alvo;
+          const condicoes = (dominio || []).filter(d => d[0] === 'x_studio_competencia');
+          // O operador do STATUS também conta: a busca pela última devolução
+          // PAGA usa `!= 'A devolver'`, e tratar isso como igualdade devolvia
+          // o oposto do pedido. Terceira vez que este fake mente por ignorar
+          // um operador.
+          const qs = (dominio || []).find(d => d[0] === 'x_studio_status');
+          return (cenario.devolucoesPorCompetencia || []).filter(r =>
+            condicoes.every(([, op, alvo]) => compara(r.x_studio_competencia, op, alvo))
+            && (!qs || compara(r.x_studio_status, qs[1], qs[2])));
+        }
         // `devolucoesDoMes` filtra por intervalo de datas; o histórico e a linha
         // "última devolução", não. Distinguir aqui importa: sem isso, um cenário
         // com histórico também dispararia o aviso de duplicata, e o teste
@@ -282,9 +348,19 @@ function montarContexto(cenario) {
     // um id e jogava os dados fora.
     create: (modelo, dados) => {
       if (cenario.aoCriar) cenario.aoCriar(modelo, dados);
+      // BL-84: o erro que vem DEPOIS de gravar (timeout, 5xx).
+      if (cenario.createFalha && modelo === 'x_devolucao') throw new Error('timeout (simulado)');
       return 99;
     },
-    buscarParametros:               () => ({ x_studio_avatar: cenario.temAvatar ? 'ID' : null }),
+    // BL-62: preencher um "A devolver" é um write, não um create. Sem espiar o
+    // write, o teste não distingue "preencheu o mês em aberto" de "criou outro
+    // registro" — que é exatamente a diferença que o item inteiro produz.
+    write: (modelo, id, dados) => {
+      if (cenario.aoEscrever) cenario.aoEscrever(modelo, id, dados);
+      return true;
+    },
+    buscarParametros:               () => Object.assign(
+      { x_studio_avatar: cenario.temAvatar ? 'ID' : null }, cenario.parametros || {}),
     listarComunidades:              () => [{ id: 1, x_name: 'Matriz' }],
     buscarDadosPagamentoComunidade: () => ({
       x_studio_chave_pix:     'pix@paroquia.org',
@@ -430,6 +506,7 @@ const CENARIOS = [
     nome: 'Comprovante de OFERTA de quem não é cadastrado',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true,
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 20 } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
     esperado: 1,
@@ -990,6 +1067,7 @@ const REGRAS_DE_CONTEUDO = [
     nome: 'A oferta grava o valor do COMPROVANTE, não o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: 55 },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1011,6 +1089,7 @@ const REGRAS_DE_CONTEUDO = [
     nome: 'Valor diferente do escolhido é dito, mas não vira acusação — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: 55 },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1031,9 +1110,53 @@ const REGRAS_DE_CONTEUDO = [
     }
   },
   {
+    // O caso real: tocou em Oferta, desistiu, foi para Dízimo e mandou o
+    // comprovante. `ofertaComunidadeId` ficou na sessão desde o toque em
+    // Oferta, e era ele — não o estado — que decidia o caminho.
+    nome: 'Dízimo depois de desistir da oferta é gravado como DÍZIMO — BL-77',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE',
+               sessao: { ofertaComunidadeId: 3, ofertaComunidadeNome: 'Matriz',
+                         ofertaDizimistaId: 7 },
+               aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
+    roda: ctx => { gravado = null; ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'); },
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      if (/Oferta recebida/i.test(t)) return 'a conversa respondeu "Oferta recebida"';
+      if (!gravado) return 'nada foi gravado no Odoo';
+      if (gravado.x_studio_tipo_contribuicao === 'oferta') return 'o Odoo recebeu tipo oferta';
+      return null;
+    }
+  },
+  {
+    // O Odoo gravou e o erro veio depois (timeout). Antes: "não foi
+    // registrado, reenvie" — e o reenvio virava segunda devolução.
+    nome: 'Erro DEPOIS de gravar: confere no Odoo e confirma, em vez de pedir reenvio — BL-84',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE',
+               createFalha: true, recemGravada: [{ id: 77 }] },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs.map(m => m.texto).join('\n');
+      if (/reenvie/i.test(t)) return 'pediu reenvio de algo que já foi gravado';
+      return /Comprovante recebido/.test(t) ? null : 'não confirmou o recebimento';
+    }
+  },
+  {
+    nome: 'Erro sem gravação: aí sim avisa e pede reenvio — BL-84',
+    cenario: { dizimista: DIZIMISTA, temAvatar: true, flowLigado: true, camposNovos: true,
+               comunidadeGravavel: true, estado: 'AGUARDANDO_COMPROVANTE', createFalha: true },
+    roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
+    confere: msgs => {
+      const t = msgs[msgs.length - 1].texto;
+      return /Não consegui registrar/.test(t) ? null : 'não avisou da falha';
+    }
+  },
+  {
     nome: 'OCR sem valor: aí sim vale o escolhido — BL-53',
     cenario: { dizimista: null, temAvatar: true, flowLigado: true, camposNovos: true,
                comunidadeGravavel: true, ocr: { valor: null },
+               estado: 'AGUARDANDO_COMPROVANTE_OFERTA',
                sessao: { ofertaComunidadeId: 3, ofertaValor: 10 },
                aoCriar: (modelo, dados) => { if (modelo === 'x_devolucao') gravado = dados; } },
     roda: ctx => ctx.ComprovanteHandler.processar('55', COMPROVANTE, 'wamid.T'),
@@ -1193,9 +1316,9 @@ console.log('🧭 Métodos chamados que não existem\n');
     SpreadsheetApp: {}, DriveApp: {}, MailApp: {}, Session: {}
   };
   vm.createContext(ctxTudo);
-  const fontes = OBJETOS.map(([arq]) => fs.readFileSync(path.join(RAIZ, arq), 'utf8'));
+  const fontes = OBJETOS.map(([arq]) => lerTexto(path.join(RAIZ, arq)));
   const tudo = vm.runInContext(
-    [fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8')].concat(fontes).join('\n;\n') +
+    [PLATAFORMA, lerTexto(path.join(RAIZ, 'Config.gs'))].concat(fontes).join('\n;\n') +
     '\n;({' + OBJETOS.map(([, nome]) => nome).join(', ') + '});',
     ctxTudo, { filename: 'todos.gs' }
   );
@@ -1421,8 +1544,9 @@ console.log('🛰️  As sondas rodam de ponta a ponta\n');
     let erro = null;
     try {
       vm.runInContext(
-        fs.readFileSync(path.join(RAIZ, 'Config.gs'), 'utf8') + '\n;\n' +
-        fs.readFileSync(path.join(RAIZ, sonda.arquivo), 'utf8') + '\n;\n' +
+        PLATAFORMA + '\n;\n' +
+        lerTexto(path.join(RAIZ, 'Config.gs')) + '\n;\n' +
+        lerTexto(path.join(RAIZ, sonda.arquivo)) + '\n;\n' +
         sonda.funcao + '();',
         ctx, { filename: sonda.arquivo }
       );
@@ -1460,7 +1584,7 @@ console.log('📦 Globais que só existem fora do deploy\n');
 // Esta varredura lê o .claspignore, coleta o que os arquivos EXCLUÍDOS
 // declaram no topo, e acusa quem é enviado e depende disso.
 {
-  const padroes = fs.readFileSync(path.join(RAIZ, '.claspignore'), 'utf8')
+  const padroes = lerTexto(path.join(RAIZ, '.claspignore'))
     .split('\n').map(l => l.trim())
     .filter(l => l && !l.startsWith('#'));
 
@@ -1475,14 +1599,14 @@ console.log('📦 Globais que só existem fora do deploy\n');
   const DECL = /^(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/gm;
   const foraDoDeploy = new Map();
   for (const arq of excluidos) {
-    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8');
+    const fonte = lerTexto(path.join(RAIZ, arq));
     let m;
     while ((m = DECL.exec(fonte)) !== null) foraDoDeploy.set(m[1], arq);
   }
 
   let achados = 0;
   for (const arq of enviados) {
-    const fonte = fs.readFileSync(path.join(RAIZ, arq), 'utf8')
+    const fonte = lerTexto(path.join(RAIZ, arq))
       // Comentários e strings citam esses nomes o tempo todo; só o código conta.
       // Uma passada só, com alternância: quem começa primeiro vence. Em duas
       // passadas o `//` de uma URL dentro de string comeria o resto da linha e
@@ -1532,7 +1656,8 @@ console.log('✏️  O formulário volta preenchido na correção — BL-45\n');
   };
   vm.createContext(ctxFlow);
   const FlowReal = vm.runInContext(
-    fs.readFileSync(path.join(RAIZ, 'FlowHandler.gs'), 'utf8') + '\n;FlowHandler;',
+    PLATAFORMA + '\n;\n' +
+    lerTexto(path.join(RAIZ, 'FlowHandler.gs')) + '\n;FlowHandler;',
     ctxFlow, { filename: 'FlowHandler.gs' }
   );
 
@@ -1671,6 +1796,50 @@ console.log('🏦 Comprovantes REAIS, um por layout de banco — BL-49\n');
     console.log(`${errs.length ? '❌' : '✅'} ${c.nome}` +
                 (errs.length ? `\n     ${errs.join('  ')}` : ''));
   }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔁 baixar-views: indentar não pode mudar a impressão digital\n');
+
+// ──────────────────────────────────────────────────────────────────
+// O baixar-views compara o arquivo local com o arch do Odoo por uma
+// impressão digital que ignora formatação. Se ela NÃO ignorar, o --update
+// reescreve views idênticas a cada execução, sujando o histórico do Odoo sem
+// uma única mudança real — e escondendo a view que de fato mudou no meio de
+// dez falsos positivos. Foi o que aconteceu em produção.
+//
+// O invariante é simples: indentar não muda o significado, logo não pode
+// mudar a digital. O caso que quebrou não foi o espaço ENTRE tags (esse eu
+// tratei) e sim o texto solto, que o indentador põe na própria linha — e as
+// views do Studio são cheias de `<attribute name="x">true</attribute>`.
+{
+  const fonte = lerTexto(path.join(RAIZ, 'ferramentas/baixar-views.mjs'));
+  const trecho = (de, ate) => fonte.slice(fonte.indexOf(de), fonte.indexOf(ate));
+  const digital  = new Function('createHash', trecho('const digital', '// Tira o comentário') + '; return digital;')(nodeCrypto.createHash);
+  const indentar = new Function(trecho('function indentar', '// Nome de arquivo') + '; return indentar;')();
+
+  const CASOS = [
+    ['arch simples, sem texto solto',
+     '<kanban><field name="a"/></kanban>'],
+    ['<attribute> com texto — o caso que quebrou',
+     '<data><xpath expr="/x" position="attributes"><attribute name="q">true</attribute></xpath></data>'],
+    ['texto dentro de span',
+     '<div><span>ola</span></div>'],
+    ['aninhado, com texto e tag no meio',
+     '<form><group><field name="a"/><div class="x">texto <b>e</b> mais</div></group></form>'],
+  ];
+
+  for (const [nome, xml] of CASOS) {
+    const ok = digital(xml) === digital(indentar(xml));
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}`);
+  }
+
+  // E o contrário: normalizar demais colapsaria mudança de verdade, e aí o
+  // --update deixaria de subir o que precisa subir.
+  const mudou = digital('<list><field name="x"/></list>') !== digital('<list><field name="y"/></list>');
+  if (!mudou) falhas++;
+  console.log(`${mudou ? '✅' : '❌'} campo diferente continua dando digital diferente`);
 }
 
 console.log('\n' + '─'.repeat(64));
@@ -2100,6 +2269,33 @@ const COMPROVANTES = [
     texto: 'Chave Pix: +55 86 98852-1231\nValor: R$ 25,00\n',
     chave: '+55 86 98852-1231',
     valor: 25
+  },
+  // BL-82: sem o ponto de milhar, a expressão parava no terceiro dígito.
+  // "R$ 1234,56" virava 123, e o valor plausível passava por todas as
+  // conferências.
+  {
+    nome: 'Valor sem separador de milhar, com rótulo — BL-82',
+    texto: 'Valor: R$ 1234,56\n',
+    chave: null,
+    valor: 1234.56
+  },
+  {
+    nome: 'Cinco dígitos sem separador — BL-82',
+    texto: 'Valor pago R$ 10000,00\n',
+    chave: null,
+    valor: 10000
+  },
+  {
+    nome: 'Sem rótulo e sem separador: o maior valor continua valendo — BL-82',
+    texto: 'Pix enviado\nR$ 1500,00\nTarifa: R$ 2,50\n',
+    chave: null,
+    valor: 1500
+  },
+  {
+    nome: 'Com separador de milhar continua certo — BL-82',
+    texto: 'Valor: R$ 1.234,56\n',
+    chave: null,
+    valor: 1234.56
   }
 ];
 
@@ -2248,6 +2444,2194 @@ for (const r of REGRAS_DE_CONTEUDO) {
   const erro = enviadas.length ? r.confere(enviadas, ctx) : 'nenhuma mensagem enviada';
   if (erro) falhas++;
   console.log(`${erro ? '❌' : '✅'} ${r.nome}${erro ? ' — ' + erro : ''}`);
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔐 Nada que identifique a instância no repositório público\n');
+
+// ──────────────────────────────────────────────────────────────────
+// Este repositório é PÚBLICO. A URL da instância e o nome do banco estavam
+// escritos em Config.gs e Setup.gs desde o começo — eu só percebi ao responder
+// "é seguro usar essa solução?", olhando o arquivo em vez da memória.
+//
+// A URL não é credencial. Mas ela diz a quem quiser ONDE apontar uma tentativa
+// de força bruta, e confirma o nome do banco — que é a outra metade do que se
+// precisa, tendo a chave. Custa nada tirar, e custa caro deixar.
+//
+// Já está no histórico do git, e reescrever histórico de repositório público
+// não desfaz o que foi lido. O que esta barreira impede é a REINTRODUÇÃO.
+{
+  const ARQUIVOS = fs.readdirSync(RAIZ)
+    .filter((f) => /\.(gs|js|mjs|json|md)$/.test(f))
+    .concat(['ferramentas/odoo-env.mjs', 'ferramentas/.odoo-env.exemplo']
+      .filter((f) => fs.existsSync(path.join(RAIZ, f))));
+
+  // Um host concreto — letras e números antes de .odoo.com. Placeholders em
+  // MAIÚSCULAS, como SUA-INSTANCIA, não contam: eles existem justamente para
+  // dizer onde colar o seu.
+  const CONCRETO = /https?:\/\/(?!SUA[-_])[a-z0-9][a-z0-9-]*\.odoo\.com/;
+
+  const achados = [];
+  for (const f of ARQUIVOS) {
+    const caminho = path.join(RAIZ, f);
+    if (!fs.existsSync(caminho) || fs.statSync(caminho).isDirectory()) continue;
+    const txt = lerTexto(caminho);
+    for (const linha of txt.split('\n')) {
+      const m = linha.match(CONCRETO);
+      if (m) achados.push(`${f}: ${m[0]}`);
+    }
+  }
+
+  if (achados.length) {
+    falhas += achados.length;
+    for (const a of achados) console.log(`❌ URL da instância versionada → ${a}`);
+    console.log('   Ela vem das Script Properties, que não vão para o git.');
+  } else {
+    console.log(`✅ nenhuma URL de instância concreta em ${ARQUIVOS.length} arquivos versionados`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔤 Nenhum código de conferência escapa sem tradução\n');
+
+// ──────────────────────────────────────────────────────────────────
+// `x_studio_conferencia_pix` é um campo CHAR: o valor gravado é o que aparece
+// na tela. O coordenador via "tudo_divergente" e "sem_referencia".
+//
+// Converter para selection e dar rótulos seria o certo, e o Odoo não deixa:
+// "Changing the type of a field is not yet supported. Please drop it and
+// create it again!" (ir_model.py). Dropar apagaria o que o bot já leu em todo
+// registro. Então a tradução mora nas views, por `invisible` de valor.
+//
+// O risco disso é óbvio: o Config.gs ganha um código novo, ninguém lembra das
+// views, e aquele caso passa a aparecer sem texto — ou pior, some. É isso que
+// esta verificação impede. A rede de segurança no arch é a SEGUNDA barreira;
+// esta é a primeira.
+{
+  // A tabela vem do Config.gs de verdade, recortada e avaliada. Uma lista
+  // copiada aqui envelheceria em silêncio — que é exatamente o problema que
+  // esta verificação existe para pegar.
+  const cfg = lerTexto(path.join(RAIZ, 'Config.gs'));
+  const de = cfg.indexOf('const CONFERENCIA = {');
+  const ate = cfg.indexOf('\n};', de) + 3;
+  const CONFERENCIA = de < 0 ? {} : new Function(cfg.slice(de, ate) + '; return CONFERENCIA;')();
+
+  const codigos = Object.keys(CONFERENCIA).filter((c) => c !== 'ok');
+  if (!codigos.length) {
+    falhas++;
+    console.log('❌ não consegui ler a tabela CONFERENCIA do Config.gs');
+  }
+
+  const VISTAS = [
+    ['formulário', 'x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml'],
+    ['card do kanban', 'x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml'],
+  ];
+
+  for (const [rotulo, arq] of VISTAS) {
+    const caminho = path.join(RAIZ, 'ferramentas/views-odoo', arq);
+    if (!fs.existsSync(caminho)) {
+      falhas++;
+      console.log(`❌ ${rotulo}: ${arq} não existe`);
+      continue;
+    }
+    const xml = lerTexto(caminho);
+
+    // Um código está traduzido quando há um <span invisible="… != 'codigo'">
+    // com texto dentro — é essa a forma que faz a frase aparecer só no caso dele.
+    const semTexto = [];
+    for (const c of codigos) {
+      const re = new RegExp(`<span invisible="x_studio_conferencia_pix != '${c}'">\\s*([^<]*\\S)`, 's');
+      if (!re.test(xml)) semTexto.push(c);
+    }
+
+    // E a rede de segurança precisa listar TODOS os códigos, senão ela dispara
+    // junto com uma frase e a tela mostra as duas coisas.
+    const rede = xml.match(/invisible="x_studio_conferencia_pix in \[([^\]]*)\]"/);
+    const naRede = rede ? [...rede[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]) : [];
+    const foraDaRede = Object.keys(CONFERENCIA).filter((c) => !naRede.includes(c));
+
+    const erros = [];
+    if (semTexto.length) erros.push(`sem tradução: ${semTexto.join(', ')}`);
+    if (!rede) erros.push('não achei a rede de segurança do código desconhecido');
+    else if (foraDaRede.length) erros.push(`fora da rede de segurança: ${foraDaRede.join(', ')}`);
+
+    if (erros.length) {
+      falhas += erros.length;
+      for (const e of erros) console.log(`❌ ${rotulo}: ${e}`);
+    } else {
+      console.log(`✅ ${rotulo}: os ${codigos.length} códigos têm frase, e a rede cobre os ${naRede.length}`);
+    }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('📆 Idade do comprovante: antigo e futuro caem em "Não confere"\n');
+
+// ──────────────────────────────────────────────────────────────────
+// BL-69. Até aqui um comprovante de 2020 registrava como qualquer outro:
+// não havia checagem de data nenhuma.
+//
+// A regra é mais dura que o resto da tabela de conferência de propósito.
+// Chave que não bate pode ser layout de banco que não entendemos; data é data.
+// Por isso os dois códigos entram como `alertaDoador`, e a pessoa é avisada.
+{
+  const dias = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
+
+  function confereIdade(dataBR, cenario) {
+    const ctx = montarContexto(Object.assign({ camposOdoo: [] }, cenario || {}));
+    return ctx.ComprovanteHandler._conferirIdade(dataBR);
+  }
+
+  const CASOS = [
+    ['comprovante de hoje passa limpo',            dias(0),   null],
+    ['de 30 dias ainda passa — quem pagou e esqueceu de mandar', dias(30), null],
+    ['de 60 dias passa: o limite é "mais de", não "a partir de"', dias(60), null],
+    ['de 61 dias já é antigo',                     dias(61),  'comprovante_antigo'],
+    ['de 6 meses é antigo',                        dias(180), 'comprovante_antigo'],
+    ['data no FUTURO é impossível, e acusa',       dias(-1),  'comprovante_futuro'],
+    ['data ilegível NÃO acusa nada',               '',        null],
+    ['data em formato estranho também não acusa',  '20 de setembro', null],
+  ];
+
+  for (const [nome, data, esperado] of CASOS) {
+    const r = confereIdade(data);
+    const obtido = r && r.motivo;
+    const ok = obtido === esperado || (esperado === null && r === null);
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}` + (ok ? '' : `  (esperado ${esperado}, veio ${obtido})`));
+  }
+
+  // O parâmetro da paróquia manda, dentro de limites
+  {
+    const comLimite = (n) => montarContexto({
+      camposOdoo: ['x_studio_dias_comprovante'], parametros: { x_studio_dias_comprovante: n },
+    }).ComprovanteHandler._conferirIdade(dias(40));
+    const r10 = comLimite(10);
+    const r90 = comLimite(90);
+    let ok = r10 && r10.motivo === 'comprovante_antigo' && r90 === null;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} o parâmetro da paróquia manda: 10 dias reprova, 90 aprova o mesmo comprovante`
+      + (ok ? '' : `  (10→${JSON.stringify(r10)} 90→${JSON.stringify(r90)})`));
+
+    // Zero reprovaria todo mundo; 5000 não reprovaria ninguém.
+    const rZero = montarContexto({
+      camposOdoo: ['x_studio_dias_comprovante'], parametros: { x_studio_dias_comprovante: 0 },
+    }).ComprovanteHandler._conferirIdade(dias(40));
+    ok = rZero === null;   // 0 é inválido → volta ao padrão 60 → 40 dias passa
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} parâmetro absurdo (0) volta ao padrão em vez de reprovar todo mundo`
+      + (ok ? '' : `  (veio ${JSON.stringify(rZero)})`));
+  }
+
+  // E o mais importante: chave divergente é MAIS grave e continua mandando
+  {
+    const ctx = montarContexto({ camposOdoo: [] });
+    const r = ctx.ComprovanteHandler._conferirComprovante(
+      { data: dias(200), chavePix: 'outra@chave.com', recebedor: {} },
+      { x_studio_chave_pix: 'paroquia@pix.org' });
+    const ok = r && r.motivo === 'divergente';
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} comprovante antigo E com chave divergente reporta a CHAVE, que é mais grave`
+      + (ok ? '' : `  (veio ${JSON.stringify(r)})`));
+  }
+
+  // Antigo com a chave certa vira "Não confere" — a decisão de 23/09
+  {
+    const ctx = montarContexto({ camposOdoo: [] });
+    const r = ctx.ComprovanteHandler._conferirComprovante(
+      { data: dias(200), chavePix: 'paroquia@pix.org', recebedor: {} },
+      { x_studio_chave_pix: 'paroquia@pix.org' });
+    const status = r && ctx.statusDaDevolucao(r.motivo);
+    const ok = r && r.motivo === 'comprovante_antigo' && status === 'Rejeitado';
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} antigo com a chave certa vira "Não confere" e avisa a pessoa`
+      + (ok ? '' : `  (motivo ${r && r.motivo}, status ${status})`));
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🗓️  O ciclo da devolução: competência, mês em aberto, mês seguinte\n');
+
+// ──────────────────────────────────────────────────────────────────
+// BL-62, dentro do `registrarDevolucao` DE VERDADE — não de um stub. É o
+// caminho do dinheiro, onde já viveram BL-02, BL-26, BL-27 e BL-51, e o modo
+// de falhar aqui é caro nos dois sentidos: um registro a mais deixa o mês com
+// duas linhas, e um "A devolver" com data faz a pessoa parar de ser cobrada e
+// virar Regular sem ter pago nada.
+{
+  const CAMPOS = ['x_studio_competencia', 'x_studio_tipo_contribuicao',
+                  'x_studio_comunidade', 'x_studio_validacao'];
+
+  // `registrarDevolucao` exige comunidade (BL-41), e a tira do dizimista.
+  const DIZIMISTA = { id: 7, x_name: 'Ewerton', x_studio_comunidade: [3, 'Matriz'] };
+
+  function registra(cenario, dadosAnalise, extras) {
+    const criados = [], escritos = [];
+    const ctx = montarContexto(Object.assign({
+      camposOdoo: CAMPOS,
+      dizimistaNoOdoo: DIZIMISTA,
+      aoCriar:    (m, d) => { if (m === 'x_devolucao') criados.push(d); },
+      aoEscrever: (m, id, d) => { if (m === 'x_devolucao') escritos.push([id, d]); },
+    }, cenario));
+    const id = ctx.OdooService.registrarDevolucao(
+      7, dadosAnalise, null, 'imagem', 'ok',
+      Object.assign({ tipo: 'dizimo' }, extras || {}));
+    return { id, criados, escritos };
+  }
+
+  const CASOS = [];
+  const confere = (nome, ok, detalhe) => CASOS.push([nome, ok, detalhe]);
+
+  // 1. A competência é gravada, e é o mês da DATA DA DEVOLUÇÃO
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' });
+    const d = r.criados[0] || {};
+    confere('a competência sai do mês da data da devolução',
+      d.x_studio_competencia === '2026-09-01', JSON.stringify(d.x_studio_competencia));
+  }
+
+  // 2. Nada mais é preenchido nem pré-criado: registrar é sempre CRIAR.
+  //
+  //    O ciclo automático — abrir o mês seguinte, procurar um "A devolver" da
+  //    mesma competência para preencher — foi removido no BL-71. Ele resolvia
+  //    a previsibilidade e criava três problemas: mês fantasma para quem devolve
+  //    de dois em dois meses, pergunta disparando em toda devolução, e um buraco
+  //    sem rastro quando alguém pulava um mês. A regra de ouro cobre o que
+  //    importava com duas opções e nenhum registro inventado.
+  {
+    const r = registra({
+      devolucoesPorCompetencia: [{ id: 41, x_studio_competencia: '2026-09-01',
+                                   x_studio_status: 'A devolver' }],
+    }, { valor: 50, data: '20/09/2026' });
+    const abertos = r.criados.filter((d) => d.x_studio_status === 'A devolver');
+    confere('registrar CRIA, e não abre mês nenhum nem preenche registro antigo',
+      r.escritos.length === 0 && r.criados.length === 1 && abertos.length === 0,
+      `escritos=${r.escritos.length} criados=${r.criados.length} abertos=${abertos.length}`);
+  }
+
+  // 3. Sem mês em aberto: cria normalmente
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' });
+    confere('sem mês em aberto, cria como sempre criou',
+      r.escritos.length === 0 && r.criados.length >= 1,
+      `escritos=${r.escritos.length} criados=${r.criados.length}`);
+  }
+
+  // 7. OFERTA não entra nesse ciclo
+  {
+    const r = registra({}, { valor: 50, data: '20/09/2026' }, { tipo: 'oferta' });
+    const abertos = r.criados.filter((d) => d.x_studio_status === 'A devolver');
+    confere('oferta não abre mês nenhum — não é compromisso mensal',
+      abertos.length === 0, `abertos=${abertos.length}`);
+  }
+
+  // 8. Competência de OUTRO mês não é preenchida às cegas
+  //    O aberto é de setembro, o pagamento chega em dezembro. Enquanto a
+  //    pergunta ao dizimista não existir, setembro CONTINUA devendo — quitá-lo
+  //    sozinho seria inventar um fato.
+  {
+    const r = registra({
+      devolucoesPorCompetencia: [{ id: 41, x_studio_competencia: '2026-09-01',
+                                   x_studio_status: 'A devolver' }],
+    }, { valor: 50, data: '10/12/2026' });
+    const pagou = r.escritos.find(([, d]) => d.x_studio_value === 50);
+    confere('pagamento de dezembro NÃO quita o aberto de setembro',
+      !pagou && r.criados.length >= 1,
+      `escritos=${JSON.stringify(r.escritos.map(e => e[0]))}`);
+  }
+
+  // 9. Sem o campo de competência no Odoo, nada disso acontece
+  //    A base rodou muito tempo sem campos que vieram depois; o bot não pode
+  //    exigir schema que talvez não esteja lá.
+  {
+    const criados = [];
+    const ctx = montarContexto({
+      camposOdoo: ['x_studio_tipo_contribuicao', 'x_studio_comunidade'],
+      dizimistaNoOdoo: DIZIMISTA,
+      aoCriar: (m, d) => { if (m === 'x_devolucao') criados.push(d); },
+    });
+    ctx.OdooService.registrarDevolucao(7, { valor: 50, data: '20/09/2026' },
+      null, 'imagem', 'ok', { tipo: 'dizimo' });
+    confere('sem o campo de competência, registra como antes e não abre mês',
+      criados.length === 1 && !('x_studio_competencia' in criados[0]),
+      `criados=${criados.length}`);
+  }
+
+  // ── A REGRA DE OURO (BL-71) ─────────────────────────────────────────────
+  //
+  // Não é a primeira devolução, e o mês ANTERIOR não tem devolução nenhuma:
+  // pergunta se é deste mês ou do anterior. Duas opções, sempre.
+  //
+  // Substituiu três mecanismos que foram ficando complicados — o mês em aberto
+  // anterior, depois qualquer mês diferente, depois o intervalo inteiro desde
+  // a última paga. Cada um resolvia um caso e criava outro.
+  {
+    function ofereceu(devolucoes, competenciaDoPago) {
+      const enviadas = [];
+      const ctx = montarContexto({
+        camposOdoo: ['x_studio_competencia'],
+        devolucoesPorCompetencia: devolucoes,
+        devolucaoPorId: { id: 90, x_studio_competencia: competenciaDoPago },
+      });
+      ctx.Utils.enviarMenu = (to, texto, botoes) => enviadas.push({ texto, botoes });
+      ctx.Utils.enviarComBotaoMenu = (to, texto) => enviadas.push({ texto, botoes: [] });
+      ctx.ComprovanteHandler._ofereceCorrigirMes('55', 90, 7);
+      return enviadas;
+    }
+    const paga = (comp) => ({ id: 10, x_studio_competencia: comp, x_studio_status: 'Confirmado' });
+
+    // O caso do teste de 23/09: julho pago, comprovante de setembro
+    const pulou = ofereceu([paga('2026-07-01')], '2026-09-01');
+    confere('pagou julho e voltou em setembro: pergunta',
+      pulou.length === 1 && pulou[0].botoes.length === 2, JSON.stringify(pulou));
+    confere('duas opções: o mês registrado primeiro, o anterior depois',
+      pulou.length === 1
+      && /setembro\/2026/.test(pulou[0].botoes[0].title)
+      && /agosto\/2026/.test(pulou[0].botoes[1].title),
+      JSON.stringify(pulou[0] && pulou[0].botoes));
+    confere('o id do botão carrega registro e mês, sem depender de sessão',
+      pulou.length === 1 && pulou[0].botoes[1].id === 'compm_90_2026-08-01',
+      JSON.stringify(pulou[0] && pulou[0].botoes));
+
+    confere('quem devolve todo mês não é perguntado',
+      ofereceu([paga('2026-08-01')], '2026-09-01').length === 0);
+
+    confere('PRIMEIRA devolução da vida não é perguntada',
+      ofereceu([], '2026-09-01').length === 0);
+
+    // Sumiu por meses: continua sendo UMA pergunta de duas opções, não uma lista
+    const sumiu = ofereceu([paga('2023-01-01')], '2026-09-01');
+    confere('quem sumiu por anos recebe a mesma pergunta simples, de 2 opções',
+      sumiu.length === 1 && sumiu[0].botoes.length === 2, JSON.stringify(sumiu));
+
+    // Pagar no dia 1º pelo mês anterior — o caso que motivou tudo isto
+    const diaPrimeiro = ofereceu([paga('2026-08-01')], '2026-10-01');
+    confere('pagou dia 1º de outubro com agosto pago: pergunta outubro ou setembro',
+      diaPrimeiro.length === 1
+      && /outubro\/2026/.test(diaPrimeiro[0].botoes[0].title)
+      && /setembro\/2026/.test(diaPrimeiro[0].botoes[1].title),
+      JSON.stringify(diaPrimeiro[0] && diaPrimeiro[0].botoes));
+
+    // `A devolver` não conta como devolução: é previsão, não pagamento
+    const soPrevisao = ofereceu(
+      [paga('2026-07-01'), { id: 11, x_studio_competencia: '2026-08-01', x_studio_status: 'A devolver' }],
+      '2026-09-01');
+    confere('registro "A devolver" no mês anterior não cobre nada — pergunta igual',
+      soPrevisao.length === 1 && soPrevisao[0].botoes.length === 2, JSON.stringify(soPrevisao));
+
+    // A escolha: só grava, não cria nem reabre nada
+    {
+      const escritos = [], criados = [];
+      const ctx = montarContexto({
+        camposOdoo: ['x_studio_competencia'],
+        devolucaoPorId: { id: 90, x_studio_competencia: '2026-09-01' },
+        aoEscrever: (m, id, d) => escritos.push([id, d.x_studio_competencia]),
+        aoCriar: (m, d) => criados.push(d),
+      });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.ComprovanteHandler.corrigirMes('55', 'compm_90_2026-08-01');
+      confere('escolher o mês anterior só GRAVA — não cria registro para o que sobrou',
+        escritos.length === 1 && escritos[0][0] === 90 && escritos[0][1] === '2026-08-01'
+        && criados.length === 0,
+        `escritos=${JSON.stringify(escritos)} criados=${criados.length}`);
+    }
+
+    // Escolher o mês que já estava não escreve nada
+    {
+      const escritos = [];
+      const ctx = montarContexto({
+        camposOdoo: ['x_studio_competencia'],
+        devolucaoPorId: { id: 90, x_studio_competencia: '2026-09-01' },
+        aoEscrever: (m, id) => escritos.push(id),
+      });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.ComprovanteHandler.corrigirMes('55', 'compm_90_2026-09-01');
+      confere('confirmar o mês que já estava não mexe em nada', escritos.length === 0,
+        JSON.stringify(escritos));
+    }
+
+    // O LOTE DE FAMÍLIA COM UM MEMBRO SÓ.
+    //
+    // Escapou em produção, 23/09: quem abre "De quem é a devolução?" e escolhe
+    // uma pessoa passa pelo caminho de FAMÍLIA, que nunca chamava a pergunta.
+    // Eu tinha documentado o porquê no BL-62 — "uma pergunta por membro viraria
+    // uma rajada" — e o raciocínio vale para família de verdade. Lote de um
+    // não é lote.
+    {
+      const enviadas = [];
+      const ctx = montarContexto({
+        camposOdoo: ['x_studio_competencia'],
+        // `buscarDizimistaPorWhatsapp` procura por telefone; o cenário precisa
+        // dos dois caminhos, porque o lote também lê o dizimista por id.
+        dizimista: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+        dizimistaNoOdoo: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+        comunidadeGravavel: true,
+        devolucoesPorCompetencia: [paga('2026-07-01')],
+        devolucaoPorId: { id: 99, x_studio_competencia: '2026-09-01' },
+      });
+      ctx.Utils.enviarMenu = (to, texto, botoes) => enviadas.push({ texto, botoes });
+      ctx.Utils.enviarComBotaoMenu = () => {};
+      ctx.Utils.enviarSimples = () => {};
+      ctx.ComprovanteHandler._responderDesfecho = () => {};
+      ctx.ComprovanteHandler._tratarResultadoFamilia('55',
+        { dados: { valor: 400, data: '07/09/2026' }, tipo: 'imagem', arquivoOriginalBase64: null },
+        [{ id: 7, nome: 'Thalles', valor: 100 }], '');
+      const comMes = enviadas.filter((e) => /a qual mês/i.test(e.texto || ''));
+      confere('lote de família com UM membro também recebe a pergunta do mês',
+        comMes.length === 1 && comMes[0].botoes.length === 2, JSON.stringify(enviadas.map(e => e.texto && e.texto.slice(0, 40))));
+    }
+
+    // O VALOR: comprovante manda quando há um membro só (BL-72).
+    //
+    // Escapou em produção, 23/09: comprovante de R$ 400, registro de R$ 100.
+    // O valor escolhido na conversa é uma inclinação — a pessoa devolve o que
+    // quiser —, e gravar o escolhido põe no Odoo um número que não corresponde
+    // a dinheiro nenhum. O relatório do mês ficava R$ 300 menor que o extrato.
+    {
+      function registraLote(membros) {
+        const gravados = [];
+        const ctx = montarContexto({
+          camposOdoo: ['x_studio_competencia'],
+          dizimista: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+          dizimistaNoOdoo: { id: 7, x_name: 'Thalles', x_studio_comunidade: [3, 'Matriz'] },
+          comunidadeGravavel: true,
+          devolucaoPorId: { id: 99, x_studio_competencia: '2026-09-01' },
+          aoCriar: (m, d) => { if (m === 'x_devolucao') gravados.push(d.x_studio_value); },
+        });
+        ctx.Utils.enviarMenu = () => {}; ctx.Utils.enviarComBotaoMenu = () => {};
+        ctx.Utils.enviarSimples = () => {};
+        ctx.ComprovanteHandler._responderDesfecho = () => {};
+        ctx.ComprovanteHandler._tratarResultadoFamilia('55',
+          { dados: { valor: 400, data: '07/09/2026' }, tipo: 'imagem', arquivoOriginalBase64: null },
+          membros, '');
+        return gravados;
+      }
+
+      const um = registraLote([{ id: 7, nome: 'Thalles', valor: 100 }]);
+      confere('um membro só: grava os R$ 400 do comprovante, não os R$ 100 escolhidos',
+        um.length === 1 && um[0] === 400, JSON.stringify(um));
+
+      const varios = registraLote([
+        { id: 7, nome: 'Thalles', valor: 100 },
+        { id: 8, nome: 'Black',   valor: 300 }]);
+      confere('vários membros: mantém a alocação da conversa — o total não se divide sozinho',
+        varios.length === 2 && varios[0] === 100 && varios[1] === 300, JSON.stringify(varios));
+    }
+
+    // Botão antigo, de mensagem que saiu antes do BL-71
+    {
+      const ditos = [];
+      const ctx = montarContexto({ camposOdoo: [] });
+      ctx.Utils.enviarComBotaoMenu = (to, t) => ditos.push(t);
+      ctx.ComprovanteHandler.corrigirMes('55', 'comp_90_41');
+      confere('botão do formato antigo avisa sem estourar e sem mentir',
+        ditos.length === 1 && /está registrada/i.test(ditos[0]), JSON.stringify(ditos));
+    }
+  }
+
+  for (const [nome, ok, detalhe] of CASOS) {
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} ${nome}${ok ? '' : '\n     ' + detalhe}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🛡️  baixar-views: o --download não pode apagar edição local\n');
+
+// ──────────────────────────────────────────────────────────────────
+// Aconteceu em produção, em 22/09: um --download passou por cima de duas
+// views editadas AQUI e ainda não levadas ao Odoo com --update. O pivô e o
+// calendário voltaram à versão antiga, e o `git status` mostrou isso como se
+// fosse o resultado normal de baixar. Dois PRs já mesclados, desfeitos.
+//
+// A causa era o download comparar só dois lados — disco e Odoo — e, ao vê-los
+// diferentes, escolher o Odoo. Sem saber POR QUE diferem, essa escolha é
+// chute. O índice guarda a digital do que o Odoo tinha no download anterior,
+// e é ela que diz qual dos dois se moveu.
+//
+// O --update já tinha a trava no sentido contrário. Esta é a simétrica.
+{
+  const fonte = lerTexto(path.join(RAIZ, 'ferramentas/baixar-views.mjs'));
+  const de = fonte.indexOf('const decidirDownload');
+  const ate = fonte.indexOf('};', de) + 2;
+  if (de < 0) {
+    falhas++;
+    console.log('❌ não achei decidirDownload em baixar-views.mjs');
+  } else {
+    const decidir = new Function(fonte.slice(de, ate) + '; return decidirDownload;')();
+
+    const A = 'digital-antiga', B = 'digital-nova', C = 'digital-outra';
+    const CASOS = [
+      // [nome, local, odoo, base, forcar, esperado]
+      ['os dois dizem a mesma coisa → mantém o texto do disco',
+       A, A, A, false, 'manter'],
+      ['só o Odoo mudou → baixa, que é para isso que o download serve',
+       A, B, A, false, 'baixar'],
+      ['SÓ O DISCO MUDOU → preserva (foi este caso que apagou o pivô)',
+       B, A, A, false, 'preservar'],
+      ['os dois mudaram, cada um para um lado → preserva, e avisa',
+       B, C, A, false, 'preservar'],
+      ['sem base no índice (primeiro download) → baixa',
+       B, C, null, false, 'baixar'],
+      ['--forcar descarta a edição local de propósito',
+       B, C, A, true, 'baixar'],
+      ['--forcar não atrapalha quando os dois são iguais',
+       A, A, A, true, 'manter'],
+    ];
+
+    for (const [nome, local, odoo, base, forcar, espera] of CASOS) {
+      const obtido = decidir(local, odoo, base, forcar);
+      const ok = obtido === espera;
+      if (!ok) falhas++;
+      console.log(`${ok ? '✅' : '❌'} ${nome}` + (ok ? '' : `  (esperado ${espera}, veio ${obtido})`));
+    }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🗓️  Domínios de filtro: só o que o navegador sabe avaliar\n');
+
+// ──────────────────────────────────────────────────────────────────
+// Domínio de filtro de busca NÃO é avaliado pelo Python do servidor. Quem
+// avalia é o py_js, um Python parcial escrito em JavaScript que roda no
+// navegador — e ele implementa bem menos coisa do que parece.
+//
+// Isso derrubou o filtro "Mês Atual" de x_devolucao, que nasceu com
+// `context_today().replace(day=1)` e NUNCA devolveu nada: o PyDate do py_js
+// não tem `replace`, então a expressão estourava em toda data. Não havia
+// mensagem de erro em lugar nenhum — o filtro simplesmente não filtrava.
+//
+// Esta verificação é de graça e sem rede: procura, nos domínios versionados,
+// as duas construções que já se provaram quebradas. A prova de verdade, que
+// executa os domínios no avaliador real do Odoo, está em
+// ferramentas/provar-dominio-filtro.mjs.
+{
+  const dirViews = path.join(RAIZ, 'ferramentas/views-odoo');
+  const PROIBIDO = [
+    [/\.replace\s*\(/,
+     'PyDate do py_js não tem .replace() — use relativedelta(day=1)'],
+    [/relativedelta\s*\([^)]*\bday\s*=\s*(3[01]|2[89])\b/,
+     'relativedelta(day=31) transborda no py_js (fev vira 03/03) — use months=1, day=1 com "<"'],
+  ];
+
+  const arquivos = fs.existsSync(dirViews)
+    ? fs.readdirSync(dirViews).filter((f) => f.endsWith('.xml') && !f.includes('.COMBINADA.'))
+    : [];
+
+  if (!arquivos.length) {
+    falhas++;
+    console.log('❌ não achei nenhuma view versionada em ferramentas/views-odoo');
+  }
+
+  let dominios = 0;
+  const achados = [];
+  for (const f of arquivos) {
+    const xml = lerTexto(path.join(dirViews, f));
+    // Só o conteúdo de domain="..." interessa: `.replace(` em outro lugar
+    // (num t-out, num help) é JavaScript de verdade e funciona.
+    for (const m of xml.matchAll(/\bdomain\s*=\s*"([^"]*)"/g)) {
+      dominios++;
+      for (const [re, porque] of PROIBIDO) {
+        if (re.test(m[1])) achados.push(`${f}: ${porque}`);
+      }
+    }
+  }
+
+  if (achados.length) {
+    falhas += achados.length;
+    for (const a of achados) console.log(`❌ ${a}`);
+  } else {
+    console.log(`✅ ${dominios} domínios em ${arquivos.length} views, nenhum usa construção que o py_js não avalia`);
+  }
+  // ── `--` dentro de comentário XML ────────────────────────────────────────
+  // XML proíbe dois hifens seguidos dentro de <!-- -->. Isso não é sutileza de
+  // padrão: o Odoo recusa o arch inteiro, e a view não sobe.
+  //
+  // Parece exótico até se lembrar de que os comentários destas views explicam
+  // como rodar as ferramentas, e as ferramentas têm flags. Escrever
+  // "rode com <menos><menos>update" num comentário quebra o arquivo. Já
+  // aconteceu duas vezes: nos 37 arquivos COMBINADA e no formulário de
+  // devolução. A saída é a meia-risca (–), que não é hifen.
+  {
+    const quebrados = [];
+    for (const f of arquivos) {
+      const xml = lerTexto(path.join(dirViews, f));
+      for (const c of xml.matchAll(/<!--([\s\S]*?)-->/g)) {
+        if (c[1].includes('--')) {
+          const trecho = c[1].match(/.{0,30}--.{0,20}/s)?.[0].replace(/\s+/g, ' ').trim();
+          quebrados.push(`${f}: "--" em comentário XML → …${trecho}…`);
+        }
+      }
+    }
+    if (quebrados.length) {
+      falhas += quebrados.length;
+      for (const q of quebrados) console.log(`❌ ${q}`);
+    } else {
+      console.log(`✅ nenhum comentário XML com "--", que o Odoo recusaria`);
+    }
+  }
+
+  // ── Os botões de validação no card do kanban ────────────────────────────
+  // Duas situações são válidas, e a verificação aceita as duas:
+  //
+  //   ANTES DE INSTALAR — o arch traz o comentário MARCADOR-BOTOES-VALIDACAO,
+  //     e instalar-botoes-kanban.mjs o troca pelos botões com os IDs das ações
+  //     que acabou de criar. Se alguém renomear ou apagar esse comentário, o
+  //     instalador para na máquina de quem usa, longe daqui.
+  //
+  //   DEPOIS DE INSTALAR — o marcador não existe mais, e no lugar dele há dois
+  //     <button type="action"> apontando para IDs numéricos. Aqui o que
+  //     importa é que os dois continuem lá e continuem condicionados ao campo:
+  //     um --download que voltasse a view para antes dos botões apagaria o
+  //     trabalho sem nada acusar.
+  {
+    const ARQ = 'x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml';
+    const MARCADOR = 'MARCADOR-BOTOES-VALIDACAO';
+    const caminho = path.join(dirViews, ARQ);
+
+    if (!fs.existsSync(caminho)) {
+      falhas++;
+      console.log(`❌ ${ARQ} não existe — é o card que leva os botões`);
+    } else {
+      const arch = lerTexto(caminho).replace(/^<!--[\s\S]*?-->\n/, '');
+      const erros = [];
+
+      if (arch.includes(MARCADOR)) {
+        // Ainda não instalado: a troca precisa continuar pegando.
+        const fingidos = '<div><button name="1" type="action">x</button></div>';
+        const depois = arch.replace(new RegExp(`<!--\\s*${MARCADOR}[\\s\\S]*?-->`), fingidos);
+        if (!/<!--\s*MARCADOR-BOTOES-VALIDACAO/.test(arch)) erros.push('o marcador não está dentro de <!-- -->');
+        if (depois === arch) erros.push('a troca do marcador não pegou');
+        if (depois.includes(MARCADOR)) erros.push('sobrou marcador depois da troca');
+        if (!erros.length) console.log('✅ o marcador dos botões do kanban ainda é substituível');
+      } else {
+        // Já instalado: os dois botões precisam continuar de pé.
+        // A tag inteira, e só depois os pedaços. A versão anterior casava o
+        // texto exato do `invisible`, e quebrou no dia em que a condição ganhou
+        // um segundo termo (` or x_studio_status == 'A devolver'`) — acusando
+        // "achei 0 botões" quando os dois estavam lá, corretos. Teste que
+        // depende da redação de um atributo testa a redação, não o que importa.
+        const botoes = [...arch.matchAll(/<button\s[^>]*>/g)]
+          .map((m) => ({
+            id: m[0].match(/name="(\d+)"/)?.[1],
+            acao: m[0].includes('type="action"'),
+            estado: m[0].match(/x_studio_validacao == '([a-z_]+)'/)?.[1],
+          }))
+          .filter((b) => b.id && b.acao && b.estado)
+          .map((b) => [null, b.id, b.estado]);
+        const estados = botoes.map((b) => b[2]).sort();
+        if (botoes.length !== 2) {
+          erros.push(`esperava 2 botões de ação no card, achei ${botoes.length}`);
+        } else if (estados.join(',') !== 'nao_recebido,validado') {
+          erros.push(`os botões não cobrem os dois estados: ${estados.join(', ')}`);
+        }
+        if (!arch.includes('<field name="x_studio_validacao"/>')) {
+          erros.push('x_studio_validacao não está declarado — as condições invisible não avaliam');
+        }
+        if (!erros.length) {
+          console.log(`✅ os dois botões de validação estão no card (ações ${botoes.map((b) => b[1]).join(' e ')})`);
+        }
+      }
+
+      if (erros.length) {
+        falhas += erros.length;
+        for (const e of erros) console.log(`❌ botões do kanban: ${e}`);
+      }
+    }
+  }
+
+  // ── Formulário e kanban precisam citar as MESMAS ações ───────────────────
+  // Os dois botões existem em dois arquivos, e cada um carrega o id numérico
+  // de uma ir.actions.server. Números iguais por coincidência hoje podem
+  // divergir amanhã — basta alguém recriar as ações e baixar só uma das views.
+  // Um botão apontando para id que não existe mais não avisa nada: ele
+  // aparece, é clicado, e o Odoo responde com erro na cara de quem usa.
+  {
+    const lerBotoes = (arq) => {
+      const caminho = path.join(dirViews, arq);
+      if (!fs.existsSync(caminho)) return null;
+      const xml = lerTexto(caminho);
+      const achados = {};
+      for (const m of xml.matchAll(/<button\s[^>]*>/g)) {
+        const id = m[0].match(/name="(\d+)"/)?.[1];
+        const estado = m[0].match(/x_studio_validacao == '([a-z_]+)'/)?.[1];
+        if (id && m[0].includes('type="action"') && estado) achados[estado] = id;
+      }
+      return achados;
+    };
+
+    const noKanban = lerBotoes('x_devolucao.kanban.679.Default_kanban_view_for_ir.model_447_.xml');
+    const noForm   = lerBotoes('x_devolucao.form.608.Odoo_Studio_Default_form_view_for_x_devolucao_customization.xml');
+
+    if (!noKanban || !noForm) {
+      falhas++;
+      console.log('❌ não achei uma das views de devolução para comparar os botões');
+    } else if (!Object.keys(noKanban).length) {
+      // Ainda não instalado: o kanban traz o marcador. Nada a comparar.
+      console.log('✅ (botões ainda não instalados — nada a comparar entre form e kanban)');
+    } else {
+      const k = JSON.stringify(noKanban, Object.keys(noKanban).sort());
+      const f = JSON.stringify(noForm, Object.keys(noKanban).sort());
+      const ok = k === f;
+      if (!ok) falhas++;
+      console.log(`${ok ? '✅' : '❌'} formulário e kanban citam as mesmas ações`
+        + (ok ? ` (${Object.values(noKanban).join(' e ')})` : `\n     kanban ${k}\n     form   ${f}`));
+    }
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O que este bloco protege é um modo de falha SILENCIOSO. Errar aqui não
+// gera exceção nenhuma: gera lembrete que não sai, ou rajada que sai toda de
+// uma vez. Nos dois casos o log diz "terminou sem enviar" ou "enviou 500", e
+// nenhum dos dois parece errado sozinho.
+//
+// Por isso cada caso abaixo fixa o RELÓGIO e a RESPOSTA DO ODOO e afirma o
+// número exato de mensagens. Nada vai para a rede.
+{
+  const fonteConfig = lerTexto(path.join(RAIZ, 'Config.gs'));
+  const fonteNotif  = lerTexto(path.join(RAIZ, 'NotificacaoHandler.gs'));
+
+  // Um dizimista sintético. `dia` 1 garante que o dia de notificação (dia+2,
+  // teto 28) já passou na data fixada abaixo.
+  const gente = (n) => Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    x_name: `Dizimista ${i + 1}`,
+    x_studio_partner_phone: `55869000000${(i % 10)}`,
+    x_studio_value: 50,
+    x_studio_dia_preferido: 1
+  }));
+
+  /**
+   * Roda executarNotificacoesDiarias() inteira contra stubs.
+   * @returns {{enviados, contagens, ordem}}
+   */
+  // BL-84 acrescentou quatro alavancas, todas opcionais:
+  //   logs        { [idDizimista]: ['erro', 'sucesso', ...] } — o x_notificacao_log do mês
+  //   falhaEnvio  Set de ids cujo envio o WhatsApp recusa
+  //   falhasLog   quantas gravações de log falham antes de funcionar
+  //   cache       o CacheService, para rodar duas vezes com a mesma memória
+  //   msPorPausa  quanto o relógio anda a cada pausa entre envios
+  const rodar = ({ hora, parametros = {}, dizimistas = gente(5), erroParametros = false,
+                   logs = {}, falhaEnvio = new Set(), falhasLog = 0, cache = {},
+                   msPorPausa = 0 }) => {
+    const enviados = [];
+    const contagens = [];   // toda chamada a OdooService.count
+    const criados = [];     // x_notificacao_log gravados
+    const buscas = [];      // toda chamada a searchRead
+    let relogio = 0;        // ms somados pelas pausas simuladas
+    class DataSimulada extends Date {
+      static now() { return Date.now() + relogio; }
+    }
+
+    const respostaOk = {
+      getResponseCode: () => 200,
+      getContentText: () => JSON.stringify({ messages: [{ id: 'wamid.T' }] })
+    };
+
+    const recusada = {
+      getResponseCode: () => 400,
+      getContentText: () => JSON.stringify({ error: { code: 131026, message: 'undeliverable' } })
+    };
+
+    const ctx = {
+      console: { log() {}, warn() {}, error() {} },
+      Date: DataSimulada,
+      TIMEZONE: 'America/Fortaleza',
+      Utilities: {
+        // A rotina pede 'H' para saber a hora e 'yyyy-MM-dd' para a data do
+        // log. Um formatDate que ignora o formato faria o teste de janela
+        // passar por acidente.
+        formatDate: (_d, _tz, fmt) => (fmt === 'H' ? String(hora) : '2026-09-23'),
+        sleep(ms) { if (ms === 2000) relogio += msPorPausa; }
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty: (k) => ({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111' }[k] || null),
+          setProperty() {}, getProperties: () => ({})
+        })
+      },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; } }) },
+      UrlFetchApp: { fetch: () => respostaOk },
+      Utils: {
+        // Só envio ACEITO conta em `enviados`: é o que chega ao aparelho.
+        _post(payload) {
+          // Pelo NOME, que vai no template: o telefone sintético se repete.
+          const nome = payload.template.components[0].parameters[0].text;
+          const d = dizimistas.find((x) => x.x_name === nome);
+          if (d && falhaEnvio.has(d.id)) return recusada;
+          enviados.push(payload);
+          return respostaOk;
+        },
+        registrarConsumoExterno() {}
+      },
+      getConfig: () => ({ WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111' }),
+      OdooService: {
+        buscarParametros() {
+          if (erroParametros) throw new Error('Odoo fora do ar');
+          return Object.assign({ x_name: 'Padrão' }, parametros);
+        },
+        searchRead(modelo, _campos, dominio, opcoes) {
+          buscas.push({ modelo, opcoes });
+          if (modelo === 'x_notificacao_log') {
+            const id = (dominio.find((c) => c[0] === 'x_studio_dizimista') || [])[2];
+            return (logs[id] || []).map((s) => ({ x_studio_status_envio: s }));
+          }
+          return modelo === 'x_dizimista' ? dizimistas.slice() : [];
+        },
+        // O mesmo contrato do OdooService real: acrescenta o filtro de tipo.
+        _comTipo: (dominio, tipo) =>
+          (tipo ? dominio.concat([['x_studio_tipo_contribuicao', '=', tipo]]) : dominio),
+        // Ninguém foi notificado nem devolveu — todo candidato é elegível.
+        count(modelo, dominio) { contagens.push({ modelo, dominio }); return 0; },
+        create(modelo, dados) {
+          if (falhasLog > 0) { falhasLog--; throw new Error('Odoo não respondeu (simulado)'); }
+          criados.push({ modelo, dados });
+          return criados.length;
+        }
+      }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(
+      PLATAFORMA + '\n;\n' + fonteConfig + '\n;\n' + fonteNotif + '\n;\nexecutarNotificacoesDiarias();',
+      ctx, { filename: 'NotificacaoHandler.gs' }
+    );
+
+    return {
+      enviados,
+      contagens,
+      criados,
+      buscas,
+      ordem: enviados.map((p) => p.template.components[0].parameters[0].text)
+    };
+  };
+
+  const casos = [
+    // ── A janela ──────────────────────────────────────────────────────────
+    { nome: '8h (antes da janela padrão) não envia nada',
+      entrada: { hora: 8 }, envios: 0 },
+    { nome: '9h (primeiro degrau) envia',
+      entrada: { hora: 9 }, envios: 5 },
+    { nome: '17h é EXCLUSIVO — a hora do fim não dispara',
+      entrada: { hora: 17, parametros: { x_studio_notif_intervalo: 1 } }, envios: 0 },
+    { nome: '3h da madrugada não envia nada',
+      entrada: { hora: 3 }, envios: 0 },
+
+    // ── O degrau: o que o BL-73 acrescentou ───────────────────────────────
+    // 10h está DENTRO da janela 9–17 e mesmo assim não dispara, porque o
+    // intervalo é 2h. Sem esta regra o acionador horário mandaria 24 lotes.
+    { nome: '10h está na janela mas não é degrau (intervalo 2h)',
+      entrada: { hora: 10 }, envios: 0 },
+    { nome: '11h, 13h e 15h são degraus',
+      entrada: { hora: 13 }, envios: 5 },
+    { nome: 'intervalo 1h faz toda hora da janela ser degrau',
+      entrada: { hora: 10, parametros: { x_studio_notif_intervalo: 1 } }, envios: 5 },
+    { nome: 'início 10h desloca os degraus (10h dispara, 11h não)',
+      entrada: { hora: 11, parametros: { x_studio_notif_hora_inicio: 10 } }, envios: 0 },
+
+    // ── O lote ────────────────────────────────────────────────────────────
+    { nome: '50 elegíveis, lote padrão 20 → sai 20',
+      entrada: { hora: 9, dizimistas: gente(50) }, envios: 20 },
+    { nome: 'lote configurado em 3 → saem 3',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 3 } },
+      envios: 3 },
+    // O teto tem que PARAR a seleção, não cortar o resultado: cada candidato
+    // custa DUAS consultas ao Odoo. Filtrar 500 para enviar 20 gastaria ~1000
+    // RPCs e estouraria o tempo de execução do Apps Script — com o log
+    // dizendo "20 enviados", que é exatamente o que se esperava ver.
+    { nome: 'o teto interrompe a seleção (não consulta os 50 no Odoo)',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 3 } },
+      envios: 3,
+      confere: ({ contagens }) => (contagens.length <= 3 * 2
+        ? null
+        : `fez ${contagens.length} consultas de histórico para um lote de 3 — ` +
+          `o teto virou corte no fim em vez de parada`) },
+    { nome: 'menos gente que o lote envia todo mundo',
+      entrada: { hora: 9, dizimistas: gente(4) }, envios: 4 },
+
+    // ── Os parâmetros fora da faixa ───────────────────────────────────────
+    { nome: 'lote 0 cairia no silêncio — volta ao padrão de 20',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 0 } },
+      envios: 20 },
+    { nome: 'lote 9999 traria a rajada de volta — volta ao padrão de 20',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 9999 } },
+      envios: 20 },
+    { nome: 'hora inicial 99 não existe — volta ao padrão',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 99 } }, envios: 5 },
+    { nome: 'campo em branco (false, como o Odoo devolve) usa o padrão',
+      entrada: { hora: 9, parametros: { x_studio_notif_lote: false, x_studio_notif_hora_inicio: false } },
+      envios: 5 },
+    { nome: 'texto no campo inteiro não derruba o disparo',
+      entrada: { hora: 9, parametros: { x_studio_notif_lote: 'vinte' } }, envios: 5 },
+    // Cada número sozinho é válido; juntos fecham a janela e o lembrete nunca
+    // mais sai — em silêncio, que é o jeito ruim de quebrar.
+    { nome: 'janela invertida (18h–10h) volta ao padrão em vez de calar',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 18, x_studio_notif_hora_fim: 10 } },
+      envios: 5 },
+    { nome: 'janela de largura zero (9h–9h) volta ao padrão',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 9, x_studio_notif_hora_fim: 9 } },
+      envios: 5 },
+
+    // ── O Odoo fora do ar ─────────────────────────────────────────────────
+    // Instabilidade de rede às 9h não pode suprimir o lembrete do dia.
+    { nome: 'x_parametros ilegível não impede o disparo (usa o padrão)',
+      entrada: { hora: 9, erroParametros: true }, envios: 5 },
+    { nome: 'x_parametros ilegível ainda respeita a janela (3h não envia)',
+      entrada: { hora: 3, erroParametros: true }, envios: 0 },
+
+    // ── A fila anda ───────────────────────────────────────────────────────
+    // A ordem por dia_preferido é o que garante que quem venceu primeiro é
+    // notificado primeiro. Sem ela o lote seria arbitrário e a mesma gente
+    // poderia ficar sempre no fim.
+    { nome: 'a busca pede ordem por dia preferido',
+      entrada: { hora: 9 }, envios: 5,
+      confere: ({ buscas }) => {
+        const b = buscas.find((x) => x.modelo === 'x_dizimista');
+        const ordem = b && b.opcoes && b.opcoes.order;
+        return /x_studio_dia_preferido/.test(ordem || '')
+          ? null
+          : `searchRead de x_dizimista sem ordem por dia preferido (order=${ordem})`;
+      } },
+    { nome: 'cada envio grava um log de notificação',
+      entrada: { hora: 9, dizimistas: gente(50), parametros: { x_studio_notif_lote: 3 } },
+      envios: 3,
+      confere: ({ criados }) => (criados.length === 3
+        ? null
+        : `gravou ${criados.length} logs para 3 envios — a deduplicação depende disso`) },
+
+    // ── BL-84: o que travava ou repetia o lembrete ────────────────────────
+    // 20 números que já falharam duas vezes no mês, no começo da fila. Antes,
+    // só "sucesso" contava: eles ocupavam o lote inteiro a cada degrau e os
+    // outros 5 nunca recebiam.
+    { nome: 'BL-84: quem já falhou 2 vezes no mês não ocupa mais o lote',
+      entrada: { hora: 9, dizimistas: gente(25),
+                 logs: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [i + 1, ['erro', 'erro']])) },
+      envios: 5,
+      confere: ({ ordem }) => (ordem[0] === 'Dizimista 21' ? null : `começou por ${ordem[0]}`) },
+    { nome: 'BL-84: uma falha só ainda merece nova tentativa',
+      entrada: { hora: 9, dizimistas: gente(3), logs: { 1: ['erro'] } },
+      envios: 3 },
+    { nome: 'BL-84: envio recusado grava log de erro, e o resto do lote segue',
+      entrada: { hora: 9, dizimistas: gente(4), falhaEnvio: new Set([2]) },
+      envios: 3,
+      confere: ({ criados }) => {
+        const st = criados.map((c) => c.dados.x_studio_status_envio).sort().join();
+        return st === 'erro,sucesso,sucesso,sucesso' ? null : `logs: ${st}`;
+      } },
+    // Sem o orçamento, 20 envios com 2 s de pausa — e aqui cada pausa "dura"
+    // 60 s — passariam do teto de 6 min do Apps Script.
+    { nome: 'BL-84: o laço para antes do teto de 6 min; o resto fica para o degrau seguinte',
+      entrada: { hora: 9, dizimistas: gente(20), msPorPausa: 60000 },
+      envios: 5 },
+    { nome: 'BL-84: a gravação do log é tentada de novo antes de desistir',
+      entrada: { hora: 9, dizimistas: gente(1), falhasLog: 2 },
+      envios: 1,
+      confere: ({ criados }) => (criados.length === 1 ? null : `gravou ${criados.length} log(s)`) },
+    // ── BL-84: o que calava o lembrete do dízimo ──────────────────────────
+    { nome: 'BL-84: "já devolveu" conta só DÍZIMO e ignora devolução rejeitada',
+      entrada: { hora: 9, dizimistas: gente(1) },
+      envios: 1,
+      confere: ({ contagens }) => {
+        const d = (contagens.find((c) => c.modelo === 'x_devolucao') || {}).dominio || [];
+        const txt = JSON.stringify(d);
+        if (!txt.includes('["x_studio_tipo_contribuicao","=","dizimo"]')) return 'não filtrou o tipo';
+        if (!txt.includes('["x_studio_status","!=","Rejeitado"]')) return 'contou rejeitada';
+        return null;
+      } },
+  ];
+
+  // BL-84: o envio saiu e o log NÃO foi gravado (Odoo fora nas 3 tentativas).
+  // O degrau seguinte, com a mesma memória, não pode lembrar a pessoa de novo.
+  {
+    let erro = null;
+    try {
+      const cache = {};
+      const primeiro = rodar({ hora: 9, dizimistas: gente(2), falhasLog: 99, cache });
+      const segundo  = rodar({ hora: 11, dizimistas: gente(2), falhasLog: 99, cache });
+      if (primeiro.enviados.length !== 2) erro = `1º degrau enviou ${primeiro.enviados.length}`;
+      else if (segundo.enviados.length !== 0) erro = `2º degrau reenviou ${segundo.enviados.length}`;
+    } catch (e) { erro = `estourou: ${e.message}`; }
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} BL-84: sem log no Odoo, o degrau seguinte não reenvia${erro ? ' — ' + erro : ''}`);
+  }
+
+  for (const caso of casos) {
+    let erro = null;
+    let saida = null;
+    try {
+      saida = rodar(caso.entrada);
+      if (saida.enviados.length !== caso.envios) {
+        erro = `enviou ${saida.enviados.length}, esperava ${caso.envios}`;
+      } else if (caso.confere) {
+        erro = caso.confere(saida);
+      }
+    } catch (e) {
+      erro = `estourou: ${e.message}`;
+    }
+    if (erro) falhas++;
+    console.log(`${erro ? '❌' : '✅'} ${caso.nome}${erro ? ' — ' + erro : ''}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// A mesma decisão escrita duas vezes: os padrões e as faixas vivem em
+// Config.gs (que o bot usa) e no instalador .mjs (cuja descrição é o ÚNICO
+// lugar onde a paróquia lê a faixa antes de digitar um número). Divergir é
+// pior que não documentar: alguém digitaria 300 porque o instalador disse que
+// podia, e o bot voltaria calado para 20.
+{
+  const cfg = lerTexto(path.join(RAIZ, 'Config.gs'));
+  const mjs = lerTexto(
+    path.join(RAIZ, 'ferramentas', 'instalar-escalonamento-notificacao.mjs'));
+
+  const doCampo = {
+    horaInicio:     'x_studio_notif_hora_inicio',
+    horaFim:        'x_studio_notif_hora_fim',
+    intervaloHoras: 'x_studio_notif_intervalo',
+    lote:           'x_studio_notif_lote'
+  };
+
+  // `const` no topo de um script não vira propriedade do contexto — por isso
+  // o trecho termina devolvendo os dois objetos explicitamente.
+  const ctx = {};
+  vm.createContext(ctx);
+  const doCodigo = vm.runInContext(
+    cfg.match(/const NOTIFICACAO_PADRAO = \{[\s\S]*?\};/)[0] + '\n' +
+    cfg.match(/const NOTIFICACAO_LIMITES = \{[\s\S]*?\};/)[0] + '\n' +
+    '({ padrao: NOTIFICACAO_PADRAO, limites: NOTIFICACAO_LIMITES });',
+    ctx);
+
+  let divergencias = 0;
+  for (const [chave, campo] of Object.entries(doCampo)) {
+    const bloco = mjs.match(
+      new RegExp(`\\{\\s*nome: '${campo}'[\\s\\S]*?\\},\\n`))?.[0];
+    if (!bloco) {
+      divergencias++;
+      console.log(`❌ ${campo} não aparece no instalador`);
+      continue;
+    }
+    const num = (k) => Number(bloco.match(new RegExp(`${k}:\\s*(-?\\d+)`))?.[1]);
+    const esperado = {
+      padrao: doCodigo.padrao[chave],
+      min: doCodigo.limites[chave].min,
+      max: doCodigo.limites[chave].max
+    };
+    for (const k of ['padrao', 'min', 'max']) {
+      if (num(k) !== esperado[k]) {
+        divergencias++;
+        console.log(`❌ ${campo}: instalador diz ${k}=${num(k)}, Config.gs diz ${esperado[k]}`);
+      }
+    }
+  }
+  falhas += divergencias;
+  if (!divergencias) {
+    console.log('✅ padrões e faixas batem entre Config.gs e o instalador');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// O acionador TEM QUE continuar de hora em hora. Se alguém "otimizar" para
+// everyHours(2), o intervalo volta a morar no Apps Script e mudá-lo no Odoo
+// deixa de ter efeito — sem erro nenhum, só com a configuração virando enfeite.
+//
+// Desde a Fase 1 do BL-74 o pedido passa pela Plataforma — então são dois
+// elos: o handler pede 1 hora, e a fachada repassa o número sem mexer nele.
+{
+  const fonte = lerTexto(path.join(RAIZ, 'NotificacaoHandler.gs'));
+  const m = fonte.match(/aCadaHoras\(\s*'executarNotificacoesDiarias'\s*,\s*(\d+)\s*\)/);
+  const repassa = /aCadaHoras:\s*\(funcao, horas\)\s*=>[^;]*\.everyHours\(horas\)/.test(PLATAFORMA);
+  const ok = m && m[1] === '1' && repassa;
+  if (!ok) falhas++;
+  console.log(`${ok ? '✅' : '❌'} o acionador acorda de hora em hora`
+    + (ok ? ' (o intervalo real vem de x_parametros)'
+          : !repassa ? ' — a Plataforma não repassa as horas ao everyHours'
+          : ` — aCadaHoras(${m ? m[1] : '?'}) tira o intervalo do Odoo`));
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🗂️  Teto de 50 propriedades do editor (BL-75)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// A pane não foi vazamento: a poda automática sempre funcionou. Foi ARITMÉTICA
+// — a retenção estava dimensionada muito acima de qualquer leitor, e o regime
+// permanente ficava em ~120 propriedades contra um teto de INTERFACE de 50.
+// Acima dele a lista do editor vira somente leitura e se perde a tela de
+// configuração inteira: não dá para trocar ODOO_API_KEY nem nada.
+//
+// Nada no código dizia esse número. Esta verificação diz: calcula o regime
+// permanente a partir das constantes e reprova se ele voltar a passar do teto.
+{
+  const fonte = lerTexto(path.join(RAIZ, 'Utils.gs'));
+  const num = (nome) => {
+    const m = fonte.match(new RegExp(nome + ':\\s*(\\d+)'));
+    return m ? Number(m[1]) : null;
+  };
+
+  const shards = num('URLFETCH_SHARDS');
+  const dias   = num('URLFETCH_DIAS_GUARDADOS');
+  const meses  = num('MSG_MESES_GUARDADOS');
+
+  // Chaves de configuração que o código lê. É o piso: elas nunca são podadas.
+  const config = new Set();
+  for (const arq of fs.readdirSync(RAIZ).filter(f => f.endsWith('.gs'))) {
+    const src = lerTexto(path.join(RAIZ, arq));
+    for (const m of src.matchAll(/getProperty\(\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\)/g)) {
+      config.add(m[1]);
+    }
+  }
+
+  const TETO = 50;
+  // Folga para o que é transitório e não dá para contar daqui: sessões de
+  // cadastro abertas, media_id, números em freio de taxa.
+  const FOLGA = 6;
+
+  const contadores = (dias * shards) + (meses * 2 * shards);
+  const regime = contadores + config.size + FOLGA;
+
+  const casos = [
+    { nome: 'as três constantes de retenção existem',
+      ok: shards !== null && dias !== null && meses !== null,
+      detalhe: `shards=${shards} dias=${dias} meses=${meses}` },
+    { nome: `regime permanente cabe nas ${TETO} propriedades da interface`,
+      ok: regime <= TETO,
+      detalhe: `${contadores} contador(es) + ${config.size} de config + ${FOLGA} de folga = ${regime}` },
+    // Se alguém "melhorar" a precisão voltando a 5 shards ou 6 meses, o número
+    // estoura de novo — e o sintoma só aparece semanas depois, no editor.
+    { nome: 'a poda usa a constante, não um 7 literal',
+      ok: /URLFETCH_DIAS_GUARDADOS \* 86400000/.test(fonte),
+      detalhe: 'corte do urlfetch precisa sair de URLFETCH_DIAS_GUARDADOS' },
+  ];
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome} — ${c.detalhe}`);
+  }
+
+  // A poda manual não pode encostar em nada que não seja contador. Trocar a
+  // pane da tela por perda de ODOO_API_KEY seria um negócio muito pior.
+  {
+    const setup = lerTexto(path.join(RAIZ, 'Setup.gs'));
+    const corpo = setup.slice(setup.indexOf('function podarContadores()'));
+    const fim   = corpo.indexOf('\nfunction ');
+    const podar = fim > 0 ? corpo.slice(0, fim) : corpo;
+
+    // As duas guardas de prefixo têm de estar lá, e toda chave apagada precisa
+    // ter passado por uma delas: o `apagar.push` só pode acontecer dentro de um
+    // ramo que já conferiu o prefixo.
+    const temGuarda = /indexOf\(Utils\.URLFETCH_PREFIXO\) === 0/.test(podar)
+                   && /indexOf\(Utils\.MSG_PREFIXO\) === 0/.test(podar);
+    const pushes = (podar.match(/apagar\.push\(/g) || []).length;
+    const ok = temGuarda && pushes === 2;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} podarContadores só apaga chave com prefixo de contador`
+      + (ok ? '' : ` — ${pushes} ponto(s) de exclusão, guardas=${temGuarda}: risco de apagar configuração`));
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔐 O verificador do usuário do bot (BL-17)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Este script existe para PROVAR que o bot deixou de ser administrador. Um
+// erro nele não aparece como erro: aparece como "está tudo certo". Já
+// aconteceu duas vezes — `check_access_rights`, que não existe mais nesta
+// versão, e a busca do grupo de admin por nome em inglês num Odoo em
+// português. As duas dariam falso OK.
+{
+  const bruto = lerTexto(
+    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'));
+
+  // Os comentários deste script CITAM o código errado de propósito, ao
+  // explicar por que ele foi trocado. Sem tirar comentário, a busca por
+  // "não pode conter X" acusa a própria explicação de X — foi o que
+  // aconteceu ao escrever esta verificação. Só o código executável conta.
+  const fonte = bruto.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ');
+
+  const casos = [
+    // res.groups.name é TRADUZIDO. Casar por nome só funciona em inglês.
+    { nome: 'grupo de administrador é resolvido por XML ID, não por nome traduzido',
+      ok: /ir\.model\.data/.test(fonte)
+       && /group_system/.test(fonte)
+       && !/name'\s*,\s*'ilike'\s*,\s*'Settings'/.test(fonte) },
+    // group_system sozinho não cobre quem administra direitos de acesso.
+    { nome: 'cobre também base.group_erp_manager',
+      ok: /group_erp_manager/.test(fonte) },
+    // has_access existe na saas-19.3; check_access_rights não.
+    { nome: 'usa has_access, não o check_access_rights que sumiu',
+      ok: /has_access/.test(fonte) && !/check_access_rights'/.test(fonte) },
+    // Falhar em resolver os XML IDs não pode passar como "sem administrador".
+    { nome: 'não achar os XML IDs avisa, em vez de calar',
+      ok: /!dados\.length/.test(fonte) },
+    // Tirar acesso por script tranca gente para fora — é passo manual.
+    { nome: 'não remove ninguém de grupo por script',
+      ok: !/groups_id:\s*\[\[\s*3\s*,/.test(fonte) },
+    // res.partner com escrita é o PISO de base.group_user: todo usuário
+    // interno tem. Contá-lo como sobra acusaria "ainda é administrador" em
+    // cima de um usuário corretamente limitado — e alarme falso gasta o
+    // alarme: na próxima sobra de verdade, ninguém olha.
+    { nome: 'o piso do usuário interno não é contado como sobra',
+      ok: /Piso do usuário interno/.test(fonte)
+       && !/\[\s*'res\.partner',\s*'ir\.model\.fields'/.test(fonte) },
+    // Estava na MATRIZ com write:0 E na lista de proibidos: a mesma falha
+    // entrava duas vezes no total.
+    { nome: 'ir.model.fields não é verificado em duplicidade',
+      ok: (fonte.match(/'ir\.model\.fields'/g) || []).length === 1 },
+    // Um uid inexistente recebia ✅ e exit 0. A conferência de credencial é o
+    // que separa "não pode" de "não conectou".
+    { nome: 'confere a credencial antes de montar a matriz',
+      ok: /AccessDenied/.test(fonte) && /NÃO EXISTE/.test(fonte) },
+    // Erro que não é AccessError vira null, nunca string: string comparada
+    // com booleano é sempre diferente, e virava FALTA/SOBRA.
+    { nome: 'resposta desconhecida é null, não string de erro',
+      ok: /indeterminado/.test(fonte) && !/return `erro: /.test(fonte) },
+    // Era `w !== true`, então erro passava como "ok" — a checagem de
+    // segurança aprovava justamente quando não sabia.
+    { nome: 'na lista de administrador, só false é aprovação',
+      ok: /w === false \? '· ok'/.test(fonte) },
+    // process.exit(faltando ? 1 : 0) ignorava sobrando: um usuário AINDA
+    // ADMINISTRADOR saía com zero, e passaria em qualquer CI.
+    { nome: 'sobra e indeterminado também derrubam o código de saída',
+      ok: /(?:process\.exit|await sair)\(faltando \|\| sobraNoBot \|\| sobraDeAdmin \|\| indeterminado/.test(fonte) },
+    // Sobra por ACL aditiva NÃO é poder de administrador, e dizer que é manda
+    // a pessoa procurar em Administração quando o problema está em
+    // ir.model.access. Os dois contadores têm de ser separados.
+    { nome: 'sobra nos modelos do bot é distinguida de poder de administrador',
+      ok: /sobraNoBot/.test(fonte) && /sobraDeAdmin/.test(fonte)
+       && /NÃO é poder de administrador/.test(fonte) },
+    // Saber QUE sobra sem saber DE ONDE não é acionável.
+    { nome: 'existe modo --explicar apontando a regra culpada',
+      ok: /--explicar/.test(fonte) && /ir\.model\.access/.test(fonte) },
+    // ir.model.access.model_id volta como [id, RÓTULO amigável]. Agrupar pelo
+    // rótulo casaria com nada — mesma armadilha do grupo de admin por nome.
+    { nome: '--explicar resolve o nome técnico do modelo, não o rótulo',
+      ok: /buscar\('ir\.model',\s*\[\['id', 'in', ids\]\]/.test(fonte) },
+    // O call_kw do Odoo consome args[0] como lista de ids em todo método que
+    // não é @api.model. Chamando `[op]`, a operação virava os ids e o Odoo
+    // recusava as 39 perguntas. Tem de ser `[[], op]`.
+    // res.users.groups_id virou group_ids na saas-19.3 (e all_group_ids para
+    // os implicados). Conferido em odoo/addons/base/models/res_users.py:248.
+    { nome: 'usa group_ids, não o groups_id que sumiu na saas-19.3',
+      ok: !/\bgroups_id\b/.test(fonte) && /all_group_ids/.test(fonte) },
+    // Grupo do Odoo IMPLICA outros: quem está num grupo que implica
+    // base.group_system é admin sem ter group_system na lista explícita, e
+    // uma ACL num grupo implicado também alcança o usuário.
+    { nome: 'pertencimento a grupo olha os implicados',
+      ok: /u\.all_group_ids\.includes/.test(fonte) },
+    // Mas a GRAVAÇÃO tem de ir no explícito — all_group_ids é computed.
+    { nome: 'entra no grupo gravando o campo explícito',
+      ok: /group_ids: \[\[4, grupoId\]\]/.test(fonte) },
+    // res_users write em base.group_user É DE FÁBRICA no Odoo
+    // (base/security/ir.model.access.csv: ...,base.group_user,1,1,0,0) e é o
+    // que permite a cada um editar as próprias preferências. Exigir 0 gerava
+    // achado que ninguém pode resolver.
+    { nome: 'res.users write é tratado como piso, não como achado',
+      ok: /read: 1, write: null/.test(fonte) },
+    // --restringir mexe na permissão de TODOS os internos. Duas travas.
+    { nome: '--restringir só toca em modelo x_*',
+      ok: /startsWith\('x_'\)/.test(fonte) },
+    { nome: '--restringir só toca em regra de base.group_user',
+      ok: /'name', '=', 'group_user'/.test(fonte)
+       && /\['group_id', '=', gu\.res_id\]/.test(fonte) },
+    // Tirar write de group_user só é inócuo se OUTRO grupo não-admin ainda
+    // escrever. No caso real, x_parametros tinha regra da Secretaria e
+    // x_parametros_line_c498a NÃO — restringir deixaria as linhas só com o
+    // administrador, e a Secretaria descobriria ao tentar salvar.
+    { nome: '--restringir avisa quando sobra só o administrador',
+      ok: /SÓ O ADMINISTRADOR escreve/.test(fonte) && /orfaos/.test(fonte) },
+    { nome: 'o aviso de órfão exclui o próprio grupo do bot e o admin',
+      ok: /o\.group_id\[1\] !== NOME_GRUPO/.test(fonte)
+       && /group_system/.test(fonte) },
+    // "Nada foi alterado" saía de QUALQUER falha de rede, inclusive do meio do
+    // laço de gravação. Timeout na 3a de 4 regras deixaria 2 no banco e o
+    // script juraria que nada mudou.
+    { nome: 'falha de rede não promete "nada foi alterado" sem saber',
+      ok: /jaGravado/.test(fonte) && /JÁ FORAM FEITAS/.test(fonte)
+       && /a falha veio antes de qualquer gravação/.test(fonte) },
+    { nome: '--restringir simula por padrão',
+      ok: /CONFIG\.restringir/.test(fonte) && /acrescente --aplicar para gravar/.test(fonte) },
+    { nome: "has_access é chamado como [[], op], não [op]",
+      ok: /has_access',\s*\[\[\],\s*op\]/.test(fonte) },
+    // O mock lia args[0] como operação — repetia o engano de quem chamava e
+    // por isso o abençoava. Tem de reproduzir o despacho para servir de prova.
+    // A prova cobria só --verificar; o groups_id quebrou em --explicar e em
+    // --aplicar --login=, modos que ela nem exercitava.
+    { nome: 'a prova recusa campo inexistente, como o Odoo',
+      ok: (() => {
+        const pv = lerTexto(
+          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'));
+        return /Invalid field/.test(pv) && /const CAMPOS = \{/.test(pv)
+            && /modo: 'explicar'/.test(pv);
+      })() },
+    { nome: 'o Odoo de mentira reproduz o despacho do call_kw',
+      ok: (() => {
+        const pv = lerTexto(
+          path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'));
+        return /const \[ids, operacao\] = args/.test(pv)
+            && /missing 1 required positional argument/.test(pv);
+      })() },
+  ];
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}`);
+  }
+
+  // Ler o código não pegou nenhuma das quatro falhas deste script — três
+  // passaram por revisão. Só executar pega. A prova roda à parte porque sobe
+  // servidor e processo filho; aqui só se garante que ela não sumiu.
+  const prova = fs.existsSync(path.join(RAIZ, 'ferramentas', 'prova-verificador.mjs'));
+  if (!prova) falhas++;
+  console.log(`${prova ? '✅' : '❌'} a prova executável existe`
+    + (prova ? ' (node ferramentas/prova-verificador.mjs)' : ' — foi apagada'));
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🔑 Todo modelo que o bot toca está na matriz de permissões (BL-17)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O `--verificar` prova que as permissões batem com a MATRIZ. Não prova que a
+// matriz cobre o que o código usa — e essa é a metade que quebra em produção,
+// em silêncio: basta alguém acrescentar um `OdooService.create('x_novo', …)`
+// e o bot passa a levar AccessError num caminho que ninguém testa até alguém
+// reclamar.
+//
+// A troca de ODOO_UID vale NA HORA (Script Property lida a cada execução),
+// sem `clasp push`. Então uma matriz incompleta quebra a produção antes de
+// qualquer deploy — não há janela para perceber.
+{
+  // `this.` além de `OdooService.`: dentro do próprio OdooService.gs as
+  // chamadas são internas. E `\s*` tem de atravessar quebra de linha, porque
+  // o nome do modelo costuma vir na linha seguinte ao parêntese — a primeira
+  // versão disto não pegava nenhuma das duas coisas e acusou três modelos de
+  // "sem uso" que são usados o tempo todo.
+  const CHAMADAS = /(?:OdooService|this)\.(?:searchRead|count|create|write|unlink|read|campoExiste|camposExistentes)\(\s*'([a-z_][\w.]*)'/g;
+
+  // Rodam só pelo menu do editor, com credencial de ADMINISTRADOR, e criam
+  // schema — a matriz os exclui de propósito (ver comentário da MATRIZ).
+  const MANUAIS = new Set(['SetupCamposFamilia.gs', 'SetupCamposOferta.gs']);
+
+  const ignorados = lerTexto(path.join(RAIZ, '.claspignore'))
+    .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+
+  const matriz = lerTexto(
+    path.join(RAIZ, 'ferramentas', 'instalar-usuario-bot.mjs'));
+  const naMatriz = new Set(
+    [...matriz.matchAll(/\{ model: '([^']+)'/g)].map((m) => m[1]));
+
+  const forasteiros = new Map();
+  for (const arq of fs.readdirSync(RAIZ).filter((f) => f.endsWith('.gs'))) {
+    if (ignorados.includes(arq) || MANUAIS.has(arq)) continue;   // não vai a produção
+    const fonte = lerTexto(path.join(RAIZ, arq));
+    for (const m of fonte.matchAll(CHAMADAS)) {
+      if (!naMatriz.has(m[1])) {
+        if (!forasteiros.has(m[1])) forasteiros.set(m[1], []);
+        forasteiros.get(m[1]).push(arq);
+      }
+    }
+  }
+
+  if (forasteiros.size) {
+    falhas += forasteiros.size;
+    for (const [modelo, arqs] of forasteiros) {
+      console.log(`❌ ${modelo} é usado em ${[...new Set(arqs)].join(', ')} e NÃO está na matriz`);
+      console.log(`   O bot vai levar AccessError ali. Acrescente à MATRIZ de`);
+      console.log(`   instalar-usuario-bot.mjs e rode --aplicar de novo.`);
+    }
+  } else {
+    console.log(`✅ ${naMatriz.size} modelos na matriz cobrem todas as chamadas do código de produção`);
+  }
+
+  // O caminho contrário também importa, mas é só desperdício, não quebra:
+  // permissão concedida a modelo que o código não usa mais.
+  const usados = new Set();
+  for (const arq of fs.readdirSync(RAIZ).filter((f) => f.endsWith('.gs'))) {
+    const fonte = lerTexto(path.join(RAIZ, arq));
+    for (const m of fonte.matchAll(CHAMADAS)) usados.add(m[1]);
+  }
+  const sobrando = [...naMatriz].filter((m) => !usados.has(m));
+  if (sobrando.length) {
+    console.log(`⚠️  na matriz mas sem uso no código: ${sobrando.join(', ')}`);
+    console.log('   Não quebra nada — é permissão a mais. Vale revisar.');
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('⚙️  O CI roda o mesmo que você roda (BL-74, Fase 0)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// O valor da Fase 0 depende de uma coisa só: o CI e a máquina de quem
+// desenvolve rodarem A MESMA lista. Se o workflow chamar as suítes por conta
+// própria, os dois divergem no primeiro dia em que alguém acrescentar uma — e
+// a divergência aparece como "passa aqui, quebra lá".
+{
+  const wf = path.join(RAIZ, '.github', 'workflows', 'verificacao.yml');
+  const entrada = path.join(RAIZ, 'ferramentas', 'verificar-tudo.mjs');
+
+  const casos = [];
+
+  if (!fs.existsSync(wf)) {
+    casos.push({ nome: 'o workflow de verificação existe', ok: false });
+  } else {
+    const y = lerTexto(wf);
+    casos.push(
+      { nome: 'o workflow existe e roda em pull_request',
+        ok: /^on:/m.test(y) && /pull_request/.test(y) },
+      { nome: 'o workflow chama verificar-tudo.mjs',
+        ok: /node ferramentas\/verificar-tudo\.mjs/.test(y) },
+      // Chamar uma suíte direto no YAML é justamente a divergência que a
+      // Fase 0 existe para impedir.
+      { nome: 'o workflow NÃO chama suíte direto, contornando a entrada',
+        ok: !/node ferramentas\/(conta-mensagens|prova-verificador|valida-flow|provar-dominio-filtro)/.test(y) },
+      // Sem segredo: nenhuma suíte fala com Odoo, WhatsApp ou Apps Script, e
+      // um workflow que pede segredo sem precisar amplia superfície à toa.
+      { nome: 'o workflow não recebe segredo nenhum',
+        ok: !/secrets\./.test(y) },
+    );
+  }
+
+  if (!fs.existsSync(entrada)) {
+    casos.push({ nome: 'o ponto de entrada existe', ok: false });
+  } else {
+    const e = lerTexto(entrada);
+    const listadas = [...e.matchAll(/arquivo: '([^']+)'/g)].map((m) => m[1]);
+    const faltando = listadas.filter((f) => !fs.existsSync(path.join(RAIZ, f)));
+    casos.push({
+      nome: `as ${listadas.length} suítes listadas existem no disco`,
+      ok: listadas.length > 0 && !faltando.length,
+      detalhe: faltando.join(', '),
+    });
+  }
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.detalhe ? ' — falta: ' + c.detalhe : ''}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🧱 A fachada da Plataforma não vaza (BL-74, Fase 1)\n');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Para sair do Apps Script, só o Plataforma.gs pode falar com as APIs dele.
+// Se um `.gs` do deploy voltar a chamar `CacheService.…` direto, a Fase 2
+// (runtime Node) quebra ali — em produção, no dia do corte, e não aqui.
+//
+// Conta USO (`Nome.`), não menção: comentários e textos de log que explicam o
+// CacheService continuam permitidos. Os arquivos cortados pelo .claspignore
+// (a suíte de testes do editor) ficam fora: não vão para o runtime novo.
+{
+  const APIS = ['CacheService', 'PropertiesService', 'UrlFetchApp', 'Utilities',
+                'LockService', 'ContentService', 'ScriptApp'];
+  const USO = new RegExp(`\\b(${APIS.join('|')})\\s*\\.[A-Za-z]`);
+  const ehComentario = (linha) => /^\s*(\/\/|\*|\/\*)/.test(linha);
+  const usos = (fonte) => fonte.split('\n')
+    .map((linha, i) => ({ linha, n: i + 1 }))
+    .filter(({ linha }) => !ehComentario(linha) && USO.test(linha));
+
+  // O detector precisa acusar o que deve e poupar o que deve — senão o verde
+  // abaixo não prova nada.
+  const detectorOk =
+    usos('const c = CacheService.getScriptCache();').length === 1 &&
+    usos('  Utilities.sleep(10);').length === 1 &&
+    usos('// CacheService.getScriptCache() não lista chaves').length === 0 &&
+    usos("Logger.log('o CacheService não lista chaves');").length === 0;
+
+  const ignorados = lerTexto(path.join(RAIZ, '.claspignore'))
+    .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  const doDeploy = fs.readdirSync(RAIZ)
+    .filter((f) => f.endsWith('.gs') && !ignorados.includes(f) && f !== 'Plataforma.gs');
+
+  const vazamentos = [];
+  for (const arq of doDeploy) {
+    for (const u of usos(lerTexto(path.join(RAIZ, arq)))) {
+      vazamentos.push(`${arq}:${u.n}  ${u.linha.trim().slice(0, 70)}`);
+    }
+  }
+
+  const casos = [
+    { nome: 'o detector acusa uso e poupa comentário e texto', ok: detectorOk },
+    // Um diretório vazio ou um .claspignore que corta tudo daria verde por
+    // falta de arquivo. 20 é folga abaixo dos 25 de hoje.
+    { nome: `a varredura alcança o deploy (${doDeploy.length} arquivos)`, ok: doDeploy.length >= 20 },
+    { nome: 'nenhum .gs do deploy fala com o Apps Script fora do Plataforma.gs',
+      ok: vazamentos.length === 0 },
+    { nome: 'o Plataforma.gs vai para o deploy', ok: !ignorados.includes('Plataforma.gs') },
+  ];
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}`);
+  }
+  vazamentos.forEach((v) => console.log(`     ${v}`));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// O CONTRATO da fachada, executado. Na Fase 1 a troca foi mecânica e o resto
+// do harness prova que nada mudou nos fluxos — mas três travas e os gatilhos
+// moram em arquivos que nenhum outro cenário carrega (StateManager, Webhook,
+// TriggerSessoes). E é este contrato que a implementação Node da Fase 2/3
+// terá de cumprir: rodar os mesmos casos contra ela é o critério de troca.
+{
+  // Um LockService que obedece ao cenário e registra o que lhe pedem.
+  const fazLock = (obtem) => {
+    const log = [];
+    return {
+      log,
+      LockService: { getScriptLock: () => ({
+        waitLock(ms) { log.push(`wait ${ms}`); if (!obtem) throw new Error('timeout (simulado)'); },
+        releaseLock() { log.push('release'); }
+      }) }
+    };
+  };
+
+  const carregar = (arquivos, globais, devolve) => {
+    const ctx = Object.assign({
+      console: { log() {}, warn() {}, error() {} }, Logger: { log() {} }
+    }, globais);
+    vm.createContext(ctx);
+    return vm.runInContext(
+      [PLATAFORMA].concat(arquivos.map((a) => lerTexto(path.join(RAIZ, a)))).join('\n;\n') +
+      `\n;(${devolve});`, ctx, { filename: 'plataforma-contrato.gs' });
+  };
+
+  const casos = [];
+  const caso = (nome, fn) => {
+    let ok = false, detalhe = '';
+    try { const r = fn(); ok = r === true; if (!ok) detalhe = String(r); }
+    catch (e) { detalhe = 'lançou: ' + e.message; }
+    casos.push({ nome, ok, detalhe });
+  };
+
+  // ── Plataforma.trava, isolada ─────────────────────────────────────────
+  caso('trava obtida: roda fn, devolve o resultado e libera', () => {
+    const L = fazLock(true);
+    const P = carregar([], { LockService: L.LockService }, 'Plataforma');
+    const r = P.trava.comTrava('k', 1234, () => 'feito');
+    return r === 'feito' && L.log.join('|') === 'wait 1234|release' || L.log.join('|');
+  });
+  caso('fn que lança ainda libera a trava', () => {
+    const L = fazLock(true);
+    const P = carregar([], { LockService: L.LockService }, 'Plataforma');
+    try { P.trava.comTrava('k', 1, () => { throw new Error('x'); }); } catch (e) { /* esperado */ }
+    return L.log.includes('release') || L.log.join('|');
+  });
+  caso('trava negada: quem decide é aoFalhar, e nada é liberado', () => {
+    const L = fazLock(false);
+    const P = carregar([], { LockService: L.LockService }, 'Plataforma');
+    let rodou = false;
+    const r = P.trava.comTrava('k', 1, () => { rodou = true; }, () => 'desisti');
+    return (r === 'desisti' && !rodou && !L.log.includes('release')) || `r=${r} rodou=${rodou}`;
+  });
+  caso('trava negada sem aoFalhar: o erro sobe', () => {
+    const P = carregar([], { LockService: fazLock(false).LockService }, 'Plataforma');
+    try { P.trava.comTrava('k', 1, () => 1); return 'não lançou'; } catch (e) { return true; }
+  });
+
+  // ── As três políticas do projeto, nos arquivos reais ──────────────────
+  // StateManager: gravar campo do cadastro SEGUE sem trava (perder o campo é pior).
+  caso('StateManager._comLock sem trava: grava mesmo assim (BL-20)', () => {
+    const L = fazLock(false);
+    const cache = {};
+    const SM = carregar(['StateManager.gs'], {
+      LockService: L.LockService,
+      CacheService: { getScriptCache: () => ({
+        get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) }
+    }, 'StateManager');
+    SM.salvarMultiplosCampos('5511999990000', { nome: 'Ana' });
+    const dados = JSON.parse(cache['dados_5511999990000'] || '{}');
+    return dados.nome === 'Ana' || JSON.stringify(cache);
+  });
+  // Primeiro contato DESISTE sem trava (duplicar o registro no Odoo é pior).
+  caso('StateManager.ehPrimeiroContato sem trava: desiste e não toca o Odoo (BL-23)', () => {
+    let tocou = false;
+    const SM = carregar(['StateManager.gs'], {
+      LockService: fazLock(false).LockService,
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      OdooService: { buscarContatoBot() { tocou = true; }, registrarContatoBot() { tocou = true; } }
+    }, 'StateManager');
+    return (SM.ehPrimeiroContato('5511999990000') === false && !tocou) || `tocou=${tocou}`;
+  });
+  caso('StateManager.ehPrimeiroContato com trava: registra e responde true', () => {
+    const registrados = [];
+    const SM = carregar(['StateManager.gs'], {
+      LockService: fazLock(true).LockService,
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      OdooService: { buscarContatoBot: () => null, registrarContatoBot: (n) => registrados.push(n) }
+    }, 'StateManager');
+    return (SM.ehPrimeiroContato('5511999990000') === true && registrados.length === 1)
+      || `registrados=${registrados.length}`;
+  });
+  // Criar dizimista SEGUE sem trava, mas ainda confere se já existe.
+  caso('OdooService.criarDizimista sem trava: ainda confere e cria', () => {
+    const OS = carregar(['OdooService.gs'], {
+      LockService: fazLock(false).LockService,
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    let conferiu = false;
+    OS.buscarDizimistaPorWhatsapp = () => { conferiu = true; return null; };
+    OS._criarDizimista = () => 42;
+    return (OS.criarDizimista({ whatsapp: '5511999990000' }) === 42 && conferiu) || `conferiu=${conferiu}`;
+  });
+
+  // ── Propriedades: o `true` que apaga tudo não passa ────────────────────
+  caso('propriedades.setProperties só mescla, mesmo se pedirem para apagar o resto', () => {
+    const chamadas = [];
+    const P = carregar([], { PropertiesService: { getScriptProperties: () => ({
+      setProperties: (...a) => chamadas.push(a.length) }) } }, 'Plataforma');
+    P.propriedades.setProperties({ A: '1' }, true);
+    return chamadas.join() === '1' || `argumentos repassados: ${chamadas.join()}`;
+  });
+
+  // ── Gatilhos: os dois instaladores, com os números de hoje ────────────
+  caso('instalar/remover gatilhos: hora em hora e 5 min, removendo só os seus', () => {
+    const existentes = [
+      { getHandlerFunction: () => 'executarNotificacoesDiarias' },
+      { getHandlerFunction: () => 'verificarSessoesAbandonadas' },
+      { getHandlerFunction: () => 'outraCoisa' }
+    ];
+    const criados = [], apagados = [];
+    const construtor = (f) => {
+      const t = { f };
+      const b = { timeBased: () => b, everyHours: (h) => { t.h = h; return b; },
+                  everyMinutes: (m) => { t.m = m; return b; }, create: () => criados.push(t) };
+      return b;
+    };
+    const g = carregar(['NotificacaoHandler.gs', 'TriggerSessoes.gs'], {
+      ScriptApp: { newTrigger: construtor, getProjectTriggers: () => existentes,
+                   deleteTrigger: (t) => apagados.push(t.getHandlerFunction()) },
+      NOTIFICACAO_PADRAO: { horaInicio: 8, horaFim: 20, intervaloHoras: 2, lote: 20 }
+    }, '{ instalarTriggerNotificacoes, instalarTriggerSessoes }');
+    g.instalarTriggerNotificacoes();
+    g.instalarTriggerSessoes();
+    const ok = JSON.stringify(criados) ===
+      JSON.stringify([{ f: 'executarNotificacoesDiarias', h: 1 }, { f: 'verificarSessoesAbandonadas', m: 5 }])
+      && apagados.join() === 'executarNotificacoesDiarias,verificarSessoesAbandonadas';
+    return ok || `criados=${JSON.stringify(criados)} apagados=${apagados}`;
+  });
+
+  // ── Webhook: o GET de verificação e a recusa sem segredo ──────────────
+  caso('doGet responde o desafio e doPost sem segredo recusa', () => {
+    const saidas = [];
+    const W = carregar(['Webhook.gs'], {
+      ContentService: {
+        MimeType: { TEXT: 'text/plain' },
+        createTextOutput: (c) => { const o = { c, mime: null,
+          setMimeType(m) { o.mime = m; return o; } }; saidas.push(o); return o; }
+      },
+      getConfig: () => ({ VERIFY_TOKEN: 'v' }),
+      getWebhookSecret: () => null,
+      Utils: { registrarConsumoExterno() {} }
+    }, '{ doGet, doPost }');
+    const g = W.doGet({ parameter: { 'hub.mode': 'subscribe', 'hub.verify_token': 'v', 'hub.challenge': '42' } });
+    const p = W.doPost({ parameter: {}, postData: { contents: '{}' } });
+    return (g.c === '42' && p.c === 'Forbidden' && saidas.length === 2) || JSON.stringify(saidas);
+  });
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.ok ? '' : '\n     ' + c.detalhe}`);
+  }
+}
+
+console.log('\n' + '─'.repeat(64));
+console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-85)\n');
+
+// Cada caso carrega o ARQUIVO REAL com stubs mínimos e prova o conserto. O
+// critério para entrar aqui: o caso tem de reprovar no código anterior à
+// correção — foi conferido um a um, com o código antigo, ao escrever.
+{
+  const carregar = (arquivos, globais, devolve) => {
+    const ctx = Object.assign({
+      console: { log() {}, warn() {}, error() {} }, Logger: { log() {} }
+    }, globais);
+    vm.createContext(ctx);
+    return vm.runInContext(
+      [PLATAFORMA, lerTexto(path.join(RAIZ, 'Config.gs'))]
+        .concat(arquivos.map((a) => lerTexto(path.join(RAIZ, a)))).join('\n;\n') +
+      `\n;(${devolve});`, ctx, { filename: 'revisao-24-09.gs' });
+  };
+
+  const casos = [];
+  const caso = (nome, fn) => {
+    let ok = false, detalhe = '';
+    try { const r = fn(); ok = r === true; if (!ok) detalhe = String(r); }
+    catch (e) { detalhe = 'lançou: ' + e.message; }
+    casos.push({ nome, ok, detalhe });
+  };
+
+  // ── BL-78 ──────────────────────────────────────────────────────────────
+  caso('BL-78: a marca de mensagem já vista dura 6 h, e a reentrega é ignorada', () => {
+    const cache = {}, ttls = {};
+    let passou = 0;
+    const W = carregar(['Webhook.gs'], {
+      CacheService: { getScriptCache: () => ({
+        get: (k) => cache[k] || null,
+        put: (k, v, t) => { cache[k] = v; ttls[k] = t; } }) },
+      // Bloqueado: a mensagem para logo depois da deduplicação — é só ela
+      // que interessa aqui, sem arrastar Router, Odoo e WhatsApp.
+      Utils: { estaBloqueado: () => { passou++; return true; } }
+    }, '_processarMensagemWebhook');
+    const msg = { from: '5511999990000', id: 'wamid.REENTREGA', type: 'text', text: { body: 'oi' } };
+    W(msg);
+    W(msg);
+    return (ttls['msg_wamid.REENTREGA'] === 21600 && passou === 1)
+      || `ttl=${ttls['msg_wamid.REENTREGA']} processada ${passou}x`;
+  });
+
+  // ── BL-79 ──────────────────────────────────────────────────────────────
+  // O Router real, com o que ele chama registrando em vez de agir.
+  const roteador = (estado) => {
+    const r = { enviadas: [], estados: [], menus: 0 };
+    r.Router = carregar(['Router.gs'], {
+      StateManager: { getEstado: () => estado, setEstado: (f, e) => r.estados.push(e),
+                      getCampo: () => undefined },
+      Utils: { enviarSimples: (f, t) => r.enviadas.push(t) },
+      MenuHandler: { menuPrincipal: () => { r.menus++; r.estados.push('MENU'); } }
+    }, 'Router');
+    return r;
+  };
+  caso('BL-79: reação no meio da devolução é ignorada — sem mensagem, estado intacto', () => {
+    const r = roteador('AGUARDANDO_COMPROVANTE');
+    r.Router.rotear('55', { type: 'reaction', reaction: { emoji: '👍', message_id: 'wamid.X' } });
+    return (!r.enviadas.length && !r.estados.length && !r.menus)
+      || `enviou ${r.enviadas.length}, estados ${r.estados.join()}`;
+  });
+  caso('BL-79: figurinha ou áudio no cadastro recebem aviso, e o cadastro continua', () => {
+    const erros = [];
+    for (const tipo of ['sticker', 'audio', 'video', 'location', 'contacts', 'unsupported']) {
+      const r = roteador('AGUARDANDO_NOME');
+      r.Router.rotear('55', { type: tipo });
+      if (r.enviadas.length !== 1 || r.estados.length || r.menus) {
+        erros.push(`${tipo}: ${r.enviadas.length} msg, estados [${r.estados.join()}]`);
+      }
+    }
+    return !erros.length || erros.join('; ');
+  });
+  // ── BL-80 ──────────────────────────────────────────────────────────────
+  caso('BL-80: o código de acesso ao relatório não aparece no log', () => {
+    const log = [];
+    const grava = (...a) => log.push(a.map(String).join(' '));
+    const R = carregar(['Router.gs'], {
+      console: { log: grava, warn: grava, error: grava },
+      StateManager: { getEstado: () => 'AGUARDANDO_CODIGO_RELATORIO', setEstado() {},
+                      getCampo: () => undefined },
+      // O destino do código não importa aqui — só o que o Router registrou
+      // antes de despachar.
+      RelatorioHandler: new Proxy({}, { get: () => () => {} }),
+      Utils: new Proxy({}, { get: () => () => {} }),
+      MenuHandler: new Proxy({}, { get: () => () => {} })
+    }, 'Router');
+    R.rotear('55', { type: 'text', text: { body: 'CODIGO-SECRETO-4821' } });
+    const vazou = log.filter((l) => l.includes('CODIGO-SECRETO-4821'));
+    return (log.length > 0 && !vazou.length) || `vazou: ${vazou[0] || '(log vazio)'}`;
+  });
+
+  // ── BL-81 ──────────────────────────────────────────────────────────────
+  // RelatorioHandler e Router reais; o Odoo é um mapa de devoluções.
+  // `naSessao` imita o que o código anterior guardava em `pendente_devolucao_id`
+  // — sem isso os casos passariam no código antigo só por achar a sessão vazia.
+  const baixas = (acesso, devolucoes, naSessao) => {
+    const r = { gravou: [], enviadas: [], botoes: [] };
+    const globais = {
+      StateManager: { getCampo: (f, c) => (c === 'relatorio_acesso' ? acesso
+                        : c === 'pendente_devolucao_id' ? naSessao : undefined),
+                      setEstado() {}, salvarMultiplosCampos() {}, salvarCampoEMudarEstado() {} },
+      OdooService: {
+        buscarDevolucaoDetalhada: (id) => devolucoes[id] || null,
+        atualizarStatusDevolucao: (id, st) => r.gravou.push(`${id}:${st}`),
+        listarPendentes: () => [], listarComunidades: () => []
+      },
+      Utils: new Proxy({
+        enviarSimples: (f, t) => r.enviadas.push(t),
+        enviarMenu: (f, t, b) => { r.enviadas.push(t); r.botoes.push(...(b || []).map((x) => x.id)); }
+      }, { get: (o, k) => o[k] || (() => {}) }),
+      MenuHandler: new Proxy({}, { get: () => () => {} }),
+      // O detalhe espera entre as mensagens; sem isto ele lançaria no
+      // `dormir` e os casos de "não abriu" passariam por acidente.
+      Utilities: { sleep() {} }
+    };
+    const m = carregar(['RelatorioHandler.gs', 'Router.gs'], globais, '{ RelatorioHandler, Router }');
+    r.R = m.RelatorioHandler; r.Router = m.Router;
+    return r;
+  };
+  const COORD_1 = { tipoAcesso: 'coordenador', comunidadeId: 1, comunidadeNome: 'Matriz' };
+  const pend = (id, com, status = 'Pendente') => ({ id, x_studio_status: status,
+    x_studio_comunidade: [com, 'C' + com], x_studio_dizimista: [9, 'Ana'], x_studio_value: 50 });
+
+  caso('BL-81: o botão carrega a devolução — tocar na mensagem antiga baixa a antiga', () => {
+    const r = baixas(COORD_1, { 41: pend(41, 1), 42: pend(42, 1) });
+    // Abriu A (41), depois B (42); tocou "Confirmar" na mensagem de A.
+    r.R.processarSelecaoPendente('55', 'pend_41');
+    r.R.processarSelecaoPendente('55', 'pend_42');
+    const doA = r.botoes.find((b) => b.startsWith('btn_confirmar_baixa_41'));
+    if (!doA) return `botões enviados: ${r.botoes.join()}`;
+    r.Router.rotear('55', { type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: doA } } });
+    return r.gravou.join() === '41:Confirmado' || `gravou ${r.gravou.join() || 'nada'}`;
+  });
+  caso('BL-81: não dá baixa em devolução que já saiu de Pendente', () => {
+    const r = baixas(COORD_1, { 42: pend(42, 1, 'Rejeitado') }, 42);
+    r.R.confirmarBaixa('55', 42);
+    return !r.gravou.length || `gravou ${r.gravou.join()}`;
+  });
+  caso('BL-81: coordenador não abre nem dá baixa em outra comunidade', () => {
+    const r = baixas(COORD_1, { 77: pend(77, 2) }, 77);
+    r.R.processarSelecaoPendente('55', 'pend_77');
+    r.R.rejeitarBaixa('55', 77);
+    return (!r.gravou.length && !r.botoes.some((b) => b.includes('baixa')))
+      || `gravou ${r.gravou.join()} botões ${r.botoes.join()}`;
+  });
+  caso('BL-81: o admin dá baixa em qualquer comunidade', () => {
+    const r = baixas({ tipoAcesso: 'admin' }, { 77: pend(77, 2) });
+    r.R.confirmarBaixa('55', 77);
+    return r.gravou.join() === '77:Confirmado' || `gravou ${r.gravou.join() || 'nada'}`;
+  });
+  caso('BL-81: botão antigo, sem id, não age — reabre a lista', () => {
+    const r = baixas(COORD_1, { 42: pend(42, 1) }, 42);
+    r.Router.rotear('55', { type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: 'btn_confirmar_baixa' } } });
+    return (!r.gravou.length && r.enviadas.some((t) => /mensagem antiga/.test(t)))
+      || `gravou ${r.gravou.join()} · ${r.enviadas[0]}`;
+  });
+
+  // ── BL-83 ──────────────────────────────────────────────────────────────
+  caso('BL-83: o primeiro contato vai ao Odoo em UTC (campo datetime)', () => {
+    const pedidos = [];
+    let gravado = null;
+    const OS = carregar(['OdooService.gs'], {
+      Utilities: { formatDate: (d, fuso, fmt) => { pedidos.push(fuso); return `[${fuso}]`; } },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.create = (modelo, dados) => { gravado = dados; return 1; };
+    OS.registrarContatoBot('5511999990000');
+    return (gravado && gravado.x_studio_data_primeiro_contato === '[UTC]')
+      || `gravou ${gravado && gravado.x_studio_data_primeiro_contato} (fusos pedidos: ${pedidos.join()})`;
+  });
+
+  // ── BL-84 · parseValorBR ────────────────────────────────────────────────
+  caso('BL-84: parseValorBR recusa dois números e valor absurdo; aceita os formatos de sempre', () => {
+    const U = carregar(['Utils.gs'], {}, 'Utils');
+    const esperado = {
+      '50': 50, '50,00': 50, 'R$ 35,50': 35.5, '1.000,50': 1000.5, '1.000': 1000,
+      '50.00': 50, 'R$50': 50, '100 reais': 100, '50.': 50,
+      '100 ou 200': null, 'entre 50 e 100': null, '5000000': null, 'abc': null, '0': null
+    };
+    const erros = Object.entries(esperado)
+      .map(([txt, v]) => [txt, v, U.parseValorBR(txt)])
+      .filter(([, v, veio]) => veio !== v)
+      .map(([txt, v, veio]) => `"${txt}" → ${veio} (esperado ${v})`);
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · o código PIX não sai para serviço de terceiros ─────────────
+  caso('BL-84: a reserva do card PIX não chama serviço externo e entrega o copia e cola', () => {
+    const urls = [], textos = [];
+    const M = carregar(['MediaService.gs'], {
+      UrlFetchApp: { fetch: (u) => { urls.push(u); return { getResponseCode: () => 200, getContent: () => [] }; } },
+      Utilities: { base64Encode: () => '', sleep() {} },
+      Utils: new Proxy({ enviarSimples: (f, t) => textos.push(t),
+                         fetchComRetry: (u) => { urls.push(u); return { getResponseCode: () => 200, getContent: () => [] }; } },
+                       { get: (o, k) => o[k] || (() => {}) })
+    }, 'MediaService');
+    const f = M.enviarPixCopiaECola || M.enviarQrCode;
+    const ok = f.call(M, '55', '794.498.403-34', 50, 'Joseane', undefined, 'DADOS PARA PAGAMENTO');
+    const erros = [];
+    if (urls.length) erros.push(`chamou ${urls[0].slice(0, 40)}`);
+    if (!ok) erros.push('disse que não enviou');
+    if (!textos.some((t) => /^000201/.test(t))) erros.push('o copia e cola não saiu sozinho');
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · listas de comunidades com mais de 10 ────────────────────────
+  caso('BL-84: com 14 comunidades, todas são alcançáveis (relatório, pendentes e oferta)', () => {
+    const coms = Array.from({ length: 14 }, (_, i) => ({ id: i + 1, x_name: `Comunidade ${i + 1}` }));
+    const listas = [];
+    const globais = {
+      StateManager: { getCampo: (f, c) => (c === 'relatorio_acesso' ? { tipoAcesso: 'admin' } : undefined),
+                      setEstado() {}, salvarMultiplosCampos() {} },
+      OdooService: { listarComunidades: () => coms },
+      Utils: new Proxy({ enviarLista: (f, t, secoes) => listas.push(secoes[0].rows) },
+                       { get: (o, k) => o[k] || (() => {}) })
+    };
+    const m = carregar(['RelatorioHandler.gs', 'OfertaHandler.gs'], globais, '{ RelatorioHandler, OfertaHandler }');
+    const alcancaveis = (abrir, pagina, prefixo) => {
+      const ids = new Set();
+      listas.length = 0;
+      abrir(0);
+      for (let p = 0; p < 5 && listas.length; p++) {
+        const rows = listas.shift();
+        if (rows.length > 10) return `lista com ${rows.length} linhas`;
+        rows.forEach((r) => { if (!r.id.includes('pag_')) ids.add(r.id); });
+        const mais = rows.find((r) => r.id.includes('pag_'));
+        if (mais) pagina(mais.id);
+      }
+      return ids.size === 14 || `alcançou ${ids.size} de 14 (${prefixo})`;
+    };
+    const R = m.RelatorioHandler, O = m.OfertaHandler;
+    const erros = [
+      alcancaveis(() => R.iniciarListaDizimistas('55'), (id) => R.processarComunidadeLista('55', id, ''), 'relatório'),
+      alcancaveis(() => R.iniciarPendentes('55'), (id) => R.processarComunidadePendentes('55', id, ''), 'pendentes'),
+      alcancaveis(() => O._pedirComunidade('55'), (id) => O.processarComunidade('55', id, ''), 'oferta')
+    ].filter((r) => r !== true);
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · Flow com comunidade inventada ─────────────────────────────
+  caso('BL-84: formulário com comunidade que não existe é recusado (cadastro e oferta)', () => {
+    const r = { salvou: [], recusas: 0 };
+    const F = carregar(['FlowHandler.gs'], {
+      OdooService: { searchRead: (m, c, d) => (d[0][2] === 1 ? [{ x_name: 'Matriz' }] : []) },
+      Utils: new Proxy({ parseValorBR: (v) => Number(v) || null,
+                         enviarComBotaoMenu: () => r.recusas++ },
+                       { get: (o, k) => o[k] || (() => {}) }),
+      StateManager: { salvarMultiplosCampos: (f, d) => r.salvou.push(d) },
+      OfertaHandler: { iniciar() {}, enviarPagamentoDaSessao() {} }
+    }, 'FlowHandler');
+    const erros = [];
+    const cad = F._normalizar('55', { comunidade_id: '999', nome: 'Maria da Silva' });
+    if (!(cad.erros || []).some((e) => /Comunidade não reconhecida/.test(e)))
+      erros.push('cadastro aceitou a comunidade 999');
+    F._processarOferta('55', { comunidade: '999', valor: '20', nome: 'Ana' });
+    if (r.salvou.length || !r.recusas) erros.push('oferta seguiu com a comunidade 999');
+    F._processarOferta('55', { comunidade: '1', valor: '20', nome: 'A'.repeat(200) });
+    const nome = (r.salvou[0] || {}).ofertaNome || '';
+    if (nome.length !== 60) erros.push(`nome da oferta com ${nome.length} caracteres`);
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · dado pessoal no log ─────────────────────────────────────────
+  caso('BL-84: registrar oferta não leva nome nem telefone de quem oferta para o log', () => {
+    const log = [];
+    const grava = (...a) => log.push(a.map(String).join(' '));
+    const OS = carregar(['OdooService.gs'], {
+      console: { log: grava, warn: grava, error: grava },
+      Utilities: { formatDate: () => '2026-09-24' },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.campoExiste = () => true;
+    OS._temCampoConferenciaPix = () => true;
+    OS.create = () => 1;
+    OS.registrarDevolucao(null, { valor: 20, data: '24/09/2026', tipo: 'PIX' }, 'QkFTRTY0', 'imagem', 'OK',
+      { tipo: 'oferta', comunidadeId: 1, nomeOfertante: 'Fulana Sigilosa', telefoneOfertante: '5586999998888' });
+    const vazou = log.filter((l) => /Fulana Sigilosa|5586999998888/.test(l));
+    return (log.some((l) => /Registrando devolução/.test(l)) && !vazou.length)
+      || `vazou: ${(vazou[0] || '(nada registrado)').slice(0, 120)}`;
+  });
+
+  // ── BL-84 · limite de taxa da Meta ─────────────────────────────────────
+  const resp = (code, corpo) => ({ getResponseCode: () => code, getContentText: () => corpo });
+  const comRespostas = (fila) => {
+    const r = { chamadas: 0 };
+    r.U = carregar(['Utils.gs'], {
+      UrlFetchApp: { fetch: () => { r.chamadas++; return fila.shift(); } },
+      Utilities: { sleep() {} }
+    }, 'Utils');
+    return r;
+  };
+  caso('BL-84: o 400 de limite de taxa da Meta é repetido, mesmo num envio', () => {
+    const r = comRespostas([resp(400, '{"error":{"code":130429,"message":"Rate limit hit"}}'),
+                            resp(200, '{"messages":[{"id":"w"}]}')]);
+    const final = r.U.fetchComRetry('https://graph', {}, { idempotente: false, rotulo: 'teste' });
+    return (r.chamadas === 2 && final.getResponseCode() === 200) || `chamadas=${r.chamadas}`;
+  });
+  caso('BL-84: 400 de outro motivo (ex.: número inválido) não é repetido', () => {
+    const r = comRespostas([resp(400, '{"error":{"code":131026,"message":"undeliverable"}}'),
+                            resp(200, '{}')]);
+    r.U.fetchComRetry('https://graph', {}, { idempotente: false });
+    return r.chamadas === 1 || `chamadas=${r.chamadas}`;
+  });
+
+  // ── BL-84 · "menu" nos estados do relatório ─────────────────────────────
+  caso('BL-84: "menu" no código de acesso sai, sem contar como tentativa errada', () => {
+    const r = { menus: 0, codigos: 0, meses: 0 };
+    for (const estado of ['AGUARDANDO_CODIGO_RELATORIO', 'AGUARDANDO_MES_CUSTOMIZADO']) {
+      const R = carregar(['Router.gs'], {
+        StateManager: { getEstado: () => estado, setEstado() {}, limparDados() {}, getCampo: () => undefined },
+        RelatorioHandler: new Proxy({ handleAuthCode: () => r.codigos++, processarMesCustomizado: () => r.meses++ },
+                                    { get: (o, k) => o[k] || (() => {}) }),
+        MenuHandler: new Proxy({ menuPrincipal: () => r.menus++ }, { get: (o, k) => o[k] || (() => {}) }),
+        Utils: new Proxy({}, { get: () => () => {} })
+      }, 'Router');
+      R.rotear('55', { type: 'text', text: { body: 'Menu' } });
+    }
+    return (r.menus === 2 && !r.codigos && !r.meses) || JSON.stringify(r);
+  });
+
+  // ── BL-84 · aviso de expiração ─────────────────────────────────────────
+  caso('BL-84: o aviso de expiração é marcado antes das chamadas ao Odoo', () => {
+    const ordem = [];
+    const SM = carregar(['StateManager.gs'], {
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k.startsWith('sessao_inicio_') ? String(Date.now() - 55 * 60000) : null),
+        put: (k) => ordem.push(`put ${k.split('_').slice(0, 2).join('_')}`) }) },
+      Utils: { enviarMenu: () => ordem.push('enviou') }
+    }, 'StateManager');
+    SM.persistirLogCadastro = () => ordem.push('odoo');
+    SM.verificarExpiracaoSessao('55', 'AGUARDANDO_NOME');
+    const iAviso = ordem.indexOf('put aviso_sessao'), iOdoo = ordem.indexOf('odoo');
+    return (iAviso >= 0 && iAviso < iOdoo) || ordem.join(' → ');
+  });
+
+  // ── BL-84 · tipo do arquivo ─────────────────────────────────────────────
+  caso('BL-84: documento que não é imagem nem PDF não vai para o OCR', () => {
+    const C = carregar(['ComprovanteHandler.gs'], {}, 'ComprovanteHandler');
+    const t = (a) => C._detectarTipo(a);
+    const erros = [];
+    if (t({ mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'recibo.docx', sha256: 'x' }) !== null) erros.push('.docx virou arquivo aceito');
+    if (t({ sha256: 'x' }) !== 'imagem') erros.push('sem tipo declarado, o sha256 deixou de valer');
+    if (t({ mime_type: 'image/jpeg', sha256: 'x' }) !== 'imagem') erros.push('jpeg recusado');
+    if (t({ mime_type: 'application/pdf', sha256: 'x' }) !== 'pdf') erros.push('pdf recusado');
+    return !erros.length || erros.join('; ');
+  });
+
+  // ── BL-84 · devolução e familiar duplicados ────────────────────────────
+  caso('BL-84: segundo comprovante durante a análise do primeiro não é processado', () => {
+    const cache = {}, enviadas = [];
+    let analisou = 0;
+    const C = carregar(['ComprovanteHandler.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null,
+        put: (k, v) => { cache[k] = v; }, remove: (k) => { delete cache[k]; } }) },
+      Utils: new Proxy({ enviarSimples: (f, t) => enviadas.push(t), sinalizarProcessando: () => true },
+                       { get: (o, k) => o[k] || (() => {}) })
+    }, 'ComprovanteHandler');
+    // O primeiro, no meio da análise, recebe o segundo.
+    C._tratarResultado = () => {};
+    C._processarArquivo = () => {
+      analisou++;
+      if (analisou === 1) C.processar('55', { mime_type: 'image/jpeg' }, 'wamid.2');
+      return {};
+    };
+    C.processar('55', { mime_type: 'image/jpeg' }, 'wamid.1');
+    const erros = [];
+    if (analisou !== 1) erros.push(`analisou ${analisou} arquivos`);
+    if (!enviadas.some((t) => /Ainda estou analisando/.test(t))) erros.push('não avisou');
+    if (cache['comprovante_em_curso_55']) erros.push('a marca ficou presa depois do fim');
+    return !erros.length || erros.join('; ');
+  });
+  caso('BL-84: toque duplo em "Confirmar" não cria o familiar duas vezes', () => {
+    const familia = [];
+    const OS = carregar(['OdooService.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+    }, 'OdooService');
+    OS.searchRead = (modelo, campos, dominio) => {
+      const nome = (dominio.find((c) => c[0] === 'x_studio_nome_completo') || [])[2];
+      return familia.filter((m) => m.x_studio_nome_completo === nome);
+    };
+    OS.create = (modelo, dados) => { const id = familia.length + 1; familia.push(Object.assign({ id }, dados)); return id; };
+    const dados = { nome: 'Maria da Silva', nomeUsual: 'Maria', dataNascimento: '01/02/2010',
+                    endereco: 'Rua A', valorMensal: 10, comunidadeId: 1 };
+    const a = OS.criarMembro(dados, 7);
+    const b = OS.criarMembro(dados, 7);
+    return (familia.length === 1 && a === b) || `criou ${familia.length}, ids ${a}/${b}`;
+  });
+
+  // ── BL-84 · sessão de cadastro ─────────────────────────────────────────
+  const trigger = (estado, cacheInicial) => {
+    const r = { limpou: 0, cache: Object.assign({}, cacheInicial), ttls: {} };
+    const T = carregar(['StateManager.gs', 'TriggerSessoes.gs'], {
+      ScriptApp: { getOAuthToken() {} },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k in r.cache ? r.cache[k] : null),
+        put: (k, v, t) => { r.cache[k] = v; r.ttls[k] = t; }, remove: (k) => { delete r.cache[k]; } }) },
+      PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({}) }) },
+      Utils: new Proxy({}, { get: () => () => {} }),
+      OdooService: new Proxy({}, { get: () => () => {} })
+    }, '{ StateManager, verificarSessoesAbandonadas }');
+    T.StateManager.getSessoesAtivas = () => ['5511999990000'];
+    T.StateManager.getEstado = () => estado;
+    T.StateManager.limparDados = () => { r.limpou++; };
+    T.verificarSessoesAbandonadas();
+    r.SM = T.StateManager;
+    return r;
+  };
+  caso('BL-84: marca de início despejada com o cadastro ativo não apaga o cadastro', () => {
+    const r = trigger('AGUARDANDO_ENDERECO', {});
+    return (!r.limpou && !!r.cache['sessao_inicio_5511999990000']) || `limpou ${r.limpou}x`;
+  });
+  caso('BL-84: sessão parada (conversa já de volta ao menu) continua sendo limpa', () => {
+    const r = trigger('MENU', {});
+    return r.limpou === 1 || `limpou ${r.limpou}x`;
+  });
+  caso('BL-84: o limite de 60 min é alcançável — a marca de início vive mais que a sessão', () => {
+    const r = trigger('AGUARDANDO_ENDERECO', {});
+    const ttl = r.SM.SESSAO_INICIO_TTL_S;
+    return (ttl > 3600) || `TTL da marca = ${ttl} s, igual ao limite da sessão`;
+  });
+
+  // ── BL-84 · relatório consolidado ───────────────────────────────────────
+  caso('BL-84: o consolidado não soma rejeitada, e mostra à parte o que falta validar', () => {
+    const textos = [];
+    const R = carregar(['RelatorioHandler.gs'], {
+      StateManager: { setEstado() {}, getCampo: () => undefined },
+      Utilities: { formatDate: () => '24/09/2026 10:00', sleep() {} },
+      Utils: new Proxy({ enviarSimples: (f, t) => textos.push(t), enviarMenu: (f, t) => textos.push(t) },
+                       { get: (o, k) => o[k] || (() => {}) }),
+      OdooService: {
+        listarComunidades: () => [{ id: 1, x_name: 'Matriz' }],
+        listarTodosDizimistas: () => [1, 2, 3].map((id) => ({ id, x_studio_comunidade: [1, 'Matriz'] })),
+        listarDevolucoesPorPeriodo: (ini) => (ini === '2026-09-01' ? [
+          { x_studio_dizimista: [1, 'A'], x_studio_value: 100, x_studio_status: 'Confirmado' },
+          { x_studio_dizimista: [2, 'B'], x_studio_value: 50,  x_studio_status: 'Pendente' },
+          { x_studio_dizimista: [3, 'C'], x_studio_value: 999, x_studio_status: 'Rejeitado' }
+        ] : [])
+      }
+    }, 'RelatorioHandler');
+    R._gerarRelatorioConsolidado('55', { tipoAcesso: 'admin' }, {
+      dataInicio: '2026-09-01', dataFim: '2026-09-30', label: 'Setembro de 2026',
+      mesAnteriorInicio: '2026-08-01', mesAnteriorFim: '2026-08-31', labelAnterior: 'Agosto de 2026' });
+    const tudo = textos.join('\n');
+    const erros = [];
+    if (!/Total devolvido: R\$ 150,00/.test(tudo)) erros.push('total não é R$ 150,00');
+    if (!/Devoluções realizadas: 2\b/.test(tudo)) erros.push('contou a rejeitada como devolução');
+    if (!/a validar: R\$ 50,00 \(1\)/.test(tudo)) erros.push('não mostrou a pendente à parte');
+    return !erros.length || `${erros.join('; ')} — ${tudo.replace(/\n/g, ' | ').slice(0, 300)}`;
+  });
+
+  // ── BL-85 ──────────────────────────────────────────────────────────────
+  // Achado no teste real de 24/09: "👍" MANDADO (não reação) é texto.
+  caso('BL-85: texto enquanto espera o comprovante lembra, e não desfaz a devolução', () => {
+    const erros = [];
+    for (const estado of ['AGUARDANDO_COMPROVANTE', 'AGUARDANDO_COMPROVANTE_FAMILIA',
+                          'AGUARDANDO_COMPROVANTE_OFERTA']) {
+      for (const body of ['👍', 'já paguei']) {
+        const r = { enviadas: [], estados: [], menus: 0 };
+        const R = carregar(['Router.gs'], {
+          StateManager: { getEstado: () => estado, setEstado: (f, e) => r.estados.push(e),
+                          getCampo: () => undefined, limparDados() {} },
+          Utils: new Proxy({ enviarComBotaoMenu: (f, t) => r.enviadas.push(t),
+                             enviarSimples: (f, t) => r.enviadas.push(t) },
+                           { get: (o, k) => o[k] || (() => {}) }),
+          MenuHandler: new Proxy({ menuPrincipal: () => { r.menus++; r.estados.push('MENU'); } },
+                                 { get: (o, k) => o[k] || (() => {}) })
+        }, 'Router');
+        R.rotear('55', { type: 'text', text: { body } });
+        if (r.menus || r.estados.length || !/comprovante/i.test(r.enviadas.join()))
+          erros.push(`${estado} "${body}": menus=${r.menus} estados=[${r.estados}]`);
+      }
+    }
+    return !erros.length || erros.join('; ');
+  });
+
+  caso('BL-79: subtipo interativo desconhecido recebe resposta, não silêncio', () => {
+    const r = roteador('MENU');
+    r.Router.rotear('55', { type: 'interactive', interactive: { type: 'call_permission_reply' } });
+    return (r.enviadas.length === 1 && !r.estados.length) || `enviou ${r.enviadas.length}`;
+  });
+
+  for (const c of casos) {
+    if (!c.ok) falhas++;
+    console.log(`${c.ok ? '✅' : '❌'} ${c.nome}${c.ok ? '' : '\n     ' + c.detalhe}`);
+  }
 }
 
 console.log('\n' + '─'.repeat(64));

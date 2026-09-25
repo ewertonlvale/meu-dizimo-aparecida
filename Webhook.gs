@@ -30,13 +30,11 @@ function doGet(e) {
 
   if (mode === 'subscribe' && token === config.VERIFY_TOKEN) {
     console.log('✅ Webhook verificado com sucesso!');
-    return ContentService.createTextOutput(challenge);
+    return Plataforma.resposta.texto(challenge);
   }
 
   console.log('❌ Falha na verificação do webhook');
-  return ContentService
-    .createTextOutput('Forbidden')
-    .setMimeType(ContentService.MimeType.TEXT);
+  return Plataforma.resposta.texto('Forbidden');
 }
 
 // ============================================================================
@@ -61,11 +59,11 @@ function doPost(e) {
     if (!segredo) {
       console.error('🚫 POST rejeitado: WEBHOOK_SECRET não configurado. ' +
                     'Rode configurarSegredoWebhook() (Setup.gs) e atualize a URL na Meta.');
-      return ContentService.createTextOutput('Forbidden');
+      return Plataforma.resposta.texto('Forbidden');
     }
     if (e.parameter.token !== segredo) {
       console.warn('🚫 POST rejeitado: token de webhook inválido ou ausente');
-      return ContentService.createTextOutput('Forbidden');
+      return Plataforma.resposta.texto('Forbidden');
     }
 
     const body = JSON.parse(e.postData.contents);
@@ -121,12 +119,12 @@ function doPost(e) {
       console.log('ℹ️ POST sem mensagens de usuário (provável evento de status).');
     }
 
-    return ContentService.createTextOutput('OK');
+    return Plataforma.resposta.texto('OK');
 
   } catch (error) {
     console.error('❌ Erro no webhook:', error);
     console.error('Stack:', error.stack);
-    return ContentService.createTextOutput('Error');
+    return Plataforma.resposta.texto('Error');
   } finally {
     // BL-25: em `finally`, como nos outros dois pontos de entrada. Antes ficava
     // antes do `return` do caminho feliz, então execução que estourasse perdia
@@ -154,7 +152,7 @@ function _guardarNumeroDoBot(metadata) {
   if (!digitos) return;
 
   try {
-    const props = PropertiesService.getScriptProperties();
+    const props = Plataforma.propriedades;
     if (props.getProperty('WHATSAPP_NUMERO_BOT') === digitos) return;
     props.setProperty('WHATSAPP_NUMERO_BOT', digitos);
     console.log(`📞 [Bot] Número próprio confirmado pela Meta: ${digitos}`);
@@ -282,7 +280,7 @@ function _mensagemForaDeOrdem(from, message) {
   const ts = parseInt(message.timestamp, 10);
   if (!ts) return false;                    // sem timestamp não há o que comparar
 
-  const cache  = CacheService.getScriptCache();
+  const cache  = Plataforma.cache;
   const chave  = `ultimo_ts_${from}`;
   const maior  = parseInt(cache.get(chave), 10) || 0;
 
@@ -310,7 +308,7 @@ function _processarMensagemWebhook(message) {
   const messageId = message.id;
 
   // ── Idempotência: ignorar mensagens já processadas ──────────────────
-  const cache    = CacheService.getScriptCache();
+  const cache    = Plataforma.cache;
   const cacheKey = `msg_${messageId}`;
 
   if (cache.get(cacheKey)) {
@@ -319,7 +317,17 @@ function _processarMensagemWebhook(message) {
   }
 
   // Marcar ANTES de processar (previne reprocessamento em retry concorrente).
-  cache.put(cacheKey, '1', 600); // TTL 10 minutos
+  //
+  // BL-78: 6 h, o máximo do CacheService. Eram 10 min — mas a Meta reentrega
+  // por HORAS quando não recebe resposta a tempo, e uma execução leva 10–24 s.
+  // Reentrega depois dos 10 min era processada de novo e, se fosse comprovante,
+  // virava uma segunda devolução no Odoo.
+  //
+  // O que isto NÃO fecha: duas entregas no MESMO instante passam juntas pelo
+  // `get` antes de qualquer `put`. Serializar com a trava global atrasaria toda
+  // mensagem atrás de quem segura a trava durante chamadas ao Odoo; a Fase 3 do
+  // BL-74 fecha isso de verdade, com a fila recusando nome de tarefa repetido.
+  cache.put(cacheKey, '1', 21600); // TTL 6 horas
   // ─────────────────────────────────────────────────────────────────────
 
   console.log(`📱 Mensagem de ${from} (id: ${messageId})`);

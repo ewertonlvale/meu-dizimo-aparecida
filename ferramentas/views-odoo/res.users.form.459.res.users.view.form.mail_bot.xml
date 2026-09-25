@@ -1,0 +1,6 @@
+<!-- res.users · view 459 · res.users.view.form.mail_bot · herda de 411 · form · prioridade 16 -->
+<data>
+  <field name="notification_type" position="after">
+    <field name="odoobot_state" groups="base.group_no_one" readonly="0" invisible="share"/>
+  </field>
+</data>

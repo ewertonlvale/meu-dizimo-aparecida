@@ -1,0 +1,14 @@
+<!-- res.users · view 641 · Odoo Studio: res.users.list customization · herda de 168 · list · prioridade 160 -->
+<data>
+  <xpath expr="/list//field[@name='login']" position="after">
+    <field name="group_ids" optional="show" widget="many2many_tags"/>
+  </xpath>
+  <xpath expr="/list" position="attributes">
+    <attribute name="delete">
+      false
+    </attribute>
+    <attribute name="duplicate">
+      false
+    </attribute>
+  </xpath>
+</data>

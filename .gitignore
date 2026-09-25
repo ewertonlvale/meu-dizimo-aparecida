@@ -1,0 +1,36 @@
+# ---------------------------------------------------------------------------
+# .gitignore — o que NUNCA vai para o repositório
+#
+# ⚠️ Este repositório é PÚBLICO. Um segredo commitado aqui não se resolve com
+#    `git rm`: ele fica no histórico e já foi indexado. Trate como vazado e
+#    rotacione.
+# ---------------------------------------------------------------------------
+
+# ── Credenciais do Odoo usadas pelas ferramentas ───────────────────────────
+# O `.exemplo` sobe (nasce vazio e assim fica); o arquivo real, nunca.
+.odoo-env
+**/.odoo-env
+!**/.odoo-env.exemplo
+
+# ── Credenciais do clasp ───────────────────────────────────────────────────
+# .clasprc.json guarda um refresh token com escopo de Drive e Apps Script.
+.clasprc.json
+**/.clasprc.json
+
+# ── Saídas das ferramentas ─────────────────────────────────────────────────
+# Não são segredo, mas também não sobem sem alguém decidir isso.
+#
+# `ferramentas/views-odoo/` NÃO está aqui de propósito: aquela pasta tem o
+# próprio .gitignore, criado no primeiro uso. Assim a decisão de versionar os
+# archs se toma num lugar só — apagando aquele arquivo — em vez de exigir
+# lembrar de dois.
+ferramentas/odoo-dump.json
+
+# ── Ruído de ambiente ──────────────────────────────────────────────────────
+node_modules/
+.DS_Store
+*.log
+
+# Cache do py_js do Odoo, baixado por ferramentas/provar-dominio-filtro.mjs.
+# É código de terceiro, reproduzível a partir da tag fixada no script.
+ferramentas/.cache-pyjs/

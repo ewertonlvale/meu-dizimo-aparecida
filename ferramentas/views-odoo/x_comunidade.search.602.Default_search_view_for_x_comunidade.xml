@@ -1,0 +1,7 @@
+<!-- x_comunidade · view 602 · Default search view for x_comunidade · base · search · prioridade 16 -->
+<search>
+  <field name="x_name"/>
+  <separator/>
+  <filter string="Arquivado" name="archived_x_comunidade" domain="[['x_active', '=', False]]"/>
+  <separator/>
+</search>

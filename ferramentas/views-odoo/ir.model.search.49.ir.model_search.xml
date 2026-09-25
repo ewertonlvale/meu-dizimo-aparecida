@@ -1,0 +1,10 @@
+<!-- ir.model · view 49 · ir.model search · base · search · prioridade 16 -->
+<search string="Model Description">
+  <field name="name" filter_domain="['|', ('name','ilike',self), ('model','ilike',self)]" string="Model"/>
+  <field name="model" filter_domain="[('model','ilike',self)]" string="Technical Name"/>
+  <filter string="Abstract" name="abstract" domain="[('abstract', '=', True)]"/>
+  <filter string="Transient" name="transient" domain="[('transient', '=', True)]"/>
+  <separator/>
+  <filter string="Custom" name="custom" domain="[('state', '=', 'manual')]"/>
+  <filter string="Base" name="base" domain="[('state', '=', 'base')]"/>
+</search>

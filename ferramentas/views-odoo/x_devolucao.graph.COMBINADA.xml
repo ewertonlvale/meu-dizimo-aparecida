@@ -1,0 +1,7 @@
+<!-- x_devolucao · graph combinada (via get_view) · view 607
+     SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
+<graph sample="1" string="Dízimos e ofertas por mês" type="bar" stacked="1">
+  <field name="x_studio_value" type="measure"/>
+  <field name="x_studio_data_da_devolucao" interval="month" type="row"/>
+  <field name="x_studio_tipo_contribuicao" type="col"/>
+</graph>
