@@ -443,9 +443,14 @@ const RelatorioHandler = {
         ? todosDizimistas
         : todosDizimistas.filter(d => this._comunidadeId(d) === acesso.comunidadeId);
 
+      // BL-84: devolução REJEITADA não entra em total nenhum — é dinheiro que
+      // não chegou à paróquia (chave errada, comprovante que não confere). O
+      // "Total devolvido" as somava, e o comparativo mensal também.
       const idsEscopo   = new Set(dizimistas.map(d => d.id));
-      const devolucoes  = todasDevolucoes.filter(dev => idsEscopo.has(this._dizimistaId(dev)));
-      const devAnt      = devolucoesAnt.filter(dev => idsEscopo.has(this._dizimistaId(dev)));
+      const conta       = dev => idsEscopo.has(this._dizimistaId(dev)) &&
+                                 dev.x_studio_status !== 'Rejeitado';
+      const devolucoes  = todasDevolucoes.filter(conta);
+      const devAnt      = devolucoesAnt.filter(conta);
 
       // ── Mensagem 1: Cabeçalho ──────────────────────────────────────────────
       const agora = Plataforma.relogio.formatar(new Date(), TIMEZONE, 'dd/MM/yyyy HH:mm');
@@ -529,6 +534,7 @@ const RelatorioHandler = {
       `❌ Sem devolução: ${semDevolucao}\n` +
       `📊 Participação: ${participacao}%\n` +
       `💵 Total devolvido: ${this._reais(totalValor)}\n` +
+      this._linhaAValidar(devolucoes) +
       `💰 Ticket médio: ${this._reais(ticketMedio)}\n`;
 
     if (crescimento !== null) {
@@ -551,6 +557,20 @@ const RelatorioHandler = {
    * Retorna a string completa (pode ser dividida por _enviarComLimite).
    * @private
    */
+  /**
+   * BL-84: quanto do total ainda espera validação da secretaria. Fica no
+   * total — boa parte das devoluções passa um tempo Pendente, e tirá-las
+   * faria o número despencar sem motivo —, mas não pode parecer validado.
+   * Vazio quando não há pendente, para não poluir o relatório.
+   * @private
+   */
+  _linhaAValidar(devolucoes, recuo = '') {
+    const pend = devolucoes.filter(d => d.x_studio_status === 'Pendente');
+    if (!pend.length) return '';
+    const valor = pend.reduce((s, d) => s + (d.x_studio_value || 0), 0);
+    return `${recuo}⏳ Desse total, a validar: ${this._reais(valor)} (${pend.length})\n`;
+  },
+
   _blocoDetalhesComunidades(comunidades, dizimistas, devolucoes) {
     let msg = `📍 *DETALHE POR COMUNIDADE*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -569,6 +589,7 @@ const RelatorioHandler = {
         `${icon} *${com.x_name}*\n` +
         `   👥 Devoluções: ${totalDev}\n` +
         `   💵 Devolvido: ${this._reais(totalVal)}\n` +
+        this._linhaAValidar(devCom, '   ') +
         `   💰 Ticket médio: ${this._reais(ticket)}\n` +
         `   📊 Participação: ${partic}%\n\n`;
     }

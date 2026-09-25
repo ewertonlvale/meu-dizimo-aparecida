@@ -4302,6 +4302,35 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · relatório consolidado ───────────────────────────────────────
+  caso('BL-84: o consolidado não soma rejeitada, e mostra à parte o que falta validar', () => {
+    const textos = [];
+    const R = carregar(['RelatorioHandler.gs'], {
+      StateManager: { setEstado() {}, getCampo: () => undefined },
+      Utilities: { formatDate: () => '24/09/2026 10:00', sleep() {} },
+      Utils: new Proxy({ enviarSimples: (f, t) => textos.push(t), enviarMenu: (f, t) => textos.push(t) },
+                       { get: (o, k) => o[k] || (() => {}) }),
+      OdooService: {
+        listarComunidades: () => [{ id: 1, x_name: 'Matriz' }],
+        listarTodosDizimistas: () => [1, 2, 3].map((id) => ({ id, x_studio_comunidade: [1, 'Matriz'] })),
+        listarDevolucoesPorPeriodo: (ini) => (ini === '2026-09-01' ? [
+          { x_studio_dizimista: [1, 'A'], x_studio_value: 100, x_studio_status: 'Confirmado' },
+          { x_studio_dizimista: [2, 'B'], x_studio_value: 50,  x_studio_status: 'Pendente' },
+          { x_studio_dizimista: [3, 'C'], x_studio_value: 999, x_studio_status: 'Rejeitado' }
+        ] : [])
+      }
+    }, 'RelatorioHandler');
+    R._gerarRelatorioConsolidado('55', { tipoAcesso: 'admin' }, {
+      dataInicio: '2026-09-01', dataFim: '2026-09-30', label: 'Setembro de 2026',
+      mesAnteriorInicio: '2026-08-01', mesAnteriorFim: '2026-08-31', labelAnterior: 'Agosto de 2026' });
+    const tudo = textos.join('\n');
+    const erros = [];
+    if (!/Total devolvido: R\$ 150,00/.test(tudo)) erros.push('total não é R$ 150,00');
+    if (!/Devoluções realizadas: 2\b/.test(tudo)) erros.push('contou a rejeitada como devolução');
+    if (!/a validar: R\$ 50,00 \(1\)/.test(tudo)) erros.push('não mostrou a pendente à parte');
+    return !erros.length || `${erros.join('; ')} — ${tudo.replace(/\n/g, ' | ').slice(0, 300)}`;
+  });
+
   // ── BL-85 ──────────────────────────────────────────────────────────────
   // Achado no teste real de 24/09: "👍" MANDADO (não reação) é texto.
   caso('BL-85: texto enquanto espera o comprovante lembra, e não desfaz a devolução', () => {
