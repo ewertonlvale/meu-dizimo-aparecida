@@ -192,6 +192,7 @@ na Meta *antes* de republicar.
 | Arquivo | Responsabilidade |
 |---|---|
 | `Plataforma.gs` | **Único** ponto de contato com as APIs do Apps Script (cache, propriedades, HTTP, relógio, trava, gatilhos) — ver seção 2.1 |
+| `servidor/` | O runtime Node (BL-74, Fase 2): roda os mesmos `.gs` fora do Apps Script, com a Plataforma de `servidor/plataforma/`. Ainda **sem tráfego** — ver `MIGRACAO-NIVEL-1.md` |
 | `Webhook.gs` | Entrada (GET de verificação, POST de mensagens), autenticação, idempotência |
 | `Router.gs` | Despacha por estado da conversa |
 | `StateManager.gs` | Estado, dados temporários, sessões, primeiro contato |
