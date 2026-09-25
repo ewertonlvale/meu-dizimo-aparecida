@@ -35,7 +35,49 @@ const log = {
   debug: (...a) => console.debug(...a),
 };
 
-function executar({ tipo, nome, evento }) {
+// ── Fase 3: uma mensagem por vez, POR PESSOA ────────────────────────────────
+// Duas mensagens da mesma pessoa processadas ao mesmo tempo leem o mesmo
+// estado da conversa e gravam no mesmo passo — é o atropelo do BL-29 e o lost
+// update do BL-20. A trava é por remetente e cobre o processamento INTEIRO.
+// Se ela estiver ocupada, o pedido volta "ocupado" e o Cloud Tasks tenta de
+// novo em instantes: a fila vira a espera, sem ninguém bloqueado esperando.
+// Pessoas DIFERENTES não se esperam — o que a trava global do Apps Script
+// não permitia.
+const TRAVA_PESSOA_MS = 300000;   // o teto de uma execução (timeout do Cloud Run)
+
+function remetentes(corpo) {
+  try {
+    const quem = new Set();
+    for (const e of JSON.parse(corpo).entry || []) {
+      for (const c of e.changes || []) {
+        for (const m of (c.value && c.value.messages) || []) if (m && m.from) quem.add(String(m.from));
+      }
+    }
+    return [...quem].sort();   // ordem fixa: duas execuções nunca pegam em ordem trocada
+  } catch (e) {
+    return [];   // corpo inválido: o doPost trata, e não há pessoa a travar
+  }
+}
+
+function comTravaDasPessoas(corpo, fn) {
+  const dono = `${process.pid}-${Date.now()}-${Math.random()}`;
+  const pegas = [];
+  const soltar = () => pegas.forEach((p) => { try { armazenamento.travaLiberar(`pessoa_${p}`, dono); } catch (e) { /* expira sozinha */ } });
+  for (const p of remetentes(corpo)) {
+    if (!armazenamento.travaTentar(`pessoa_${p}`, dono, TRAVA_PESSOA_MS)) { soltar(); return { ocupado: true }; }
+    pegas.push(p);
+  }
+  try { return fn(); } finally { soltar(); }
+}
+
+function executar({ tipo, nome, evento, corpo }) {
+  if (tipo === 'doPostFila') {
+    // Veio da fila: o webhook já autenticou. O `doPost` confere o segredo de
+    // novo (é o código de sempre), então o segredo vai no evento.
+    return comTravaDasPessoas(corpo, () => executar({ tipo: 'doPost', evento: {
+      parameter: { token: env.WEBHOOK_SECRET }, postData: { contents: corpo, type: 'application/json' } } }));
+  }
+
   const Plataforma = criarPlataforma({ armazenamento, http, env, log });
   const ctx = novoContexto(scripts, { Plataforma, console: log, Logger: { log: log.log } });
 

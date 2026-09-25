@@ -218,27 +218,20 @@ const Utils = {
     if (!chamadas && !servico && !template) return;
 
     try {
-      const props = Plataforma.propriedades;
       const shard = Math.floor(Math.random() * this.URLFETCH_SHARDS);
       const mes   = this._mesAtual();
 
-      // Uma leitura e uma escrita, não uma de cada POR CHAVE. Isto roda no
-      // caminho quente — toda mensagem recebida — e o fluxo típico grava duas
-      // chaves, o disparo em lote grava três: eram 4 a 6 idas ao Properties
-      // onde 2 resolvem. `setProperties(obj)` faz merge; o `true` que apaga
-      // tudo NÃO é usado aqui (ver ARQUITETURA.md, seção 1).
-      const atuais = props.getProperties();
-      const lote   = {};
-      const somar  = (chave, quanto) => {
-        lote[chave] = String((parseInt(atuais[chave], 10) || 0) + quanto);
-      };
-
-      if (chamadas) somar(`${this.URLFETCH_PREFIXO}${this._hoje()}_${shard}`, chamadas);
+      // Uma soma só, com todas as chaves. Isto roda no caminho quente — toda
+      // mensagem recebida. No Apps Script, `Plataforma.contador.somar` é uma
+      // leitura e uma escrita (como sempre foi); no Node é um HINCRBY atômico,
+      // que não perde incremento com várias instâncias (BL-74, Fase 3).
+      const somas = {};
+      if (chamadas) somas[`${this.URLFETCH_PREFIXO}${this._hoje()}_${shard}`] = chamadas;
       // Mensagens são agregadas por MÊS, não por dia: a franquia da Meta é mensal.
-      if (servico)  somar(`${this.MSG_PREFIXO}${mes}_servico_${shard}`,  servico);
-      if (template) somar(`${this.MSG_PREFIXO}${mes}_template_${shard}`, template);
+      if (servico)  somas[`${this.MSG_PREFIXO}${mes}_servico_${shard}`]  = servico;
+      if (template) somas[`${this.MSG_PREFIXO}${mes}_template_${shard}`] = template;
 
-      props.setProperties(lote);
+      Plataforma.contador.somar(somas);
 
       console.log(`📊 [Cota] ${chamadas} chamada(s) externa(s)` +
                   (servico || template

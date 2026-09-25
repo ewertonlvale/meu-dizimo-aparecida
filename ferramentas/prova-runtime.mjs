@@ -91,6 +91,11 @@ if (!isMainThread) {
     up.propDelete('sessao_ativa_55');
     return (todas.sessao_ativa_55 === '1' && todas.FLOW_CADASTRO_ATIVO === 'true' && up.propGet('sessao_ativa_55') === null) || JSON.stringify(todas);
   });
+  caso('upstash: contador soma com HINCRBY (atômico), não com ler-somar-gravar', () => {
+    up.propSomar({ uso_urlfetch_x_0: 3 }); up.propSomar({ uso_urlfetch_x_0: 4, msgs_x_servico_0: 1 });
+    const todas = up.propGetAll();
+    return (todas.uso_urlfetch_x_0 === '7' && todas.msgs_x_servico_0 === '1') || JSON.stringify(todas);
+  });
   caso('upstash: trava — só um dono, e só o dono libera', () => {
     const a = up.travaTentar('dados_55', 'A', 5000);
     const b = up.travaTentar('dados_55', 'B', 5000);
@@ -271,7 +276,7 @@ mostrar(casosLocais.splice(0));
 // Servidores falsos: eco, Upstash, Odoo, Graph (WhatsApp) e Vision
 // ════════════════════════════════════════════════════════════════════════════
 const PNG = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
-const estado = { enviados: [], criados: [], upstash: new Map(), hash: new Map() };
+const estado = { enviados: [], criados: [], upstash: new Map(), hash: new Map(), comandos: [] };
 
 const DIZIMISTA = { id: 7, x_name: 'Ana', x_studio_nome_completo: 'Ana Souza', x_studio_partner_phone: '5586999990001',
   x_studio_value: 50, x_studio_comunidade: [1, 'Matriz'], x_studio_dia_preferido: 10, x_active: true,
@@ -317,11 +322,40 @@ function upstash(cmd) {
     case 'HGET': return estado.hash.get(a[1]) ?? null;
     case 'HSET': { for (let i = 1; i < a.length; i += 2) estado.hash.set(a[i], a[i + 1]); return 1; }
     case 'HDEL': return estado.hash.delete(a[1]) ? 1 : 0;
+    case 'HINCRBY': { const n = (parseInt(estado.hash.get(a[1]), 10) || 0) + Number(a[2]); estado.hash.set(a[1], String(n)); estado.comandos.push('HINCRBY'); return n; }
     case 'HGETALL': return [...estado.hash].flat();
     case 'EVAL': { const [, , chave, dono] = a; if (u.get(chave) === dono) { u.delete(chave); return 1; } return 0; }
     default: throw new Error(`comando não simulado: ${c}`);
   }
 }
+
+// ── Cloud Tasks falso: cria a tarefa, recusa nome repetido (409) e ENTREGA ao
+// worker de verdade, repetindo quando ele responde 503 (pessoa ocupada) —
+// como a fila real, com política de nova tentativa.
+estado.tarefas = new Map();
+estado.entregas = [];
+estado.filaFora = false;
+function tarefaFalsa(req, corpo) {
+  if (estado.filaFora) return [{ error: { message: 'indisponível' } }, 503];
+  if (req.headers.authorization !== 'Bearer token-da-conta-webhook') return [{ error: 'sem token' }, 401];
+  const { task } = JSON.parse(corpo);
+  if (estado.tarefas.has(task.name)) return [{ error: { status: 'ALREADY_EXISTS' } }, 409];
+  const reg = { ...task, tentativas: 0, respostas: [] };
+  estado.tarefas.set(task.name, reg);
+  const conteudo = Buffer.from(task.httpRequest.body, 'base64').toString('utf8');
+  estado.entregas.push((async () => {
+    for (let i = 0; i < 60; i++) {
+      reg.tentativas++;
+      const r = await fetch(task.httpRequest.url, { method: 'POST', headers: task.httpRequest.headers, body: conteudo });
+      reg.respostas.push(r.status);
+      await r.text();
+      if (r.status !== 503 && r.status !== 500) return;
+      await new Promise((ok) => setTimeout(ok, 30));
+    }
+  })());
+  return [{ name: task.name }, 200];
+}
+const entregasTerminarem = async () => { while (estado.entregas.length) await estado.entregas.shift(); };
 
 const TEXTO_OCR = 'Pix enviado\nValor R$ 50,00\n24/09/2026 10:00\nPara\nParóquia N. S. Aparecida\n' +
                   'Chave Pix\npix@paroquia.org\nInstituição\nBanco do Brasil\nDe\nAna Souza';
@@ -340,6 +374,11 @@ const falsos = http.createServer((req, res) => {
       if (u.pathname === '/redireciona') { res.writeHead(302, { location: '/eco' }); return res.end(); }
       if (u.pathname === '/upstash') return json({ result: upstash(JSON.parse(corpo)) });
       if (u.pathname === '/upstash/pipeline') return json(JSON.parse(corpo).map((c) => ({ result: upstash(c) })));
+      if (u.pathname === '/meta/computeMetadata/v1/instance/service-accounts/default/token') {
+        if (req.headers['metadata-flavor'] !== 'Google') return json({ erro: 'sem Metadata-Flavor' }, 403);
+        return json({ access_token: 'token-da-conta-webhook', expires_in: 3600 });
+      }
+      if (u.pathname.startsWith('/tasks-api/v2/')) return json(...tarefaFalsa(req, corpo));
       if (u.pathname.startsWith('/odoo')) return json({ jsonrpc: '2.0', id: null, result: odoo(JSON.parse(corpo)) });
       if (u.pathname.startsWith('/vision')) return json({ responses: [{ fullTextAnnotation: { text: TEXTO_OCR } }] });
       if (u.pathname.startsWith('/graph')) {
@@ -464,6 +503,138 @@ await caso('memória com 2 processadores é recusada (cache e trava não seriam 
 });
 
 mostrar(casosLocais.splice(0));
+
+// ════════════════════════════════════════════════════════════════════════════
+// PARTE 4 (Fase 3): webhook → Cloud Tasks → worker, com trava por pessoa
+// ════════════════════════════════════════════════════════════════════════════
+console.log('\n── 4. A fila: webhook público → Cloud Tasks → worker privado ─────\n');
+
+const ENV_WORKER = {
+  PAPEL: 'worker', ARMAZENAMENTO: 'upstash', PROCESSADORES: '2',
+  UPSTASH_REDIS_REST_URL: `${FALSOS}/upstash`, UPSTASH_REDIS_REST_TOKEN: 'tok',
+  WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '111', WEBHOOK_SECRET: SEGREDO,
+  ODOO_URL: `${FALSOS}/odoo`, ODOO_DATABASE: 'falso', ODOO_UID: '13', ODOO_API_KEY: 'chave',
+  GOOGLE_VISION_API_KEY: 'vision', NOTIFICACOES_ATIVAS: 'false',
+  PLATAFORMA_REDIRECIONAR: JSON.stringify({
+    'https://graph.facebook.com': `${FALSOS}/graph`,
+    'https://vision.googleapis.com': `${FALSOS}/vision`,
+  }),
+};
+const worker = await iniciar({ porta: 0, env: ENV_WORKER });
+const WORKER = `http://127.0.0.1:${worker.porta}`;
+const webhookSrv = await iniciar({ porta: 0, env: {
+  PAPEL: 'webhook', WEBHOOK_SECRET: SEGREDO, VERIFY_TOKEN: 'verifica',
+  FILA_PROJETO: 'projeto', FILA_REGIAO: 'southamerica-east1', FILA_NOME: 'mensagens',
+  WORKER_URL: WORKER, INVOCADOR_SA: 'invocador@projeto.iam.gserviceaccount.com',
+  TASKS_API: `${FALSOS}/tasks-api`, METADADOS_URL: `${FALSOS}/meta`,
+} });
+const WEBHOOK = `http://127.0.0.1:${webhookSrv.porta}`;
+
+// Um envelope com remetente e horário escolhidos — o da parte 3 é fixo em DE.
+const envelopeDe = (de, mensagem, ts) => JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'W', changes: [{ field: 'messages', value: {
+  messaging_product: 'whatsapp', metadata: { display_phone_number: '5586900000000', phone_number_id: '111' },
+  contacts: [{ wa_id: de }], messages: [{ from: de, id: `wamid.F${++seq}`, timestamp: String(ts), ...mensagem }] } }] }] });
+const postarFila = (corpo, token = SEGREDO) =>
+  fetch(`${WEBHOOK}/webhook?token=${token}`, { method: 'POST', body: corpo, headers: { 'content-type': 'application/json' } });
+
+await caso('webhook: GET da Meta verificado sem os .gs', async () => {
+  const r = await (await fetch(`${WEBHOOK}/webhook?hub.mode=subscribe&hub.verify_token=verifica&hub.challenge=77`)).text();
+  const errado = await (await fetch(`${WEBHOOK}/webhook?hub.mode=subscribe&hub.verify_token=x&hub.challenge=77`)).text();
+  return (r === '77' && errado === 'Forbidden') || `${r} / ${errado}`;
+});
+await caso('webhook: POST sem o segredo não enfileira nada', async () => {
+  const antes = estado.tarefas.size;
+  const r = await (await postarFila(envelopeDe('5586999990002', { type: 'text', text: { body: 'oi' } }, 1790000100), 'errado')).text();
+  return (r === 'Forbidden' && estado.tarefas.size === antes) || `${r}, ${estado.tarefas.size - antes} tarefa(s)`;
+});
+await caso('webhook: responde na hora; a tarefa leva token OIDC do invocador para o worker', async () => {
+  const antes = estado.enviados.length;
+  const t0 = Date.now();
+  const r = await postarFila(envelopeDe('5586999990001', { type: 'text', text: { body: 'oi' } }, 1790000200));
+  const ms = Date.now() - t0;
+  const tarefa = [...estado.tarefas.values()].at(-1);
+  await entregasTerminarem();
+  const erros = [];
+  if (r.status !== 200 || (await r.text()) !== 'OK') erros.push(`webhook respondeu ${r.status}`);
+  if (!tarefa || !/\/tasks\/[0-9a-f]{64}$/.test(tarefa.name)) erros.push('nome da tarefa não é o SHA-256 do corpo');
+  if (tarefa && tarefa.httpRequest.oidcToken.serviceAccountEmail !== 'invocador@projeto.iam.gserviceaccount.com') erros.push('OIDC de outra conta');
+  if (tarefa && tarefa.httpRequest.oidcToken.audience !== WORKER) erros.push('audiência errada');
+  if (tarefa && tarefa.httpRequest.url !== `${WORKER}/processar`) erros.push(`url ${tarefa.httpRequest.url}`);
+  if (estado.enviados.length <= antes) erros.push('o worker não respondeu pelo WhatsApp');
+  return !erros.length || `${erros.join('; ')} (webhook em ${ms} ms)`;
+});
+await caso('webhook: reentrega idêntica da Meta é recusada pela fila (409) e processada uma vez só', async () => {
+  const corpo = envelopeDe('5586999990001', { type: 'text', text: { body: 'oi' } }, 1790000300);
+  const antes = estado.enviados.length;
+  const r1 = await postarFila(corpo);
+  await entregasTerminarem();
+  const depoisDaPrimeira = estado.enviados.length;
+  const r2 = await postarFila(corpo);
+  await entregasTerminarem();
+  return (r1.status === 200 && r2.status === 200 && depoisDaPrimeira > antes && estado.enviados.length === depoisDaPrimeira)
+    || `1ª ${r1.status}, 2ª ${r2.status}; envios ${depoisDaPrimeira - antes} e depois +${estado.enviados.length - depoisDaPrimeira}`;
+});
+await caso('webhook: fila fora do ar → 500, e a Meta reenvia (o Apps Script perderia a mensagem)', async () => {
+  estado.filaFora = true;
+  const r = await postarFila(envelopeDe('5586999990001', { type: 'text', text: { body: 'oi' } }, 1790000400));
+  estado.filaFora = false;
+  return r.status === 500 || r.status;
+});
+
+// ── A corrida do BL-20/BL-29 ─────────────────────────────────────────────
+// Uma pessoa no passo do NOME manda duas respostas quase juntas — do mesmo
+// segundo, para o filtro de ordem do BL-29 não recusar nenhuma. Os dois
+// processadores pegam as duas ao mesmo tempo. Sem trava por pessoa, as duas
+// leem "aguardando nome" e as duas gravam em `nome`: o apelido se perde. Com a
+// trava, a segunda volta "ocupado", a fila repete, e ela cai no passo seguinte.
+await caso('corrida: duas respostas simultâneas no cadastro não perdem campo (BL-20)', async () => {
+  const C = '5586999990077';
+  estado.upstash.set(`c:estado_${C}`, 'AGUARDANDO_NOME');
+  estado.upstash.set(`c:dados_${C}`, JSON.stringify({ comunidadeId: 1, comunidadeNome: 'Matriz' }));
+  estado.upstash.set(`c:contato_${C}`, '1');           // já conhecido: sem boas-vindas
+  estado.upstash.set(`c:sessao_inicio_${C}`, String(Date.now()));
+  await Promise.all([
+    postarFila(envelopeDe(C, { type: 'text', text: { body: 'Ana Maria Souza' } }, 1790000500)),
+    postarFila(envelopeDe(C, { type: 'text', text: { body: 'Aninha Souza' } }, 1790000500)),
+  ]);
+  await entregasTerminarem();
+  const dados = JSON.parse(estado.upstash.get(`c:dados_${C}`) || '{}');
+  const ocupados = [...estado.tarefas.values()].filter((t) => t.respostas.includes(503)).length;
+  return (dados.nome && dados.nomeUsual && estado.upstash.get(`c:estado_${C}`) === 'AGUARDANDO_DATA_NASCIMENTO')
+    || `nome=${dados.nome} nomeUsual=${dados.nomeUsual} estado=${estado.upstash.get(`c:estado_${C}`)} (${ocupados} tarefa(s) esperaram a vez)`;
+});
+await caso('trava por pessoa: pessoas diferentes NÃO se esperam', async () => {
+  const antes = [...estado.tarefas.values()].filter((t) => t.respostas.includes(503)).length;
+  await Promise.all(['5586999990081', '5586999990082'].map((de) => {
+    estado.upstash.set(`c:contato_${de}`, '1');
+    return postarFila(envelopeDe(de, { type: 'text', text: { body: 'oi' } }, 1790000600));
+  }));
+  await entregasTerminarem();
+  const depois = [...estado.tarefas.values()].filter((t) => t.respostas.includes(503)).length;
+  return depois === antes || `${depois - antes} tarefa(s) de pessoas diferentes esperaram`;
+});
+await caso('worker: agendamento sem CRON_TOKEN (quem protege é o IAM do Cloud Run)', async () => {
+  const r = await fetch(`${WORKER}/cron/verificarSessoesAbandonadas`, { method: 'POST' });
+  return r.status === 200 || r.status;
+});
+await caso('worker exige Upstash: memória não seria compartilhada entre instâncias', async () => {
+  try { await iniciar({ porta: 0, env: { PAPEL: 'worker', ARMAZENAMENTO: 'memoria' } }); return 'subiu'; }
+  catch (e) { return /exige ARMAZENAMENTO=upstash/.test(e.message) || e.message; }
+});
+await caso('webhook sem WEBHOOK_SECRET não sobe (recusaria tudo em silêncio)', async () => {
+  try { await iniciar({ porta: 0, env: { PAPEL: 'webhook', WEBHOOK_SECRET: '' } }); return 'subiu'; }
+  catch (e) { return /exige WEBHOOK_SECRET/.test(e.message) || e.message; }
+});
+await caso('fila: endereço da API ou dos metadados só troca para 127.0.0.1 (o token não sai)', async () => {
+  const { criarFila } = await imp('servidor/fila.mjs');
+  const base = { FILA_PROJETO: 'p', FILA_REGIAO: 'r', FILA_NOME: 'q', WORKER_URL: 'https://w', INVOCADOR_SA: 'i' };
+  const recusa = (extra) => { try { criarFila({ ...base, ...extra }); return false; } catch (e) { return true; } };
+  return (recusa({ TASKS_API: 'https://evil.example' }) && recusa({ METADADOS_URL: 'http://evil.example' })) || 'aceitou';
+});
+
+mostrar(casosLocais.splice(0));
+await webhookSrv.fechar();
+await worker.fechar();
 
 await servidor.fechar();
 await new Promise((ok) => falsos.close(ok));

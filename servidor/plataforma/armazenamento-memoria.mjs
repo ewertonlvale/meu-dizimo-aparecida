@@ -42,6 +42,10 @@ export function criarArmazenamentoMemoria({ agora = () => Date.now() } = {}) {
     propSet: (k, v) => { props.set(k, String(v)); },
     propSetAll: (obj) => { for (const [k, v] of Object.entries(obj)) props.set(k, String(v)); },
     propDelete: (k) => { props.delete(k); },
+    // Soma atômica — numa thread só, trivialmente.
+    propSomar(somas) {
+      for (const [k, n] of Object.entries(somas)) props.set(k, String((parseInt(props.get(k), 10) || 0) + Number(n)));
+    },
 
     travaTentar(chave, dono, ms) {
       const t = travas.get(chave);
