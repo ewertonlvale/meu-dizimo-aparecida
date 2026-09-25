@@ -98,7 +98,7 @@ retry (BL-24). A única exceção é `RegistrarNumero.gs`, utilitário manual de
 
 | Situação | Repete? | Por quê |
 |---|---|---|
-| **429** (throttling) | Sempre | Recusada *antes* de executar; repetir nunca duplica |
+| **429** (throttling), e o **400 de limite da Meta** (códigos 4, 80007, 130429, 131056 — BL-84) | Sempre | Recusada *antes* de executar; repetir nunca duplica |
 | **5xx / exceção de rede**, `idempotente: true` | Sim | Leituras, `write`, OCR e downloads não têm efeito colateral |
 | **5xx / exceção de rede**, `idempotente: false` | **Não** | O servidor pode ter processado antes de falhar |
 

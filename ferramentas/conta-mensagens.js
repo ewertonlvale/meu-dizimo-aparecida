@@ -4330,6 +4330,29 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · limite de taxa da Meta ─────────────────────────────────────
+  const resp = (code, corpo) => ({ getResponseCode: () => code, getContentText: () => corpo });
+  const comRespostas = (fila) => {
+    const r = { chamadas: 0 };
+    r.U = carregar(['Utils.gs'], {
+      UrlFetchApp: { fetch: () => { r.chamadas++; return fila.shift(); } },
+      Utilities: { sleep() {} }
+    }, 'Utils');
+    return r;
+  };
+  caso('BL-84: o 400 de limite de taxa da Meta é repetido, mesmo num envio', () => {
+    const r = comRespostas([resp(400, '{"error":{"code":130429,"message":"Rate limit hit"}}'),
+                            resp(200, '{"messages":[{"id":"w"}]}')]);
+    const final = r.U.fetchComRetry('https://graph', {}, { idempotente: false, rotulo: 'teste' });
+    return (r.chamadas === 2 && final.getResponseCode() === 200) || `chamadas=${r.chamadas}`;
+  });
+  caso('BL-84: 400 de outro motivo (ex.: número inválido) não é repetido', () => {
+    const r = comRespostas([resp(400, '{"error":{"code":131026,"message":"undeliverable"}}'),
+                            resp(200, '{}')]);
+    r.U.fetchComRetry('https://graph', {}, { idempotente: false });
+    return r.chamadas === 1 || `chamadas=${r.chamadas}`;
+  });
+
   // ── BL-84 · "menu" nos estados do relatório ─────────────────────────────
   caso('BL-84: "menu" no código de acesso sai, sem contar como tentativa errada', () => {
     const r = { menus: 0, codigos: 0, meses: 0 };

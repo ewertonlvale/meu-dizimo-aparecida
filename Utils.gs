@@ -141,7 +141,8 @@ const Utils = {
         else                             this._mensagensServico++;
       }
 
-      const repetir = code === 429 || ((excecao || code >= 500) && idempotente);
+      const repetir = code === 429 || this._limiteDeTaxaDaMeta(resposta) ||
+                      ((excecao || code >= 500) && idempotente);
 
       if (!repetir) break;
 
@@ -167,6 +168,29 @@ const Utils = {
 
     if (excecao) throw excecao;
     return resposta;
+  },
+
+  /**
+   * A Meta disse "devagar"? (BL-84)
+   *
+   * O WhatsApp quase nunca responde 429: o limite de taxa vem como HTTP 400,
+   * com o motivo no corpo. Sem isto, o único caso em que repetir um ENVIO é
+   * seguro — a recusa acontece antes de processar, então nada duplica — virava
+   * perda silenciosa de mensagem.
+   *   4       muitas chamadas do app
+   *   80007   limite da conta (WABA)
+   *   130429  limite de vazão do número
+   *   131056  muitas mensagens para o mesmo destinatário
+   * @private
+   */
+  _limiteDeTaxaDaMeta(resposta) {
+    if (!resposta || resposta.getResponseCode() !== 400) return false;
+    try {
+      const codigo = (JSON.parse(resposta.getContentText()).error || {}).code;
+      return [4, 80007, 130429, 131056].indexOf(codigo) >= 0;
+    } catch (e) {
+      return false;   // corpo que não é JSON não é o limite da Meta
+    }
   },
 
   /**
