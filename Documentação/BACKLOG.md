@@ -106,15 +106,15 @@
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
-| BL-77 | Dízimo gravado como oferta por campo de oferta que sobra na sessão | 🔴 | P | ✅ Concluído (24/09) — o caminho segue o ESTADO da conversa, não a sobra da sessão. **Precisa de `clasp push`** |
-| BL-78 | Deduplicação do webhook vale 10 min e não é atômica — reentrega duplica devolução | 🔴 | P | ✅ Concluído (24/09) — TTL de 6 h. A corrida simultânea fica para a Fase 3 do BL-74. **Precisa de `clasp push`** |
-| BL-79 | Reação, figurinha ou áudio zeram a conversa em andamento | 🟠 | P | ✅ Concluído (24/09) — reação ignorada; demais tipos recebem aviso sem mexer no estado. **Precisa de `clasp push`** |
-| BL-80 | O código de acesso ao relatório (e dados do cadastro) vão para o log | 🟠 | P | ✅ Concluído (24/09) — log registra tamanho e estado, não o texto. **Precisa de `clasp push`** |
-| BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | ✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Precisa de `clasp push`** |
-| BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | ✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Precisa de `clasp push`** |
-| BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Precisa de `clasp push`** |
+| BL-77 | Dízimo gravado como oferta por campo de oferta que sobra na sessão | 🔴 | P | ✅ Concluído (24/09) — o caminho segue o ESTADO da conversa, não a sobra da sessão. **Publicado em 24/09** — validado no WhatsApp (oferta → menu → dízimo da família). |
+| BL-78 | Deduplicação do webhook vale 10 min e não é atômica — reentrega duplica devolução | 🔴 | P | ✅ Concluído (24/09) — TTL de 6 h. A corrida simultânea fica para a Fase 3 do BL-74. **Publicado em 24/09** — publicado. |
+| BL-79 | Reação, figurinha ou áudio zeram a conversa em andamento | 🟠 | P | ✅ Concluído (24/09) — reação ignorada; demais tipos recebem aviso sem mexer no estado. **Publicado em 24/09** — validado no WhatsApp (reação e áudio). |
+| BL-80 | O código de acesso ao relatório (e dados do cadastro) vão para o log | 🟠 | P | ✅ Concluído (24/09) — log registra tamanho e estado, não o texto. **Publicado em 24/09** — publicado. |
+| BL-81 | Confirmar/rejeitar baixa age sobre a ÚLTIMA pendente aberta, não a da mensagem | 🟠 | M | ✅ Concluído (24/09) — id no botão; relê status e comunidade antes de gravar. **Publicado em 24/09** — publicado — **falta validar** com acesso de coordenador. |
+| BL-82 | OCR corta valor sem separador de milhar ("R$ 1234,56" → 123) | 🟠 | P | ✅ Concluído (24/09) — sem rótulo, "R$ 1500,00" nem era lido. **Publicado em 24/09** — publicado. |
+| BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Publicado em 24/09** — publicado. |
 | BL-84 | Achados da revisão de 24/09 ainda não conferidos linha a linha | 🟠 | M | 🔎 A triar — lista em `notas.md` |
-| BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Precisa de `clasp push`** |
+| BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Publicado em 24/09** — validado no WhatsApp. |
 
 ---
 
