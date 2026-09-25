@@ -93,7 +93,10 @@ const ComprovanteHandler = {
     if (mime.startsWith('image/'))                       return 'imagem';
     if (mime === 'application/pdf')                      return 'pdf';
     if (arquivo.filename?.toLowerCase().endsWith('.pdf')) return 'pdf';
-    if (Object.prototype.hasOwnProperty.call(arquivo, 'sha256')) return 'imagem';
+    // BL-84: o `sha256` só serve de pista quando NÃO há tipo declarado. Todo
+    // documento do WhatsApp traz sha256 — um .docx ou .xlsx virava "imagem",
+    // ia para o OCR e voltava com o motivo técnico da falha na tela da pessoa.
+    if (!mime && Object.prototype.hasOwnProperty.call(arquivo, 'sha256')) return 'imagem';
 
     return null;
   },
@@ -757,9 +760,12 @@ const ComprovanteHandler = {
         return;
       }
 
+      // BL-84: o motivo técnico fica no log, não na tela — "Motivo: Vision API
+      // HTTP 403" não ajuda quem está devolvendo o dízimo, e expõe o bot.
+      console.error(`🎯 [_tratarResultado] Motivo da falha: ${resultado.erro || 'desconhecido'}`);
       MenuHandler.erro(from,
-        `Não consegui processar o comprovante.\n\n_Motivo: ${resultado.erro || 'Erro desconhecido'}_\n\n` +
-        'Tente novamente ou entre em contato com a secretaria.'
+        'Não consegui ler este comprovante, e ele *ainda não foi registrado*.\n\n' +
+        'Tente enviar de novo — uma *foto* nítida ou o *PDF* do banco — ou fale com a secretaria.'
       );
       return;
     }

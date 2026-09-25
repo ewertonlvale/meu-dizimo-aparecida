@@ -215,11 +215,14 @@ const StateManager = {
 
     console.log(`⚠️ Sessão de ${from} prestes a expirar (${Math.floor(minutosDecorridos)} min)`);
 
+    // Marca que a pergunta já foi enviada (TTL 10 min — tempo restante da sessão).
+    // BL-84: ANTES do Odoo. Vinha depois de `persistirLogCadastro`, que faz duas
+    // chamadas; a trigger e uma mensagem da pessoa chegando nesse intervalo
+    // mandavam, cada uma, o "Você ainda está aí?" — duas mensagens cobradas.
+    cache.put(`aviso_sessao_${from}`, '1', 600);
+
     // Persiste log e etapa atual no Odoo (backup preventivo)
     this.persistirLogCadastro(from, false);
-
-    // Marca que a pergunta já foi enviada (TTL 10 min — tempo restante da sessão)
-    cache.put(`aviso_sessao_${from}`, '1', 600);
 
     // Pergunta se o usuário ainda está ativo
     Utils.enviarMenu(from,

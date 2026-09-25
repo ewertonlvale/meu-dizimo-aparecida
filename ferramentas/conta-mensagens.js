@@ -4330,6 +4330,50 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-83)\n');
     return !erros.length || erros.join('; ');
   });
 
+  // ── BL-84 · "menu" nos estados do relatório ─────────────────────────────
+  caso('BL-84: "menu" no código de acesso sai, sem contar como tentativa errada', () => {
+    const r = { menus: 0, codigos: 0, meses: 0 };
+    for (const estado of ['AGUARDANDO_CODIGO_RELATORIO', 'AGUARDANDO_MES_CUSTOMIZADO']) {
+      const R = carregar(['Router.gs'], {
+        StateManager: { getEstado: () => estado, setEstado() {}, limparDados() {}, getCampo: () => undefined },
+        RelatorioHandler: new Proxy({ handleAuthCode: () => r.codigos++, processarMesCustomizado: () => r.meses++ },
+                                    { get: (o, k) => o[k] || (() => {}) }),
+        MenuHandler: new Proxy({ menuPrincipal: () => r.menus++ }, { get: (o, k) => o[k] || (() => {}) }),
+        Utils: new Proxy({}, { get: () => () => {} })
+      }, 'Router');
+      R.rotear('55', { type: 'text', text: { body: 'Menu' } });
+    }
+    return (r.menus === 2 && !r.codigos && !r.meses) || JSON.stringify(r);
+  });
+
+  // ── BL-84 · aviso de expiração ─────────────────────────────────────────
+  caso('BL-84: o aviso de expiração é marcado antes das chamadas ao Odoo', () => {
+    const ordem = [];
+    const SM = carregar(['StateManager.gs'], {
+      CacheService: { getScriptCache: () => ({
+        get: (k) => (k.startsWith('sessao_inicio_') ? String(Date.now() - 55 * 60000) : null),
+        put: (k) => ordem.push(`put ${k.split('_').slice(0, 2).join('_')}`) }) },
+      Utils: { enviarMenu: () => ordem.push('enviou') }
+    }, 'StateManager');
+    SM.persistirLogCadastro = () => ordem.push('odoo');
+    SM.verificarExpiracaoSessao('55', 'AGUARDANDO_NOME');
+    const iAviso = ordem.indexOf('put aviso_sessao'), iOdoo = ordem.indexOf('odoo');
+    return (iAviso >= 0 && iAviso < iOdoo) || ordem.join(' → ');
+  });
+
+  // ── BL-84 · tipo do arquivo ─────────────────────────────────────────────
+  caso('BL-84: documento que não é imagem nem PDF não vai para o OCR', () => {
+    const C = carregar(['ComprovanteHandler.gs'], {}, 'ComprovanteHandler');
+    const t = (a) => C._detectarTipo(a);
+    const erros = [];
+    if (t({ mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'recibo.docx', sha256: 'x' }) !== null) erros.push('.docx virou arquivo aceito');
+    if (t({ sha256: 'x' }) !== 'imagem') erros.push('sem tipo declarado, o sha256 deixou de valer');
+    if (t({ mime_type: 'image/jpeg', sha256: 'x' }) !== 'imagem') erros.push('jpeg recusado');
+    if (t({ mime_type: 'application/pdf', sha256: 'x' }) !== 'pdf') erros.push('pdf recusado');
+    return !erros.length || erros.join('; ');
+  });
+
   // ── BL-84 · devolução e familiar duplicados ────────────────────────────
   caso('BL-84: segundo comprovante durante a análise do primeiro não é processado', () => {
     const cache = {}, enviadas = [];

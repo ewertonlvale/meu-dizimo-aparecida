@@ -377,6 +377,17 @@ const Router = {
     }
 
     // Atalhos globais — desabilitados enquanto aguardamos código/mês de relatório
+    // BL-84: nos dois estados do relatório os atalhos ficam desligados — o texto
+    // é o código ou o mês —, mas "menu" precisa sair. Antes, no código de
+    // acesso, "menu" contava como TENTATIVA ERRADA (três bloqueavam por 30 min);
+    // no mês personalizado, não havia saída por texto nenhuma.
+    if ((estado === ESTADOS.AGUARDANDO_CODIGO_RELATORIO ||
+         estado === ESTADOS.AGUARDANDO_MES_CUSTOMIZADO) && lower === 'menu') {
+      StateManager.limparDados(from);
+      MenuHandler.menuPrincipal(from);
+      return;
+    }
+
     if (estado !== ESTADOS.AGUARDANDO_CODIGO_RELATORIO &&
         estado !== ESTADOS.AGUARDANDO_MES_CUSTOMIZADO) {
       if (emCadastro) {
