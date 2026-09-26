@@ -4552,7 +4552,9 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-85)\n');
     const familia = [];
     const OS = carregar(['OdooService.gs'], {
       LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) }
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      // Só o formato que o create usa (yyyy-MM-dd), no fuso pedido.
+      Utilities: { formatDate: (d, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d) }
     }, 'OdooService');
     OS.searchRead = (modelo, campos, dominio) => {
       const nome = (dominio.find((c) => c[0] === 'x_studio_nome_completo') || [])[2];
@@ -4564,6 +4566,28 @@ console.log('🩹 Bugs da revisão de 24/09 (BL-78 a BL-85)\n');
     const a = OS.criarMembro(dados, 7);
     const b = OS.criarMembro(dados, 7);
     return (familia.length === 1 && a === b) || `criou ${familia.length}, ids ${a}/${b}`;
+  });
+
+  // A "Data de Cadastro" ficava vazia em todo cadastro feito pelo bot: o
+  // campo existe no Odoo, mas nenhum create o preenchia (achado em 26/09).
+  caso('Cadastro e familiar gravam a Data de Cadastro (hoje, no fuso da paróquia)', () => {
+    const criados = [];
+    const OS = carregar(['OdooService.gs'], {
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+      // Só o formato que o create usa (yyyy-MM-dd), no fuso pedido.
+      Utilities: { formatDate: (d, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d) }
+    }, 'OdooService');
+    OS.searchRead = () => [];
+    OS.create = (modelo, dados) => { criados.push(dados); return criados.length; };
+    const dados = { nome: 'Maria da Silva', nomeUsual: 'Maria', dataNascimento: '01/02/2010',
+                    endereco: 'Rua A', valorMensal: 10, comunidadeId: 1, whatsapp: '5586999990000' };
+    OS._criarDizimista(dados);
+    OS.criarMembro(dados, 7);
+    const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    const errados = criados.filter((d) => d.x_studio_data_cadastro !== hoje);
+    return (criados.length === 2 && !errados.length) ||
+      `criados ${criados.length}; datas: ${criados.map((d) => d.x_studio_data_cadastro).join(', ')} (esperava ${hoje})`;
   });
 
   // ── BL-84 · sessão de cadastro ─────────────────────────────────────────
