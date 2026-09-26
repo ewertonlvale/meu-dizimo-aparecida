@@ -217,6 +217,47 @@ for (const [nome, expr, deveAcertar] of aProvar) {
   console.log('');
 }
 
+// ---------------------------------------------------------------------------
+// 3. O "Mês Anterior" (26/09): dia 1 do mês passado até o dia 1 deste, com <
+// ---------------------------------------------------------------------------
+
+console.log('── "Mês Anterior" devolve o mês passado, em toda borda?\n');
+
+function primeiroDiaAnterior(iso) {
+  let [y, m] = iso.split('-').map(Number);
+  if (--m < 1) { m = 12; y--; }
+  return `${y}-${String(m).padStart(2, '0')}-01`;
+}
+
+let ANTERIOR = null;
+for (const f of arquivos) {
+  const tag = readFileSync(join(VIEWS, f), 'utf8').match(/<filter\b[^>]*string="Mês Anterior"[^>]*>/s);
+  const dom = tag?.[0].match(/\bdomain="([^"]*)"/s);
+  if (dom) {
+    ANTERIOR = dom[1].replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    break;
+  }
+}
+if (!ANTERIOR) {
+  falhas++;
+  console.log('❌ não achei nenhum filtro "Mês Anterior" nas views versionadas — foi renomeado?');
+} else {
+  for (const dia of DATAS) {
+    const r = comHoje(dia, () => { try { return evaluateExpr(ANTERIOR); } catch (e) { return e; } });
+    if (r instanceof Error) {
+      falhas++;
+      console.log(`   ❌ ${dia} → 💥 ${r.message.split('\n')[0]}`);
+      continue;
+    }
+    const [[, opDe, de], [, opAte, ate]] = r;
+    const ok = opDe === '>=' && de === primeiroDiaAnterior(dia) && opAte === '<' && ate === primeiroDia(dia);
+    if (!ok) falhas++;
+    console.log(`   ${ok ? '✅' : '❌'} ${dia} → ${opDe} ${de}  ${opAte} ${ate}`
+      + (ok ? '' : `   (esperado >= ${primeiroDiaAnterior(dia)} e < ${primeiroDia(dia)})`));
+  }
+  console.log('');
+}
+
 if (!argv.includes('--canonico')) {
   console.log('   (--canonico mostra por que a forma day=31, que o próprio Odoo usa,');
   console.log('    não serve: no py_js ela transborda em mês de menos de 31 dias.)\n');

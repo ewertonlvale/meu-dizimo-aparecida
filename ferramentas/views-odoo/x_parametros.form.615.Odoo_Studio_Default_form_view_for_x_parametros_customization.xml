@@ -1,5 +1,16 @@
 <!-- x_parametros · view 615 · Odoo Studio: Default form view for x_parametros customization · herda de 613 · form · prioridade 99 -->
 <data>
+  <xpath expr="/form" position="attributes">
+    <attribute name="create">
+      false
+    </attribute>
+    <attribute name="delete">
+      false
+    </attribute>
+    <attribute name="duplicate">
+      false
+    </attribute>
+  </xpath>
   <xpath expr="/form//group[@name='studio_group_4d76d8_left']" position="inside">
     <field name="x_studio_paroquia"/>
     <field name="x_studio_numeros_privilegios">
@@ -33,13 +44,24 @@
   </xpath>
   <xpath expr="/form//group[@name='studio_group_4d76d8_right']" position="inside">
     <separator string="Classificação do dizimista"/>
-    <div class="text-muted small">
-      Regular: devolveu em cada um dos últimos N meses fechados.
-      Inativo: nenhuma devolução em M meses. Entre os dois, Eventual.
-      Em branco vale 3.
+    <div class="text-muted small mb-2" colspan="2">
+      Regular: devolveu em cada um dos últimos N meses fechados. Inativo: nenhuma devolução em M meses. Entre os dois, Eventual. Em branco vale 3.
     </div>
     <field name="x_studio_meses_regular"/>
     <field name="x_studio_meses_inativo"/>
+    <separator string="Lembretes no WhatsApp"/>
+    <div class="text-muted small mb-2" colspan="2">
+      Disparos dentro da janela, a cada N horas. Com 9, 17 e 2: 9h, 11h, 13h e 15h. Hora final é EXCLUSIVA (17 = último disparo antes das 17h). Fora da faixa, vale o padrão: 9h–17h, a cada 2h, 20 por disparo.
+    </div>
+    <field name="x_studio_notif_hora_inicio" string="Hora inicial" help="1 a 23. A partir de que hora o bot pode enviar lembretes. Vazio ou 0 vale 9."/>
+    <field name="x_studio_notif_hora_fim" string="Hora final" help="1 a 24, EXCLUSIVA: 17 significa que o último disparo é antes das 17h. Para incluir 17h, use 18."/>
+    <field name="x_studio_notif_intervalo" string="Intervalo (horas)" help="1 a 12. De quantas em quantas horas sai um lote."/>
+    <field name="x_studio_notif_lote" string="Lembretes por disparo" help="1 a 200. O resto fica para o disparo seguinte — ninguém é perdido, só adiado."/>
+    <separator string="Comprovantes"/>
+    <div class="text-muted small mb-2" colspan="2">
+      Comprovante com data mais antiga que este número de dias é registrado, mas marcado como "Não confere" e a pessoa é avisada; um agente da pastoral analisa. Data no futuro é sempre marcada. Data que não foi lida não conta contra ninguém. Aceita 1 a 365; vazio, 0 ou fora da faixa vale 60.
+    </div>
+    <field name="x_studio_dias_comprovante" string="Idade máxima (dias)" help="1 a 365. Comprovante mais antigo que isto é marcado para conferência. Vazio ou 0 vale 60."/>
     <separator string="Sistema"/>
     <field name="x_studio_repositorio_driver" widget="url" groups="base.group_system"/>
     <field widget="image" name="x_studio_avatar"/>

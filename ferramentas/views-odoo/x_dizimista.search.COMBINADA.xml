@@ -7,11 +7,15 @@
   <separator/>
   <filter date="x_studio_date" name="studio_filter_date" string="Data"/>
   <separator/>
+  <filter name="filtro_aniversariantes_mes" string="Aniversariantes do mês" domain="[('x_studio_mes_aniversario', '=', context_today().strftime('%m'))]"/>
+  <separator/>
   <filter string="Arquivado" name="archived_x_dizimista" domain="[['x_active', '=', False]]"/>
   <separator/>
   <filter name="groupby_x_partner" string="Usuário" context="{'group_by': 'x_studio_partner_id'}" domain="[]"/>
   <filter name="groupby_x_comunidade" string="Comunidade" context="{'group_by': 'x_studio_comunidade'}" domain="[]"/>
   <searchpanel>
+    <field name="x_studio_classificacao" string="Status" select="multi" enable_counters="1" icon="fa-check-circle" expand="1"/>
     <field name="x_studio_comunidade" select="one" enable_counters="1" icon="fa-users"/>
+    <field name="x_studio_mes_aniversario" string="Aniversário" select="one" enable_counters="1" icon="fa-birthday-cake"/>
   </searchpanel>
 </search>
