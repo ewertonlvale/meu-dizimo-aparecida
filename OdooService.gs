@@ -308,6 +308,19 @@ const OdooService = {
   },
 
   /**
+   * Hoje, no fuso da paróquia, no formato de um campo `date` do Odoo.
+   *
+   * A "Data de Cadastro" (`x_studio_data_cadastro`) é um `date` comum, sem
+   * padrão no Odoo: o bot nunca a preencheu, e todo cadastro pelo WhatsApp
+   * ficava com ela vazia. Fuso de São Paulo, não UTC — um cadastro às 22h
+   * seria gravado com a data de amanhã.
+   * @private
+   */
+  _hojeOdoo() {
+    return Plataforma.relogio.formatar(new Date(), TIMEZONE, 'yyyy-MM-dd');
+  },
+
+  /**
    * A gravação em si, sem a guarda. Separada para que `criarDizimista` fique
    * com uma responsabilidade legível e para que a guarda não tenha como ser
    * pulada por engano — nada fora daqui chama este método.
@@ -326,7 +339,8 @@ const OdooService = {
       x_studio_value:             dados.valorMensal,
       x_studio_comunidade:        dados.comunidadeId,
       x_studio_notificacao_ativa: dados.notificacaoAtiva || false,
-      x_studio_dia_preferido:     dados.diaPreferido || 10
+      x_studio_dia_preferido:     dados.diaPreferido || 10,
+      x_studio_data_cadastro:     this._hojeOdoo()
     });
   },
 
@@ -369,7 +383,8 @@ const OdooService = {
         x_studio_comunidade:        dados.comunidadeId,
         x_studio_responsavel:       responsavelId,
         x_studio_notificacao_ativa: false,
-        x_studio_dia_preferido:     dados.diaPreferido || 10
+        x_studio_dia_preferido:     dados.diaPreferido || 10,
+        x_studio_data_cadastro:     this._hojeOdoo()
         // sem x_studio_partner_phone: o membro não tem número próprio
       });
     };
