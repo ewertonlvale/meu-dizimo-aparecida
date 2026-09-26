@@ -1,3 +1,10 @@
 <!-- x_dizimista · calendar combinada (via get_view) · view 595
      SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
-<calendar date_start="x_studio_date" create_name_field="x_name"/>
+<calendar date_start="x_studio_aniversario" create_name_field="x_name" color="x_studio_comunidade" mode="month" create="false" quick_create="false" event_open_popup="true" hide_time="true">
+  <!-- `filters` é o que põe a coluna de marcar/desmarcar comunidade ao lado do calendário. Sem ele o coordenador vê as seis comunidades misturadas e não tem como isolar a dele. `color` no topo dá uma cor por comunidade. -->
+  <field name="x_studio_comunidade" filters="1"/>
+  <!-- Estes aparecem no balão ao clicar no nome, em vez de abrir a ficha inteira. É o que se precisa saber para mandar a mensagem de parabéns: quem é, de onde é, e o número. -->
+  <field name="x_studio_partner_phone" string="Telefone"/>
+  <field name="x_studio_date" string="Nascimento"/>
+  <field name="x_studio_classificacao" string="Classificação"/>
+</calendar>

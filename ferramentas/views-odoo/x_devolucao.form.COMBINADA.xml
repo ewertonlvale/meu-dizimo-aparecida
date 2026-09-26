@@ -2,17 +2,28 @@
      SOMENTE LEITURA: é o resultado das heranças, não existe como registro. O modo –update ignora este arquivo. -->
 <form>
   <header>
+    <!-- OS MESMOS DOIS BOTÕES DO CARD DO KANBAN (BL-64). Os números são as ir.actions.server que o ferramentas/instalar-botoes-kanban.mjs criou nesta instância. Aqui eu pude escrevê-los direto no arquivo porque já existiam quando este formulário foi editado — no kanban não dava, e foi por isso que aquele precisou de instalador. Se alguém recriar as ações, os números mudam e estes botões passam a apontar para o nada. O conta-mensagens.js confere que formulário e kanban citam os MESMOS ids, então a divergência aparece aqui antes de aparecer na tela de quem usa. Cada botão some quando o registro já está no estado que ele aplica: oferecer "Validado" no que já está validado é convidar a um clique que não faz nada. -->
+    <button name="234" type="action" string="Validado" class="btn-success" invisible="x_studio_validacao == 'validado'"/>
+    <button name="235" type="action" string="Não recebido" class="btn-secondary" invisible="x_studio_validacao == 'nao_recebido'"/>
+    <!-- A barra continua clicável, e não vira enfeite ao lado dos botões: os botões só andam para a frente, e é ela que permite voltar para "A validar" depois de um clique errado. Sem isso, errar seria definitivo pela tela. -->
     <field name="x_studio_validacao" widget="statusbar" options="{'clickable': '1'}"/>
   </header>
   <sheet string="Devolução">
     <widget name="web_ribbon" text="Arquivado" bg_color="text-bg-danger" invisible="x_active"/>
     <field name="x_active" invisible="1"/>
-    <!-- A leitura do bot, à vista e só-leitura. Quem valida precisa dela para decidir, e não precisa poder mudá-la: ela é o que o OCR encontrou, não uma opinião que se revise. -->
+    <!-- A leitura do bot, à vista e só-leitura. Quem valida precisa dela para decidir, e não precisa poder mudá-la: ela é o que o OCR encontrou, não uma opinião que se revise. Sem comprovante não houve leitura nenhuma: o registro foi lançado à mão, em dinheiro. O rótulo antigo aparecia assim mesmo, prometendo uma leitura automática que não existiu. Agora ele muda de nome, e o badge continua — "Pendente" segue significando algo num lançamento manual. -->
     <div class="d-flex align-items-center gap-2 mb-2">
-      <span class="text-muted small">
+      <span class="text-muted small" invisible="not x_studio_comprovante">
         Leitura automática do comprovante:
       </span>
-      <field name="x_studio_status" widget="badge" readonly="1" nolabel="1" decoration-success="x_studio_status == 'Confirmado'" decoration-danger="x_studio_status == 'Rejeitado'" decoration-warning="x_studio_status == 'Pendente'"/>
+      <span class="text-muted small" invisible="x_studio_comprovante or x_studio_status == 'A devolver'">
+        Situação (lançamento sem comprovante):
+      </span>
+      <span class="text-muted small" invisible="x_studio_status != 'A devolver'">
+        Este mês ainda não foi devolvido:
+      </span>
+      <!-- Os valores gravados continuam Pendente/Confirmado/Rejeitado; o que mudou foram os rótulos, no instalar-status-dizimo.mjs. Por isso as condições aqui citam o valor antigo — é ele que está no banco. -->
+      <field name="x_studio_status" widget="badge" readonly="1" nolabel="1" decoration-success="x_studio_status == 'Confirmado'" decoration-danger="x_studio_status == 'Rejeitado'" decoration-warning="x_studio_status == 'Pendente'" decoration-muted="x_studio_status == 'A devolver'"/>
     </div>
     <!-- O alerta da conferência sai do meio do formulário e vira banner no topo. Ele estava como um campo de texto entre outros dez, e é a informação que decide se este registro precisa de atenção humana. Some quando está 'ok', que é a maioria e não é notícia. O espaço depois dos dois-pontos é literal de propósito: sem ele o Odoo encosta o rótulo no valor e sai "Precisa de conferência:ausente". O valor ainda é o código cru — humanizar os rótulos da seleção é do lado do Odoo, não da view, e está no BL-61. -->
     <div class="alert alert-warning mb-3" role="alert" invisible="not x_studio_conferencia_pix or x_studio_conferencia_pix == 'ok'">
@@ -20,7 +31,35 @@
       <span class="fw-bold">
         Precisa de conferência:
       </span>
-      <field name="x_studio_conferencia_pix" readonly="1" nolabel="1" class="d-inline"/>
+      <!-- BL-61: o texto humano, e não o código gravado. `x_studio_conferencia_pix` é um campo CHAR — o valor gravado é o que aparece. Não há rótulo de seleção para humanizar, e converter o campo para selection não é possível: o Odoo recusa mudar o tipo de um campo ("Changing the type of a field is not yet supported", ir_model.py), e dropar para recriar apagaria o que o bot já leu em todo registro. Então a tradução mora aqui. As frases são as de Config.gs, na tabela CONFERENCIA, campo textoCoordenador — as mesmas que a pessoa recebe no WhatsApp, sem os asteriscos do negrito. -->
+      <span invisible="x_studio_conferencia_pix != 'ausente'">
+        não consegui identificar a chave PIX no comprovante
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'divergente'">
+        a chave do comprovante diverge da chave da comunidade
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'sem_referencia'">
+        a comunidade não tem chave PIX cadastrada para comparar
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'titular_divergente'">
+        o nome de quem recebeu diverge do titular da comunidade
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'banco_divergente'">
+        o banco de destino diverge do cadastrado na comunidade
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'tudo_divergente'">
+        nome e banco de quem recebeu divergem dos da comunidade
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'comprovante_antigo'">
+        a data do comprovante é bem anterior a hoje — confira se já não foi registrado antes
+      </span>
+      <span invisible="x_studio_conferencia_pix != 'comprovante_futuro'">
+        a data do comprovante está no futuro, o que é impossível
+      </span>
+      <!-- Rede de segurança: se o Config.gs ganhar um código novo e ninguém traduzir aqui, o banner apareceria VAZIO — pior que mostrar o código. Com isto ele volta a mostrar o código cru, que ao menos é pesquisável. O conta-mensagens.js recusa esse estado, então isto é a segunda barreira, não a primeira. -->
+      <span invisible="x_studio_conferencia_pix in ['ok', 'ausente', 'divergente', 'sem_referencia', 'titular_divergente', 'banco_divergente', 'tudo_divergente', 'comprovante_antigo', 'comprovante_futuro']">
+        <field name="x_studio_conferencia_pix" readonly="1" nolabel="1" class="d-inline"/>
+      </span>
     </div>
     <div class="oe_title">
       <h1>
@@ -37,8 +76,9 @@
         <field name="x_studio_telefone_ofertante" widget="phone" invisible="x_studio_dizimista"/>
         <field name="x_studio_comunidade" options="{&quot;create_name_field&quot;:&quot;x_name&quot;,&quot;no_create&quot;:true}" required="1" can_create="True" can_write="True"/>
         <field name="x_studio_competencia" options="{&quot;numeric&quot;:true}" widget="date" string="Mês Referencia"/>
-        <field name="x_studio_data_da_devolucao" required="1"/>
-        <field name="x_studio_value" required="1"/>
+        <!-- OBRIGATÓRIO SÓ DEPOIS QUE ALGUÉM DEVOLVEU (BL-62). Um registro "A devolver" não tem data nem valor: ele é o mês que ainda vai ser devolvido. Com `required="1"` fixo, quem abrisse um desses e salvasse seria OBRIGADO a inventar os dois — e nesse instante o registro passaria a contar como devolução paga para a classificação (classificar-dizimistas.py), para o lembrete mensal (jaDevolveueEsteMes) e para o relatório. A pessoa deixaria de ser cobrada e viraria Regular sem ter pago nada, em silêncio. Os três leitores acima filtram por data preenchida, então um "A devolver" é invisível para eles — desde que continue sem data. É essa invariante que a condição protege. -->
+        <field name="x_studio_data_da_devolucao" required="x_studio_status != 'A devolver'"/>
+        <field name="x_studio_value" required="x_studio_status != 'A devolver'"/>
         <field name="x_studio_forma_de_pagamento"/>
       </group>
       <group name="studio_group_c89b90_right">
