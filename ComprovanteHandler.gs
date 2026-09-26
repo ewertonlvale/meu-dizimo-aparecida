@@ -225,6 +225,22 @@ const ComprovanteHandler = {
   _fraseDesfecho(motivo, oQue) {
     if (motivo === 'ok') return `${oQue} foi registrada e será confirmada em breve.`;
 
+    // BL-86: a IDADE reprovou, não o destinatário. A frase genérica abaixo
+    // diria "os dados de quem recebeu não batem" com nome e chave certos na
+    // tela — a pessoa procuraria o erro no lugar errado.
+    const analise = `${oQue} foi registrada e será *analisada por um agente da Pastoral do Dízimo*.`;
+    if (motivo === 'comprovante_antigo') {
+      return '⚠️ *Este comprovante é antigo.*\n\n' +
+             `A data dele, acima, é de bem antes de hoje. ${analise}\n\n` +
+             'Se o pagamento é novo, envie o comprovante *dele*. ' +
+             'Para falar com a pastoral, é só tocar no botão abaixo. 💛';
+    }
+    if (motivo === 'comprovante_futuro') {
+      return '⚠️ *A data do comprovante está no futuro.*\n\n' +
+             `A data lida, acima, é posterior a hoje. ${analise}\n\n` +
+             'Para falar com a pastoral, é só tocar no botão abaixo. 💛';
+    }
+
     if (alertaDoador(motivo)) {
       return '⚠️ *O pagamento não confere.*\n\n' +
              'Os dados de quem recebeu, acima, não batem com os da sua ' +

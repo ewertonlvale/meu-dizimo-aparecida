@@ -2651,6 +2651,25 @@ console.log('📆 Idade do comprovante: antigo e futuro caem em "Não confere"\n
     console.log(`${ok ? '✅' : '❌'} antigo com a chave certa vira "Não confere" e avisa a pessoa`
       + (ok ? '' : `  (motivo ${r && r.motivo}, status ${status})`));
   }
+
+  // BL-86: a frase diz O QUE reprovou. No teste do corte (25/09), um
+  // comprovante de 81 dias com nome e chave certos ouviu "os dados de quem
+  // recebeu não batem" — acusava o dado que conferia.
+  {
+    const H = montarContexto({ camposOdoo: [] }).ComprovanteHandler;
+    const antigo = H._fraseDesfecho('comprovante_antigo', 'Sua devolução');
+    const futuro = H._fraseDesfecho('comprovante_futuro', 'Sua devolução');
+    const chave  = H._fraseDesfecho('divergente', 'Sua devolução');
+    const erros = [];
+    if (/não batem/.test(antigo) || !/antigo/.test(antigo)) erros.push('antigo acusa o destinatário');
+    if (/não batem/.test(futuro) || !/futuro/.test(futuro)) erros.push('futuro acusa o destinatário');
+    if (!/não batem/.test(chave)) erros.push('chave divergente perdeu a frase dela');
+    if (![antigo, futuro].every((t) => /agente da Pastoral/.test(t))) erros.push('não diz quem analisa');
+    const ok = !erros.length;
+    if (!ok) falhas++;
+    console.log(`${ok ? '✅' : '❌'} comprovante antigo/futuro diz que o problema é a DATA, não quem recebeu`
+      + (ok ? '' : `  (${erros.join('; ')})`));
+  }
 }
 
 console.log('\n' + '─'.repeat(64));
@@ -3336,6 +3355,18 @@ console.log('⏱️  O escalonamento do disparo de lembretes (BL-73)\n');
       entrada: { hora: 10, parametros: { x_studio_notif_intervalo: 1 } }, envios: 5 },
     { nome: 'início 10h desloca os degraus (10h dispara, 11h não)',
       entrada: { hora: 11, parametros: { x_studio_notif_hora_inicio: 10 } }, envios: 0 },
+
+    // ── BL-87: o Odoo devolve 0 para inteiro VAZIO ────────────────────────
+    // Com a hora inicial 0 aceita, a janela virava 0h–17h: lembrete à
+    // meia-noite e nunca às 9h. Vazio tem de valer o padrão.
+    { nome: 'campos vazios (0 no Odoo) não disparam à meia-noite',
+      entrada: { hora: 0, parametros: { x_studio_notif_hora_inicio: 0, x_studio_notif_hora_fim: 0,
+                                        x_studio_notif_intervalo: 0, x_studio_notif_lote: 0 } },
+      envios: 0 },
+    { nome: 'campos vazios (0 no Odoo) mantêm o degrau das 9h',
+      entrada: { hora: 9, parametros: { x_studio_notif_hora_inicio: 0, x_studio_notif_hora_fim: 0,
+                                        x_studio_notif_intervalo: 0, x_studio_notif_lote: 0 } },
+      envios: 5 },
 
     // ── O lote ────────────────────────────────────────────────────────────
     { nome: '50 elegíveis, lote padrão 20 → sai 20',

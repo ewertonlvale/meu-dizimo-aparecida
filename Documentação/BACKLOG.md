@@ -115,8 +115,8 @@
 | BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Publicado em 24/09** — publicado. |
 | BL-84 | Achados da revisão de 24/09 conferidos e corrigidos (15 itens) | 🟠 | G | ✅ Concluído (24/09) — todos confirmados; 14 corrigidos, 1 adiado para a Fase 3 do BL-74 (trava global). **Publicado e testado em 24/09** |
 | BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Publicado em 24/09** — validado no WhatsApp. |
-| BL-86 | Comprovante antigo recebe a frase "os dados de quem recebeu não batem" | 🟡 | P | 📋 Aberto (25/09) — achado no teste do corte: a data reprovou, mas a frase acusa nome/chave, que conferiam |
-| BL-87 | Campo inteiro vazio do Odoo chega como 0 — hora inicial 0 abre a janela à meia-noite | 🟠 | P | ⚠️ Contido (26/09) — valores 9/17/2/20 gravados nos Parâmetros; o código ainda aceita o 0 |
+| BL-86 | Comprovante antigo recebe a frase "os dados de quem recebeu não batem" | 🟡 | P | ✅ Concluído (26/09) — frase própria para comprovante antigo e para data no futuro. Achado no teste do corte |
+| BL-87 | Campo inteiro vazio do Odoo chega como 0 — hora inicial 0 abre a janela à meia-noite | 🟠 | P | ✅ Concluído (26/09) — 0 passa a valer como vazio (padrão) nos quatro campos. Valores 9/17/2/20 também gravados |
 | BL-88 | Os campos de lembrete e de idade do comprovante não estavam no Odoo nem na tela | 🟡 | P | ✅ Concluído (26/09) — campos criados, formulário de Parâmetros reorganizado, menu abre direto o registro |
 
 ---
@@ -3019,7 +3019,7 @@ e o estado fica onde estava. "menu" continua saindo pelo atalho de sempre.
 **Aceite.** Caso no `conta-mensagens.js` (três estados × "👍" e "já paguei") — reprova no código
 anterior.
 
-### BL-86 — A frase do comprovante antigo acusa o dado errado 🟡 (P) · 📋 aberto
+### BL-86 — A frase do comprovante antigo acusa o dado errado 🟡 (P) · ✅ concluído (26/09)
 
 **Arquivo:** `ComprovanteHandler.gs` (`_fraseDesfecho`)
 
@@ -3028,13 +3028,13 @@ anterior.
 "Os dados de quem recebeu, acima, não batem com os da sua comunidade". Nome e chave conferiam; a
 pessoa lê que errou o destinatário quando o problema é a data.
 
-**Correção.** Frase por motivo: `comprovante_antigo` diz a data lida e o limite ("este comprovante
+**Correção (feita).** Frase por motivo: `comprovante_antigo` diz a data lida e o limite ("este comprovante
 é de 06/07/2026, há mais de 60 dias — se for de um pagamento novo, envie o comprovante dele");
 `comprovante_futuro`, a sua; chave e nome/banco divergentes ficam com a de hoje.
 
-**Aceite.** Caso no `conta-mensagens.js` que reprova com a frase atual.
+**Aceite.** Caso no `conta-mensagens.js` — reprova no código anterior (antigo e futuro acusavam o destinatário).
 
-### BL-87 — Inteiro vazio do Odoo chega como 0 🟠 (P) · ⚠️ contido
+### BL-87 — Inteiro vazio do Odoo chega como 0 🟠 (P) · ✅ concluído (26/09)
 
 **Arquivo:** `NotificacaoHandler.gs` (`lerEscalonamentoNotificacao`)
 
@@ -3047,11 +3047,11 @@ em 0 caem no padrão por estarem fora da faixa; só a hora inicial escapa.
 **Contido:** os quatro campos foram preenchidos (9, 17, 2, 20). Volta a morder se alguém apagar a
 hora inicial.
 
-**Correção.** Tratar 0 como vazio nos quatro campos (a janela a partir da meia-noite não é caso de
-uso), ou mudar a faixa da hora inicial para 1..23. O mesmo vale conferir em `x_studio_meses_*` e
+**Correção (feita).** 0 vale como vazio nos quatro campos — a janela a partir da meia-noite não é
+caso de uso. A faixa declarada (0..23) ficou, para não divergir do instalador; 0 só não é mais lido. O mesmo vale conferir em `x_studio_meses_*` e
 `x_studio_dias_comprovante` (hoje 0 → padrão, por estarem fora da faixa — por sorte, não por regra).
 
-**Aceite.** Caso no `conta-mensagens.js` com `x_studio_notif_hora_inicio: 0` → janela 9h–17h.
+**Aceite.** Dois casos no `conta-mensagens.js` com os quatro campos em 0: à meia-noite não envia, às 9h envia — os dois reprovam no código anterior.
 
 ### BL-88 — Parâmetros do BL-73 e do BL-69 no Odoo ✅ (P)
 
