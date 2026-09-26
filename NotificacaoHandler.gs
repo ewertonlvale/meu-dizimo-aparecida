@@ -151,7 +151,13 @@ function lerEscalonamentoNotificacao() {
     const bruto = p[CAMPOS[chave]];
     // Campo ausente, nulo ou vazio: silêncio. É o caso normal enquanto o
     // instalador não rodou, e não merece linha de log a cada hora.
-    if (bruto === undefined || bruto === null || bruto === false || bruto === '') return;
+    //
+    // BL-87: e ZERO também. O Odoo devolve 0 para um inteiro vazio, não
+    // `false`. Sem isto, a hora inicial vazia virava 0 — válida na faixa — e a
+    // janela 0h–17h mandava lembrete de madrugada. Nenhum dos quatro tem 0
+    // como valor útil: janela a partir da meia-noite não é caso de uso.
+    if (bruto === undefined || bruto === null || bruto === false || bruto === '' ||
+        Number(bruto) === 0) return;
 
     const valor = Number(bruto);
     const lim   = NOTIFICACAO_LIMITES[chave];
