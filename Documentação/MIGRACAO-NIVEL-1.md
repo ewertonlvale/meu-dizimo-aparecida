@@ -566,13 +566,26 @@ dois ligados), a semana de observação e a volta em ~2 min.
 **Critério de aceite:** 7 dias sem incidente, incluindo pelo menos um ciclo de notificação
 completo.
 
-### Fase 6 — Observabilidade e limpeza (2 dias)
+### Fase 6 — Observabilidade e limpeza (2 dias) · 🔶 em andamento
 
+**26/09: o Apps Script foi deixado de lado** por decisão do dono, sem esperar os 7 dias (o bot
+ainda não atende dizimistas reais). A volta pelo Apps Script deixou de ser plano.
+
+- ✅ **Deploy automático a cada merge na `staging`** (26/09). Merge só de documentação não publica;
+  o botão manual continua para republicar sem commit (depois de trocar um segredo). Publicar da
+  `main` foi **proibido**: ela anda atrás, e publicar dela voltaria código velho ao ar.
+- Trocar o `NOTIFICACOES_ATIVAS=false` do workflow por `true` — hoje quem manda é o valor no Upstash.
+- Rotacionar `WEBHOOK_SECRET` e `VERIFY_TOKEN` (expostos em chat).
+- Um lugar para as funções que se rodavam no editor (`verificarProperties`, `testarConexaoOdoo`,
+  `podarContadores`, `listarNotificacoesDoDia`, `previsaoEscalonamento`…): o `/cron` só aceita as
+  duas agendadas.
 - Alerta de taxa de erro e uptime check no endpoint (`/saude`).
 - Log estruturado em JSON — o Cloud Logging indexa e dá busca de verdade, em vez de rolar texto.
 - Remover a implementação GAS da `Plataforma`; o carregador `vm` pode virar import de módulo
   (opcional, e sem pressa).
-- Aposentar `clasp`, `.claspignore` e `appsscript.json`.
+- Aposentar `clasp`, `.claspignore` e `appsscript.json`. ⚠️ **Não é só apagar:** o carregador do
+  runtime lê a lista de arquivos do `.claspignore` (`arquivosDoDeploy`) e o fuso do
+  `appsscript.json` (`fusoDoProjeto`). Trocar essas duas fontes antes.
 
 ---
 

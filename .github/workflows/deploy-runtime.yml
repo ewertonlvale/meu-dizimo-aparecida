@@ -2,9 +2,19 @@
 # deploy-runtime.yml — publica o runtime Node no Cloud Run (BL-74, Fases 2 e 3)
 # ============================================================================
 #
-# SÓ À MÃO (Actions → "Deploy do runtime Node" → Run workflow), e só da
-# `staging` ou da `main`. Deploy automático a cada merge fica para quando o
-# runtime receber tráfego — antes disso, publicar é decisão, não efeito.
+# AUTOMÁTICO A CADA MERGE NA `staging` (BL-74, Fase 6). Desde o corte (25/09)
+# o Cloud Run é o bot — não há mais o Apps Script como segundo lugar a
+# publicar, e um merge que não entra no ar é código mergeado e esquecido.
+#
+#   - Merge só de documentação (Documentação/, docs/, *.md) não publica: a
+#     imagem seria a mesma.
+#   - À mão continua valendo (Actions → "Deploy do runtime Node" → Run
+#     workflow) para republicar sem commit novo — depois de trocar um segredo
+#     no Secret Manager, por exemplo.
+#   - SÓ DA `staging`. A `main` anda atrás: publicar dela devolveria ao ar um
+#     código mais velho, sem as fases que vieram depois.
+#   - Dois merges seguidos não publicam em paralelo: o segundo espera o
+#     primeiro (concurrency, abaixo).
 #
 # SEM CHAVE: o GitHub recebe um token temporário pelo Workload Identity
 # Federation. Nenhuma credencial de longa duração existe perto deste
@@ -29,6 +39,13 @@
 name: Deploy do runtime Node
 
 on:
+  push:
+    branches: [staging]
+    paths-ignore:
+      - 'Documentação/**'
+      - 'docs/**'
+      - '*.md'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
@@ -49,7 +66,7 @@ env:
 jobs:
   deploy:
     name: Deploy
-    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
