@@ -92,8 +92,13 @@ lista de campos do webhook.
 Do seu celular, mande **"oi"** ao bot. O menu tem de chegar. Confira no log do worker que foi ele:
 
 ```bash
-gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="meu-dizimo-worker" AND textPayload:"Mensagem de"' --limit=5 --freshness=5m --format="value(timestamp,textPayload)"
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="meu-dizimo-worker" AND textPayload:"Mensagem de"' --limit=5 --freshness=30m --format="value(timestamp,textPayload)"
 ```
+
+⚠️ **Vazio não prova que o corte falhou.** `--freshness` é a janela de busca: com `5m`, rodado seis
+minutos depois do "oi", não acha nada. No corte de 25/09 este filtro voltou vazio com o worker atendendo
+normalmente (a linha vai mesmo em `textPayload`); a janela curta é a causa provável. Na dúvida,
+aumente para `3h`.
 
 E que o webhook não está recusando assinaturas (tem de sair **vazio**):
 

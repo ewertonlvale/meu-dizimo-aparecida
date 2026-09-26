@@ -481,7 +481,28 @@ Com 500 dizimistas isso é mensagem duplicada para muita gente, e não dá para 
 acionadores do Apps Script (`removerTriggerNotificacoes` e o equivalente do `TriggerSessoes`).
 Nunca os dois ligados ao mesmo tempo.
 
-### Fase 5 — Corte (1 dia + uma semana de observação) · 🔶 em preparação
+### Fase 5 — Corte (1 dia + uma semana de observação) · ✅ corte executado em 25/09 — em observação até 02/10
+
+#### O corte, como aconteceu (25/09)
+
+Seguido o `ROTEIRO-CORTE.md`, à tarde (o bot ainda está em desenvolvimento, sem dizimistas reais):
+webhook aberto (`CORTE-OK`), 18 propriedades importadas, URL trocada na Meta, acionadores do Apps
+Script removidos, `NOTIFICACOES_ATIVAS=true` no Upstash, `lembretes` e `sessoes` ENABLED.
+
+**Provado em produção:**
+- mensagem real → webhook → fila → worker → menu; callbacks `sent → delivered → read` voltam; partida a frio ~2 s;
+- **devolução com comprovante** (Vision + gravação no Odoo) — o último caminho que não tinha rodado na nuvem;
+- **lembretes (26/09):** o disparo das 9:05 pulou quem o Apps Script já tinha notificado — lendo o
+  `x_notificacao_log` que ele gravou. A troca de plataforma não repete lembrete. Às 10:05, o
+  primeiro envio real pelo Cloud Run (template entregue, log gravado no Odoo);
+- **fuso** `America/Sao_Paulo` no arranque do worker e na janela dos lembretes (7h e 8h fora, 9h dentro);
+- **BL-17:** as regras de registro do Odoo não bloqueiam o uid 13 — leu `x_contato_bot` e `x_dizimista` em produção.
+
+**Achado na importação:** ela substitui, não soma. As mensagens contadas pelo Cloud Run antes do
+corte foram sobrescritas pelo número do Apps Script (~1,6% de setembro; some na virada do mês).
+
+**Para a Fase 6:** o telefone completo vai para o Cloud Logging (`📱 Mensagem de …`) — resolver com
+o log estruturado; e o `VERIFY_TOKEN` foi exposto em chat — rotacionar junto com o `WEBHOOK_SECRET`.
 
 #### Preparação 1 de 3: a assinatura da Meta (HMAC) · ✅ código pronto (25/09)
 
