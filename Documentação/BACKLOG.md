@@ -102,7 +102,7 @@
 | BL-71 | O ciclo automático do mês seguinte complicava mais do que resolvia | 🟠 | M | ✅ Concluído (23/09) — **removido**. Sobrou a regra de ouro: mês anterior vazio, pergunta duas opções. **Precisa de `clasp push`** |
 | BL-72 | Lote de um membro gravava o valor escolhido, não o do comprovante | 🟠 | P | ✅ Concluído (23/09) — comprovante de R$ 400 virava registro de R$ 100. **Precisa de `clasp push`** |
 | BL-73 | O disparo de lembretes mandava TODO o lote de uma vez, sem teto | 🟠 | M | ✅ Concluído (23/09) — escalonado: janela, intervalo e tamanho do lote em `x_parametros`. **Precisa de `clasp push`** e do instalador |
-| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 🔶 **Fases 0 a 3 no ar (25/09)** — webhook → Cloud Tasks → worker no Cloud Run, sem tráfego, provado com Odoo, Upstash e WhatsApp reais; trava por pessoa fecha o BL-20 no runtime novo. Próximas: Fase 4 (agendamentos) e 5 (corte). Plano em `MIGRACAO-NIVEL-1.md` |
+| BL-74 | Sair do Apps Script: fila, estado em Redis, CI e monitoramento | 🟠 | GG | 🔶 **Corte executado (25/09)** — o bot roda só no Cloud Run; devolução com comprovante e primeiro lembrete provados na nuvem. Observação até 02/10 (Apps Script de pé como volta); depois Fase 6. Plano em `MIGRACAO-NIVEL-1.md` |
 | BL-75 | Passou de 50 propriedades e a tela de configuração virou somente leitura | 🔴 | P | ✅ Concluído (24/09) — **bloqueava o BL-17**. Retenção cabia em ~120 props para servir 15. **Precisa de `clasp push`** e de rodar `podarContadores()` |
 | BL-76 | Parâmetros, notificações e contato do bot visíveis a todo usuário interno | 🟡 | P | 📋 **Decidido, adiado (24/09)** — restringir ao perfil Administrador. É privilégio de PESSOA, não do bot |
 | BL-17 | O bot falava com o Odoo como **Administrador** | 🔴 | M | ✅ **Concluído (24/09)** — `uid 13`, sem poder de administrador, permissões iguais à matriz. Conferido pelo `--verificar` contra o Odoo real. Nove notas de correção do próprio verificador |
@@ -115,6 +115,9 @@
 | BL-83 | Primeiro contato gravado em hora local num campo `datetime` (3 h a menos na tela) | 🟡 | P | ✅ Concluído (24/09) — gravado em UTC. **Publicado em 24/09** — publicado. |
 | BL-84 | Achados da revisão de 24/09 conferidos e corrigidos (15 itens) | 🟠 | G | ✅ Concluído (24/09) — todos confirmados; 14 corrigidos, 1 adiado para a Fase 3 do BL-74 (trava global). **Publicado e testado em 24/09** |
 | BL-85 | Texto enviado enquanto o bot espera o comprovante desfazia a devolução | 🟠 | P | ✅ Concluído (24/09) — achado no teste real do BL-79. **Publicado em 24/09** — validado no WhatsApp. |
+| BL-86 | Comprovante antigo recebe a frase "os dados de quem recebeu não batem" | 🟡 | P | 📋 Aberto (25/09) — achado no teste do corte: a data reprovou, mas a frase acusa nome/chave, que conferiam |
+| BL-87 | Campo inteiro vazio do Odoo chega como 0 — hora inicial 0 abre a janela à meia-noite | 🟠 | P | ⚠️ Contido (26/09) — valores 9/17/2/20 gravados nos Parâmetros; o código ainda aceita o 0 |
+| BL-88 | Os campos de lembrete e de idade do comprovante não estavam no Odoo nem na tela | 🟡 | P | ✅ Concluído (26/09) — campos criados, formulário de Parâmetros reorganizado, menu abre direto o registro |
 
 ---
 
@@ -3015,3 +3018,47 @@ e o estado fica onde estava. "menu" continua saindo pelo atalho de sempre.
 
 **Aceite.** Caso no `conta-mensagens.js` (três estados × "👍" e "já paguei") — reprova no código
 anterior.
+
+### BL-86 — A frase do comprovante antigo acusa o dado errado 🟡 (P) · 📋 aberto
+
+**Arquivo:** `ComprovanteHandler.gs` (`_fraseDesfecho`)
+
+**Achado no teste do corte (25/09).** Um comprovante de 06/07 (81 dias) foi marcado
+`comprovante_antigo` pelo BL-69 — certo. Mas `_fraseDesfecho` tem **uma frase para todo alerta**:
+"Os dados de quem recebeu, acima, não batem com os da sua comunidade". Nome e chave conferiam; a
+pessoa lê que errou o destinatário quando o problema é a data.
+
+**Correção.** Frase por motivo: `comprovante_antigo` diz a data lida e o limite ("este comprovante
+é de 06/07/2026, há mais de 60 dias — se for de um pagamento novo, envie o comprovante dele");
+`comprovante_futuro`, a sua; chave e nome/banco divergentes ficam com a de hoje.
+
+**Aceite.** Caso no `conta-mensagens.js` que reprova com a frase atual.
+
+### BL-87 — Inteiro vazio do Odoo chega como 0 🟠 (P) · ⚠️ contido
+
+**Arquivo:** `NotificacaoHandler.gs` (`lerEscalonamentoNotificacao`)
+
+**Achado em 26/09**, ao criar os campos do BL-73. O Odoo devolve **0** para um inteiro vazio — não
+`false`. O código trata como "vazio" só `undefined/null/false/''`, e **0 é hora inicial válida**
+(faixa 0..23): a janela virava 0h–17h. Com o intervalo (0 → fora da faixa → 2), os disparos
+seriam 0h, 2h, 4h … 16h — **lembrete de madrugada** e nunca às 9h. Hora final, intervalo e lote
+em 0 caem no padrão por estarem fora da faixa; só a hora inicial escapa.
+
+**Contido:** os quatro campos foram preenchidos (9, 17, 2, 20). Volta a morder se alguém apagar a
+hora inicial.
+
+**Correção.** Tratar 0 como vazio nos quatro campos (a janela a partir da meia-noite não é caso de
+uso), ou mudar a faixa da hora inicial para 1..23. O mesmo vale conferir em `x_studio_meses_*` e
+`x_studio_dias_comprovante` (hoje 0 → padrão, por estarem fora da faixa — por sorte, não por regra).
+
+**Aceite.** Caso no `conta-mensagens.js` com `x_studio_notif_hora_inicio: 0` → janela 9h–17h.
+
+### BL-88 — Parâmetros do BL-73 e do BL-69 no Odoo ✅ (P)
+
+Os quatro campos `x_studio_notif_*` **não existiam** — o bot rodava no padrão do código. Criados
+pelo dono em 26/09. Na view Studio de `x_parametros` (id 615): seções **Lembretes no WhatsApp** e
+**Comprovantes** (`x_studio_dias_comprovante`, que existia mas não estava na tela), cada uma com
+nota explicativa em linha inteira (`colspan="2"` — sem isso a nota ocupa a célula do rótulo e
+desalinha os valores; a nota de Classificação tinha esse defeito e foi corrigida junto). Botões
+**Novo / Excluir / Duplicar** desligados no formulário: há um único registro, e um segundo faria o
+bot ler o errado. O menu **Parâmetros** (ação 210) abre direto o registro 1, sem a lista.
