@@ -22,6 +22,7 @@ URL antiga na Meta — ver **"Se der errado"**, no fim. Deixe essa seção abert
       (`true`, `false` ou **ausente**). O Cloud Run vai receber o mesmo — ausente quer dizer ligado.
 - [ ] **Publique a última `staging` nos dois lados:** `git pull` + `clasp push` (Apps Script) e
       *Actions → Deploy do runtime Node → Run workflow* (Cloud Run), e espere o deploy ficar verde.
+      (Desde a Fase 6 o deploy sai sozinho a cada merge na `staging`.)
 - [ ] **Confira que os dois agendamentos estão PAUSADOS** (Cloud Shell):
       ```bash
       gcloud scheduler jobs list --location=southamerica-east1 --format="table(ID,state)"
